@@ -1,0 +1,98 @@
+# docker-compose.yml
+
+services:
+  app:                          # FastAPI REST API
+    build: .
+    image: alphastreams-app
+    ports: ['8000:8000']
+    command: uvicorn app.Main:App --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    volumes: ['./app:/app/app']  # Hot reload for development
+
+  worker-ingestion:             # DataIngestion Celery workers
+    image: alphastreams-app
+    command: celery -A app.CeleryApp worker -Q ingestion -c 2 --loglevel=info
+    env_file: .env
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    volumes: ['./app:/app/app']
+
+  worker-nlp:                   # NLP workers — concurrency=1 for RAM control
+    image: alphastreams-app
+    command: celery -A app.CeleryApp worker -Q nlp -c 1 --loglevel=info
+    env_file: .env
+    depends_on: [redis, postgres]
+    volumes: ['./app:/app/app']
+
+  worker-derivatives:           # Derivatives computation workers
+    image: alphastreams-app
+    command: celery -A app.CeleryApp worker -Q derivatives -c 2 --loglevel=info
+    env_file: .env
+    depends_on: [redis, postgres]
+    volumes: ['./app:/app/app']
+
+  worker-signals:               # Signal aggregation workers
+    image: alphastreams-app
+    command: celery -A app.CeleryApp worker -Q signals -c 2 --loglevel=info
+    env_file: .env
+    depends_on: [redis, postgres]
+    volumes: ['./app:/app/app']
+
+  beat:                         # APScheduler-like scheduled tasks
+    image: alphastreams-app
+    command: celery -A app.CeleryApp beat --loglevel=info
+    env_file: .env
+    depends_on: [redis]
+    volumes: ['./app:/app/app']
+
+  flower:                       # Task monitoring dashboard
+    image: alphastreams-app
+    command: celery -A app.CeleryApp flower --port=5555
+    ports: ['5555:5555']
+    depends_on: [redis]
+
+  redis:
+    image: redis:7-alpine
+    volumes: ['redis_data:/data']
+
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: AlphaStreamsDB
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes: ['pg_data:/var/lib/postgresql/data']
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d AlphaStreamsDB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:
+  pg_data:

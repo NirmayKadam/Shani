@@ -1,0 +1,24 @@
+# ----- Builder Stage -----
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install Python dependencies strictly into the local user space
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir --upgrade pip && \
+    pip install --user --no-cache-dir -r requirements.txt
+
+# ----- Final Runtime Stage -----
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Pull only the compiled libraries, leaving all pip caches/metadata behind
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# Copy application code
+COPY . .
+
+# Default command (overridden by docker-compose per service)
+CMD ["uvicorn", "app.Main:App", "--host", "0.0.0.0", "--port", "8000"]
