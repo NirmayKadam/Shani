@@ -6,6 +6,7 @@ WORKDIR /app
 # Install Python dependencies strictly into the local user space
 COPY requirements.txt .
 RUN pip install --user --no-cache-dir --upgrade pip && \
+    pip install --user --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     pip install --user --no-cache-dir -r requirements.txt
 
 # ----- Final Runtime Stage -----
@@ -21,4 +22,4 @@ ENV PATH=/root/.local/bin:$PATH
 COPY . .
 
 # Default command (overridden by docker-compose per service)
-CMD ["uvicorn", "app.Main:App", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:App", "--host", "0.0.0.0", "--port", "8000"]

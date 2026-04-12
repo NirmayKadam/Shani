@@ -1,0 +1,233 @@
+# app/domain/ingestion/tasks.py — Celery tasks for periodic data polling
+#
+# These tasks are triggered by Celery Beat and publish events
+# to the event bus for other domains to consume.
+
+import asyncio
+import json
+import logging
+import os
+
+Logger = logging.getLogger(__name__)
+
+_WATCHLIST_RAW = os.getenv(
+    "WATCHLIST_SYMBOLS", "NIFTY,BANKNIFTY,RELIANCE,INFY,HDFCBANK,TCS,ICICIBANK"
+)
+_WATCHLIST = [s.strip() for s in _WATCHLIST_RAW.split(",") if s.strip()]
+
+
+def _get_or_create_loop():
+    """Get the current event loop or create a new one for Celery workers."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
+
+
+# ── Lazy import to avoid circular deps ─────────────────────────
+
+def _get_celery_app():
+    from app.celery_app import CeleryApp
+    return CeleryApp
+
+
+# ── News Polling Task ──────────────────────────────────────────
+
+@_get_celery_app().task(name="ingestion.poll_news", queue="ingestion", bind=True)
+def PollNewsTask(self):
+    """Periodically fetch new headlines for all watchlist symbols."""
+    try:
+        loop = _get_or_create_loop()
+        loop.run_until_complete(_poll_news_async())
+    except Exception as exc:
+        Logger.error(f"PollNewsTask failed: {exc}", exc_info=True)
+        raise self.retry(exc=exc, countdown=60, max_retries=3)
+
+
+async def _poll_news_async():
+    from app.domain.ingestion.news_fetcher import NewsFetcher
+    from app.shared.redis_client import GetRedisClient
+    from app.shared.constants import Channels, RedisKeys, TTL
+    from app.config import GetSettings
+
+    cfg = GetSettings()
+    fetcher = NewsFetcher(api_key=cfg.NewsApiKey)
+    redis = await GetRedisClient()
+
+    try:
+        for symbol in _WATCHLIST:
+            headlines = await fetcher.fetch(symbol)
+
+            for h in headlines:
+                # Publish each headline as an event
+                event = {
+                    "symbol": symbol.upper(),
+                    "headline": h["headline"],
+                    "content": h["content"],
+                    "source_url": h["source_url"],
+                    "source_name": h["source_name"],
+                    "published_at": h["published_at"],
+                }
+                channel = Channels.HEADLINE_FETCHED.format(symbol=symbol.upper())
+                await redis.publish(channel, json.dumps(event, default=str))
+
+            Logger.info("[%s] Published %d headlines to event bus", symbol, len(headlines))
+    finally:
+        await fetcher.close()
+
+
+from datetime import datetime, timezone
+
+# ── Price Polling Task ─────────────────────────────────────────
+
+@_get_celery_app().task(name="ingestion.poll_prices", queue="ingestion", bind=True)
+def PollPricesTask(self):
+    """Periodically fetch latest prices for all watchlist symbols."""
+    try:
+        loop = _get_or_create_loop()
+        loop.run_until_complete(_poll_prices_async())
+    except Exception as exc:
+        Logger.error(f"PollPricesTask failed: {exc}", exc_info=True)
+        raise self.retry(exc=exc, countdown=15, max_retries=3)
+
+
+async def _poll_prices_async():
+    from app.domain.ingestion.market_data_fetcher import MarketPriceFetcher
+    from app.domain.ingestion.price_triggers import PriceTriggerDetector
+    from app.shared.redis_client import GetRedisClient
+    from app.shared.database import GetDatabasePool
+    from app.shared.constants import Channels, RedisKeys, TTL
+
+    redis = await GetRedisClient()
+    db_pool = await GetDatabasePool()
+    fetcher = MarketPriceFetcher()
+    trigger_detector = PriceTriggerDetector(redis)
+    now = datetime.now(timezone.utc)
+
+    for symbol in _WATCHLIST:
+        data = await fetcher.fetch(symbol)
+        if not data:
+            continue
+
+        # Cache in Redis
+        cache_key = RedisKeys.MARKET_PRICE.format(symbol=symbol.upper())
+        await redis.set(cache_key, json.dumps(data, default=str), ex=TTL.MARKET_PRICE)
+
+        # Write to Postgres TickData
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO TickData 
+                (Timestamp, Symbol, Exchange, InstrumentType, LastPrice, Volume)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                now,
+                symbol.upper(),
+                "NSE",
+                "EQ",
+                data["last_price"],
+                data.get("volume", 0)
+            )
+
+        # Publish price update event
+        channel = Channels.PRICE_UPDATED.format(symbol=symbol.upper())
+        await redis.publish(channel, json.dumps(data, default=str))
+
+        # Check for price triggers
+        triggers = await trigger_detector.check(
+            symbol,
+            current_price=data["last_price"],
+            current_volume=data.get("volume", 0),
+        )
+        for trigger in triggers:
+            trigger_channel = Channels.PRICE_TRIGGER.format(symbol=symbol.upper())
+            await redis.publish(trigger_channel, json.dumps(trigger, default=str))
+
+        Logger.debug("[%s] Price cached and DB write done: ₹%.2f", symbol, data["last_price"])
+
+
+# ── Options Polling Task ───────────────────────────────────────
+
+@_get_celery_app().task(name="ingestion.poll_options", queue="ingestion", bind=True)
+def PollOptionsTask(self):
+    """Periodically fetch option chains for all watchlist symbols."""
+    try:
+        loop = _get_or_create_loop()
+        loop.run_until_complete(_poll_options_async())
+    except Exception as exc:
+        Logger.error(f"PollOptionsTask failed: {exc}", exc_info=True)
+        raise self.retry(exc=exc, countdown=30, max_retries=3)
+
+
+async def _poll_options_async():
+    import asyncio as aio
+    from app.domain.ingestion.market_data_fetcher import OptionChainFetcher
+    from app.shared.redis_client import GetRedisClient
+    from app.shared.database import GetDatabasePool
+    from app.shared.constants import Channels, RedisKeys, TTL
+
+    redis = await GetRedisClient()
+    db_pool = await GetDatabasePool()
+    fetcher = OptionChainFetcher()
+    await fetcher.initialise()
+    now = datetime.now(timezone.utc)
+
+    try:
+        for symbol in _WATCHLIST:
+            data = await fetcher.fetch(symbol)
+            if not data:
+                continue
+
+            # Cache in Redis
+            cache_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol.upper())
+            await redis.set(cache_key, json.dumps(data, default=str), ex=TTL.MARKET_OPTIONS)
+
+            # Insert options into PostgreSQL TickData
+            async with db_pool.acquire() as conn:
+                inserts = []
+                for expiry, chain_ticks in data["chains"].items():
+                    for tick in chain_ticks:
+                        expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+                        inserts.append((
+                            now,
+                            symbol.upper(),
+                            "NSE",
+                            tick["type"], # CE or PE
+                            tick["last_price"],
+                            tick["oi"],
+                            tick["volume"],
+                            expiry_date,
+                            tick["strike"]
+                        ))
+
+                if inserts:
+                    await conn.executemany(
+                        """
+                        INSERT INTO TickData 
+                        (Timestamp, Symbol, Exchange, InstrumentType, LastPrice, OpenInterest, Volume, ExpiryDate, StrikePrice)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        """,
+                        inserts
+                    )
+
+            # Publish options update event
+            channel = Channels.OPTIONS_UPDATED.format(symbol=symbol.upper())
+            # Send summary (not full chain — too large for pub/sub)
+            summary_event = {
+                "symbol": symbol.upper(),
+                "spot_price": data["spot_price"],
+                "expiry_dates": data["expiry_dates"],
+                "summary": data["summary"],
+            }
+            await redis.publish(channel, json.dumps(summary_event, default=str))
+
+            Logger.info("[%s] Options cached & %d ticks written to DB", symbol, sum(len(c) for c in data["chains"].values()))
+
+            # Rate limit between symbols to avoid NSE blocking
+            await aio.sleep(1.5)
+    finally:
+        await fetcher.close()

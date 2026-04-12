@@ -1,251 +1,183 @@
-# AlphaStreams — Quantitative Sentiment Analytics
+# AlphaStreams V2 — Event-Driven Quantitative Analytics using NLP and ML
 
-A Python-based **Event-Driven Analytics Engine** that combines **Financial News Sentiment** (scored by FinBERT AI) with **Real-Time F&O Options Analytics** (Put-Call Ratio, Implied Volatility, Anomaly Detection) to generate actionable trading signals and webhook alerts.
+A Python-based **Event-Driven Modular Monolith** that combines **Financial News Sentiment** (scored by FinBERT AI) with **Real-Time F&O Options Analytics** to generate complete market overviews and real-time streaming updates.
 
-Built with **FastAPI, Celery, Redis, TimescaleDB, SciPy, and PyTorch**.
+Built with **FastAPI, Celery, Redis Pub/Sub, TimescaleDB, and PyTorch**.
 
 ---
 
-## 💡 Event-Driven Data Pipelines (What It Does)
+## 🛠 Tech Stack
 
-Alpha Streams works like an institutional quant fund, gathering evidence from three completely independent data pipelines before firing an alert.
+### Backend Infrastructure
 
-### 🌊 Pipeline A: News Sentiment (`/NewsSentiment`)
-**The "Confirming Indicator" (Public Narrative)**
-- Reads financial news articles about your watchlist (Reliance, NIFTY, etc.).
-- Uses the **FinBERT AI model** to syntactically score if the text is *Bullish*, *Bearish*, or *Neutral*.
-- Computes **Exponential Moving Averages (EMA)** to mathematically track how overall market emotion is shifting over 24-48 hours.
+*   **Language:** Python 3.11+ (Asynchronous)
+*   **Web Framework:** [FastAPI](https://fastapi.tiangolo.com/) (ASGI) with Uvicorn
+*   **Task Queue:** [Celery](https://docs.celeryq.dev/en/stable/) (Distributed Task Management)
+*   **Real-time Engine:** [WebSockets](https://fastapi.tiangolo.com/advanced/websockets/) for live push-notifications
+*   **Monitoring:** [Flower](https://flower.readthedocs.io/en/latest/) (Real-time task dashboard)
 
-### 🌊 Pipeline B: Quantitative Math Engine (`/Derivatives`)
-**The "Leading Indicator" (Smart Money / Institutional Footprint)**
-- Retail investors buy stocks, but institutions hedge with **Derivatives (F&O)**.
-- Fetches real-time Options Chains directly from **NSE India**.
-- Computes **Put-Call Ratios (PCR)** (Are billionaires placing bearish or bullish bets?).
-- Extracts **Implied Volatility (IV)** by perfectly backward-solving the Nobel Prize-winning **Black-Scholes-Merton** formula using `SciPy`.
-- Flags **Volume Anomalies** when sudden, massive institutional sweeps occur.
+### Databases & Messaging
 
-### 🌊 Pipeline C: Machine Learning Forecaster (`/MLForecasting`)
-**The "Statistical Engine" (End-of-Day Predictions)**
-- Fetches 20-years of OHLCV daily data using `yfinance` across a cross-asset macro watchlist (Indian Indices + Gold, Silver, Brent Crude).
-- Converts bare price action into **10 vectorized, scale-invariant features**: RSI 14, EMA 9/21 Percentage Distances, Bollinger Band Widths & Relative Position, Multi-day Returns, Volume Momentum, and a **Sentiment Proxy** (contrarian mean-reversion signal, overridden with live FinBERT EMA sentiment during inference).
-- Groups data into 21-day overlapping sequences (forming 3D Tensors).
-- Feeds the 21-day sequences into a highly optimized **PyTorch 1D-Convolutional Neural Network (CNN)** (GPU-accelerated via CUDA passthrough).
-- Trains with **100 epochs, StepLR learning rate decay, early stopping (patience=10), and best-model checkpoint saving**.
-- Predicts a percentage probability (>50% true probability boundary) of whether the stock will open Bullish or Bearish tomorrow.
+*   **Time-Series DB:** [TimescaleDB](https://www.timescale.com/) (PostgreSQL 15) for high-performance tick storage
+*   **In-Memory Store:** [Redis 7](https://redis.io/) (Used as Cache, Message Broker, and Event Bus)
+*   **Messaging:** Redis Pub/Sub (Native Domain-Driven Event architecture)
 
-### The User Flow
+### AI & Machine Learning
 
+*   **Deep Learning:** [PyTorch](https://pytorch.org/) (Custom 1D-CNN for Quant forecasting)
+*   **NLP / LLM:** [HuggingFace Transformers](https://huggingface.co/docs/transformers/index) (FinBERT for narrative analysis)
+*   **Feature Engineering:** [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/), and [SciPy](https://scipy.org/)
+
+### Data Sources
+
+*   **Market History:** [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance API)
+*   **News Intelligence:** [NewsAPI](https://newsapi.org/) (Global financial headline streaming)
+*   **Derivative Data:** Native NSE India Scraping/API Integration
+
+### DevOps
+
+*   **Containerization:** Docker & Docker Compose
+*   **Architecture:** Domain-Driven Design (DDD) Modular Monolith
+
+---
+
+## 💡 The Architecture (Domain-Driven Design)
+
+AlphaStreams V2 is designed using Domain-Driven Design (DDD) with strict boundaries. All cross-domain communication happens exclusively through an asynchronous **Redis Event Bus**.
+
+### 🌊 Domain 1: Data Ingestion (`/app/domain/ingestion`)
+
+**The Market Observers**
+
+*   Independently polls external APIs (NewsAPI, yfinance, NSE India).
+*   Automatically persists historical ticks to the `TickData` timescale hypertable.
+*   Analyzes rapid price action to detect and publish `Flash Drops`, `Spikes`, and `Volume Anomalies`.
+*   **Publishes Events**: `headlines.fetched`, `market.price_updated`, `market.options_updated`, `market.price_trigger`.
+
+### 🌊 Domain 2: Sentiment Analytics (`/app/domain/sentiment`)
+
+**The "Confirming Indicator" & Natural Language Engine**
+
+*   A stateless, real-time subscriber mapping directly onto the Redis Event Bus.
+*   Uses **FinBERT AI** to syntactically score new headlines (*Bullish*, *Bearish*, *Neutral*).
+*   Immediately processes `price_trigger` anomalies to inject synthetic market biases into the sentiment database.
+*   Calculates continuously rolling **multi-timeframe aggregations** (Intraday, Daily, Weekly, Monthly) to measure momentum and trend drift over time.
+*   **Publishes Events**: `sentiment.scored`, `sentiment.aggregate_updated`.
+
+### 🌊 Domain 3: API Gateway (`/app/domain/api`)
+
+**The Presentation Layer**
+
+*   Provides lightning-fast unified REST endpoints via Redis caching.
+*   Offers a seamless WebSocket interface to stream real-time price ticks, options shifts, and shifting FinBERT sentiment to the frontend UI as soon as they occur.
+
+### 🌊 Domain 4: Forecasting (`/app/domain/forecasting`)
+
+**The Quantitative ML Engine (CNN Confluence Check)**
+
+*   Runs a strictly isolated CPU-based PyTorch 1D Convolutional Neural Network (`QuantCNN1D`).
+*   Automatically pulls the last 60 days of closing data (`yfinance`), engineers 10 scale-invariant macro/technical features (RSI, EMAs, Bollinger Bands, Volume Momentum), and reshapes them into a 21-day timeline tensor.
+*   Injects the live FinBERT sentiment directly into the `sentiment_proxy` tensor dimension.
+*   Serves as the ultimate "Devil's Advocate" **Confluence Check**, yielding a technical `BULLISH/BEARISH` prediction to validate or diverge from the NLP news analysis.
+
+---
+
+## 📊 Event-Driven Flow
+
+```mermaid
+graph LR
+    subgraph Ingestion
+        A[News API] --> C[Celery Beat]
+        B[yfinance + NSE] --> C
+    end
+
+    subgraph Redis_Event_Bus
+        E1[headlines.fetched]
+        E2[market.price_completed]
+        E3[market.price_trigger]
+    end
+
+    subgraph Sentiment
+        D[Native Subscriber]
+        F[FinBERT Engine]
+        G[Timeframe Aggregator]
+    end
+
+    subgraph API_Gateway
+        H[REST Endpoint]
+        J[WebSockets]
+    end
+
+    subgraph Forecasting
+        K[PyTorch Engine]
+        L[CNN1D Model Weights]
+    end
+
+    C --> E1
+    C --> E2
+    C --> E3
+    E1 --> D
+    E3 --> D
+    D --> F
+    F --> G
+    G -->|"aggregate_updated"| J
+    E1 --> J
+    E2 --> J
+    H --> K
+    K --> L
+    L -->|"Confluence Check"| H
 ```
-You configure watchlist symbols in .env (e.g., NIFTY, RELIANCE, HDFCBANK)
-                 ↓
-Platform automatically fetches news + option chain data every 60-120 seconds
-                 ↓
-AI scores news sentiment → Moving Average tracks the trend
-Options data → PCR, IV, and anomalies are computed
-                 ↓
-If a signal fires → Webhook alert sent to your endpoint
-                 ↓
-You query the REST API anytime to see latest analytics:
-  GET /v1/sentiment/NIFTY     → Latest FinBERT score
-  GET /v1/signals/NIFTY       → Sentiment EMA + crossovers
-  GET /v1/events/NIFTY        → Historical timeline of all events
-  GET /v1/derivatives/NIFTY   → PCR, IV surface, and anomalies
-  GET /v1/predictions/NIFTY   → CNN AI next-day forecast
+
+---
+
+## 🚀 Getting Started
+
+This system is completely dockerized. All configurations are driven via the `.env` file.
+
+1.  **Copy the Environment Template**
+
+    ```bash
+    cp .env.template .env
+    ```
+
+    Add your `NEWS_API_KEY` to `.env`.
+
+2.  **Start the Infrastructure**
+
+    ```bash
+    docker compose up -d
+    ```
+
+    *Note: PyTorch initializes securely in CPU mode to drastically reduce Docker image size requirements by bypassing heavy CUDA dependencies.*
+
+3.  **Initialize the Database Schema**
+
+    *(First Boot Only)*
+
+    ```bash
+    docker compose cp scripts/init_schema.sql postgres:/tmp/init_schema.sql
+    docker compose exec postgres psql -U postgres -d NexusQuantDB -f /tmp/init_schema.sql
+    ```
+
+---
+
+## 🧪 Interactive API Testing
+
+The Celery scheduler and Sentiment subscribers run autonomously in the background! As data flows in, you can query the API.
+
+### 1. Unified Analysis Report (REST)
+
+Returns the live options chain surface, current price, latest headlines, and the multi-timeframe FinBERT aggregations for any symbol.
+
+```bash
+curl http://localhost:8000/v1/analyze/NIFTY
 ```
 
----
+### 2. Live WebSocket Streaming (Push)
 
-## 📊 How Data Flows Through the System
+Using a websocket client (e.g. VS Code Bruno or Postman), connect to:
+`ws://localhost:8000/ws/NIFTY`
+Events will spontaneously push to you whenever new prices, options, headlines, or sentiment updates enter the architecture!
 
-```
-NewsAPI ──→ NewsIngestor ──→ [nlp queue] ──→ FinBERT AI ──→ SignalComposer ──→ AlertDispatcher
-                                                                  ↑
-NSE India ──→ TickIngestor ──→ [derivatives queue] ──→ MetricsComputer ──→ AnomalyDetector ─┘
-                  │                                        │
-                  ▼                                        ▼
-             TickData (DB)                          Redis (PCR/IV cache)
-                                                        │
-                                                        ▼
-                                              FastAPI REST Endpoints
-```
-
-Each arrow is a **Celery message queue** — meaning every stage runs independently and can be scaled horizontally.
-
----
-
-## 🛠 Prerequisites
-1. **Docker Desktop** installed (WSL2 recommended for Windows).
-2. A `.env` file copied from the template containing `NEWS_API_KEY`.
-
----
-
-## 🚀 How to Run the Platform
-
-This project relies on a deeply optimized `docker-compose.yml` that mounts your local `/app` directory into the containers. This means **you do not need to rebuild the containers when editing Python code.**
-
-1. **Start the Infrastructure**
-   ```bash
-   docker compose up -d
-   ```
-   *(Note: Redis and Postgres ports are now strictly internal to the Docker network for security. They are no longer exposed to your host machine's port 5432 or 6379, preventing Windows permission conflicts.)*
-
-2. **Initialize the Database Schema** (First Boot Only)
-   If you destroy the `pg_data` volume, you must instantiate the tables and indexes:
-   ```bash
-   docker compose cp scripts/init_schema.sql postgres:/tmp/init_schema.sql
-   docker compose exec postgres psql -U postgres -d AlphaStreamsDB -f /tmp/init_schema.sql
-   ```
-
-3. **Stop the Infrastructure**
-   ```bash
-   docker compose down
-   ```
-
----
-
-## 🔁 Changing the Python Code (Hot-Reload)
-Because the `app/` folder is mounted globally via Docker `volumes`:
-- The **FastAPI App** running `uvicorn` will instantly restart itself in `<1ms` the moment you save a file.
-- The **Celery Workers** (`worker-nlp`, `worker-signals`, etc.) will instantly use your new Python logic the next time they receive a task from the queue. You don't need to do anything!
-*(If you change `requirements.txt` to add a completely new library, only then must you run `docker compose up --build -d`)*.
-
----
-
-## 🧪 Testing the Pipeline End-to-End
-
-### Test the News Sentiment Pipeline
-
-1. **Clear the Deduplication Cache** (optional—tricks the platform into thinking old news is new):
-   ```bash
-   docker compose exec redis redis-cli FLUSHALL
-   ```
-
-2. **Manually Force Ingestion:**
-   ```bash
-   docker compose exec app python -m scripts.TestIngest
-   ```
-   *Give the Celery Worker ~15 seconds to crunch the FinBERT numbers.*
-
-3. **Check the API Endpoints:**
-   ```bash
-   curl http://localhost:8000/v1/sentiment/RELIANCE
-   curl http://localhost:8000/v1/signals/RELIANCE
-   curl http://localhost:8000/v1/events/RELIANCE
-   ```
-
-### Test the Derivatives Analytics Pipeline
-
-1. **Run the derivatives test script:**
-   ```bash
-   docker compose exec app python -m scripts.TestDerivatives
-   ```
-   This fetches live option chain data from **NSE India**, computes PCR and IV, and prints results.
-
-2. **Check the Derivatives API:**
-   ```bash
-   curl http://localhost:8000/v1/derivatives/NIFTY
-   curl http://localhost:8000/v1/derivatives/HDFCBANK
-   ```
-
-> **Note:** The NSE API returns live data only during market hours (9:15 AM – 3:30 PM IST, Mon-Fri). Outside these hours, the system gracefully reports "No ticks available" without generating synthetic data.
-
-### Test the ML Prediction Pipeline
-
-1. **Train the CNN model** (first time only):
-   ```bash
-   docker compose exec app python -m scripts.TrainCNNPredictor
-   ```
-
-2. **Trigger predictions manually:**
-   ```bash
-   docker compose exec app python -c "from app.MLForecasting.Tasks import RunDailyPredictionsTask; RunDailyPredictionsTask.delay()"
-   ```
-
-3. **Check the Predictions API:**
-   ```bash
-   curl http://localhost:8000/v1/predictions/NIFTY
-   ```
-
-### Testing Endpoints with Bruno (VS Code Extension)
-
-Instead of using `curl` in the terminal, you can visually test all API endpoints using the **Bruno** extension for VS Code:
-
-1. **Install Bruno:** Open VS Code → Extensions (`Ctrl+Shift+X`) → Search for **"Bruno"** → Install.
-2. **Create a new request** in Bruno and point it to any of the following endpoints:
-
-   | Method | URL | Description |
-   |--------|-----|-------------|
-   | `GET` | `http://localhost:8000/v1/sentiment/NIFTY` | Latest FinBERT sentiment score |
-   | `GET` | `http://localhost:8000/v1/signals/NIFTY` | Sentiment EMA + crossover events |
-   | `GET` | `http://localhost:8000/v1/events/NIFTY` | Historical event timeline |
-   | `GET` | `http://localhost:8000/v1/derivatives/NIFTY` | PCR, IV surface, anomalies |
-   | `GET` | `http://localhost:8000/v1/predictions/NIFTY` | CNN AI next-day forecast |
-
-3. **Hit Send** — Bruno will display the JSON response with syntax highlighting, making it easy to inspect the data structure and verify the pipeline outputs.
-
-> **Tip:** Replace `NIFTY` with any watchlist symbol (e.g., `RELIANCE`, `BANKNIFTY`, `TCS`, `HDFCBANK`, `INFY`, `ICICIBANK`) to test different stocks.
-
----
-
-## ☁️ Cloud Deployment (Production)
-
-To deploy the AlphaStreams to a remote cloud server (e.g., AWS EC2, DigitalOcean Droplet, Linode):
-
-1. **Clone your repository** onto the cloud instance:
-   ```bash
-   git clone <your-repo-url>
-   cd AlphaStreams
-   ```
-2. **Configure `.env`**:
-   Ensure you create a `.env` file containing your production API keys. **Never commit `.env` to Git.**
-3. **Start the Engine**:
-   Run the platform in detached mode:
-   ```bash
-   docker compose up --build -d
-   ```
-4. **Accessing the APIs**:
-   By default, the `docker-compose.yml` binds to `0.0.0.0`, meaning your API will be available publicly at `http://<YOUR_SERVER_IP>:8000`. 
-
-**Security Warning:** If deploying to production, it is highly recommended to:
-- Use an **Nginx Reverse Proxy** with Let's Encrypt (Certbot) to secure traffic over HTTPS.
-- Restrict access to the Flower monitoring dashboard (`Port 5555`) using a firewall (e.g., `ufw`) or by locking `docker-compose.yml` Flower ports back to `127.0.0.1` and using an SSH Tunnel from your local machine.
-
----
-
-## ⚙️ Key Configuration (.env)
-
-| Variable | Description | Default |
-|:---------|:------------|:--------|
-| `WATCHLIST_SYMBOLS` | Comma-separated stock symbols to track | `NIFTY,BANKNIFTY,RELIANCE,...` |
-| `NEWS_POLL_INTERVAL_SECONDS` | How often to check for new articles | `120` |
-| `TICK_POLL_INTERVAL_SECONDS` | How often to fetch option chain data | `60` |
-| `NEWS_API_KEY` | Your NewsAPI.org API key | *(required)* |
-
----
-
-## 🧹 Maintenance: Shrinking Docker Disk Space (WSL2)
-If you run `docker compose build` frequently, Docker Desktop's `ext4.vhdx` virtual disk file will expand dynamically but **will not shrink automatically**, silently eating gigabytes of your SSD.
-
-To permanently reclaim the space:
-
-1. Wipe unused dangling images:
-   ```bash
-   docker system prune -f
-
-   docker system prune -a -f
-   ```
-2. Shut down WSL entirely from a PowerShell Administrator window:
-   ```powershell
-   wsl --shutdown
-   ```
-3. Run `diskpart` in PowerShell to compact the drive (replace the path with your exact user path):
-   ```powershell
-   diskpart
-   
-   # Inside the DISKPART> prompt:
-   select vdisk file="Path to docker_data.vhdx file"
-   attach vdisk readonly
-   compact vdisk
-   detach vdisk
-   exit
-   ```
+> [!NOTE]
+> **On Closed Markets**: Rather than crashing or blank-screening, the system gracefully degrades outside of NSE trading hours (9:15 AM – 3:30 PM IST), relying on Redis closures and asynchronous persistence to serve the last-known "CLOSED" state, while continuing to poll 24/7 web news APIs for weekend sentiment!
