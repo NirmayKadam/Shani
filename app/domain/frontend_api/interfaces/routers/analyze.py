@@ -9,6 +9,15 @@ from app.domain.frontend_api.interfaces.schemas import AnalysisResponse
 Logger = logging.getLogger(__name__)
 
 Router = APIRouter()
+_Service = None
+
+
+def _get_service():
+    global _Service
+    if _Service is None:
+        from app.domain.frontend_api.application.services.analysis_service import AnalysisService
+        _Service = AnalysisService()
+    return _Service
 
 
 @Router.get("/analyze/{symbol}", response_model=AnalysisResponse)
@@ -40,9 +49,7 @@ async def AnalyzeSymbol(symbol: str):
         )
 
     try:
-        from app.domain.frontend_api.application.services.analysis_service import AnalysisService
-
-        service = AnalysisService()
+        service = _get_service()
         return await service.analyze(symbol_upper)
     except Exception as exc:
         Logger.error("[%s] Analysis failed: %s", symbol_upper, exc, exc_info=True)
