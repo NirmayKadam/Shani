@@ -123,6 +123,16 @@ class AggregateUpdatedV1(VersionedEvent):
         self.event_type = "sentiment.aggregate_updated"
 
 
+@dataclass(slots=True)
+class AnalysisRefreshRequestedV1(VersionedEvent):
+    symbol: str = ""
+    reason: str = "stale_or_partial_read_model"
+    requested_at: str = field(default_factory=_utc_now_iso)
+
+    def __post_init__(self) -> None:
+        self.event_type = "analysis.refresh_requested"
+
+
 # Backward-compatible aliases (existing callers import these names).
 HeadlineFetchedEvent = HeadlineFetchedV1
 PriceUpdatedEvent = PriceUpdatedV1
@@ -130,6 +140,7 @@ OptionsUpdatedEvent = OptionsUpdatedV1
 PriceTriggerEvent = PriceTriggerV1
 SentimentScoredEvent = SentimentScoredV1
 AggregateUpdatedEvent = AggregateUpdatedV1
+AnalysisRefreshRequestedEvent = AnalysisRefreshRequestedV1
 
 
 __all__ = [
@@ -140,10 +151,12 @@ __all__ = [
     "PriceTriggerV1",
     "SentimentScoredV1",
     "AggregateUpdatedV1",
+    "AnalysisRefreshRequestedV1",
     "HeadlineFetchedEvent",
     "PriceUpdatedEvent",
     "OptionsUpdatedEvent",
     "PriceTriggerEvent",
     "SentimentScoredEvent",
     "AggregateUpdatedEvent",
+    "AnalysisRefreshRequestedEvent",
 ]
