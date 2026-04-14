@@ -231,3 +231,134 @@ async def _poll_options_async():
             await aio.sleep(1.5)
     finally:
         await fetcher.close()
+
+
+@_get_celery_app().task(name="ingestion.refresh_symbol", queue="ingestion", bind=True)
+def RefreshSymbolTask(self, symbol: str):
+    """On-demand refresh for a single symbol (API-triggered)."""
+    try:
+        loop = _get_or_create_loop()
+        loop.run_until_complete(_refresh_symbol_async(symbol))
+    except Exception as exc:
+        Logger.error("RefreshSymbolTask failed for %s: %s", symbol, exc, exc_info=True)
+        raise self.retry(exc=exc, countdown=20, max_retries=2)
+
+
+async def _refresh_symbol_async(symbol: str):
+    """Refreshes market + options + headlines for one symbol and publishes events."""
+    symbol_upper = symbol.strip().upper()
+
+    from app.config import GetSettings
+    from app.domain.ingestion.market_data_fetcher import MarketPriceFetcher, OptionChainFetcher
+    from app.domain.ingestion.news_fetcher import NewsFetcher
+    from app.domain.ingestion.price_triggers import PriceTriggerDetector
+    from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.database import GetDatabasePool
+    from app.shared.redis_client import GetRedisClient
+
+    redis = await GetRedisClient()
+    db_pool = await GetDatabasePool()
+    now = datetime.now(timezone.utc)
+
+    # 1) Price snapshot
+    try:
+        price_fetcher = MarketPriceFetcher()
+        price_data = await price_fetcher.fetch(symbol_upper)
+        if price_data:
+            await redis.set(
+                RedisKeys.MARKET_PRICE.format(symbol=symbol_upper),
+                json.dumps(price_data, default=str),
+                ex=TTL.MARKET_PRICE,
+            )
+
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO TickData
+                    (Timestamp, Symbol, Exchange, InstrumentType, LastPrice, Volume)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    now,
+                    symbol_upper,
+                    "NSE",
+                    "EQ",
+                    price_data.get("last_price"),
+                    price_data.get("volume", 0),
+                )
+
+            await redis.publish(
+                Channels.PRICE_UPDATED.format(symbol=symbol_upper),
+                json.dumps(price_data, default=str),
+            )
+
+            trigger_detector = PriceTriggerDetector(redis)
+            triggers = await trigger_detector.check(
+                symbol_upper,
+                current_price=price_data["last_price"],
+                current_volume=price_data.get("volume", 0),
+            )
+            for trigger in triggers:
+                await redis.publish(
+                    Channels.PRICE_TRIGGER.format(symbol=symbol_upper),
+                    json.dumps(trigger, default=str),
+                )
+    except Exception as exc:
+        Logger.warning("[%s] Refresh price step failed: %s", symbol_upper, exc)
+
+    # 2) Options snapshot
+    try:
+        option_fetcher = OptionChainFetcher()
+        await option_fetcher.initialise()
+        try:
+            options_data = await option_fetcher.fetch(symbol_upper)
+        finally:
+            await option_fetcher.close()
+
+        if options_data:
+            await redis.set(
+                RedisKeys.MARKET_OPTIONS.format(symbol=symbol_upper),
+                json.dumps(options_data, default=str),
+                ex=TTL.MARKET_OPTIONS,
+            )
+
+            await redis.publish(
+                Channels.OPTIONS_UPDATED.format(symbol=symbol_upper),
+                json.dumps(
+                    {
+                        "symbol": symbol_upper,
+                        "spot_price": options_data.get("spot_price"),
+                        "expiry_dates": options_data.get("expiry_dates", []),
+                        "summary": options_data.get("summary", {}),
+                    },
+                    default=str,
+                ),
+            )
+    except Exception as exc:
+        Logger.warning("[%s] Refresh options step failed: %s", symbol_upper, exc)
+
+    # 3) Headlines -> publish events for NLP worker pipeline
+    try:
+        cfg = GetSettings()
+        news_fetcher = NewsFetcher(api_key=cfg.NewsApiKey)
+        try:
+            headlines = await news_fetcher.fetch(symbol_upper, max_results=20)
+        finally:
+            await news_fetcher.close()
+
+        for h in headlines:
+            event = {
+                "symbol": symbol_upper,
+                "headline": h.get("headline", ""),
+                "content": h.get("content", ""),
+                "source_url": h.get("source_url", ""),
+                "source_name": h.get("source_name", ""),
+                "published_at": h.get("published_at", ""),
+            }
+            await redis.publish(
+                Channels.HEADLINE_FETCHED.format(symbol=symbol_upper),
+                json.dumps(event, default=str),
+            )
+    except Exception as exc:
+        Logger.warning("[%s] Refresh news step failed: %s", symbol_upper, exc)
+
+    Logger.info("[%s] On-demand refresh command completed", symbol_upper)
