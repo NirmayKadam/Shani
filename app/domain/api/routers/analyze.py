@@ -14,19 +14,15 @@ Router = APIRouter()
 @Router.get("/analyze/{symbol}", response_model=AnalysisResponse)
 async def AnalyzeSymbol(symbol: str):
     """
-    On-demand full analysis for a stock symbol.
+    Cache-first analysis endpoint.
 
-    Orchestrates:
-      1. Fetch current/last-close market data (yfinance)
-      2. Fetch latest 20 headlines (NewsAPI)
-      3. Score all headlines with FinBERT NLP
-      4. Compute multi-timeframe sentiment (intraday/daily/weekly/monthly)
-      5. Fetch option chain + compute PCR
+    Behavior:
+      1. Reads latest Redis/Postgres read-model snapshot.
+      2. Returns freshness metadata (`generated_at`, `stale`, `partial`).
+      3. Enqueues background refresh when snapshot is stale/partial.
 
-    Always returns data — even when market is closed (uses last-close price).
-
-    Note: First request may take ~15-20s due to FinBERT model loading.
-    Subsequent requests are fast (<3s).
+    Heavy fetch + NLP scoring is intentionally performed in worker flows,
+    not in the request thread.
     """
     symbol_upper = symbol.strip().upper()
 
@@ -43,13 +39,11 @@ async def AnalyzeSymbol(symbol: str):
             },
         )
 
-    # Run the full analysis pipeline
     try:
         from app.domain.api.services.analysis_service import AnalysisService
-        service = AnalysisService()
-        result = await service.analyze(symbol_upper)
-        return result
 
+        service = AnalysisService()
+        return await service.analyze(symbol_upper)
     except Exception as exc:
         Logger.error("[%s] Analysis failed: %s", symbol_upper, exc, exc_info=True)
         raise HTTPException(

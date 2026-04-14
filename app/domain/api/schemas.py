@@ -73,6 +73,12 @@ class TechnicalForecastResponse(BaseModel):
 
 # ── Full Analysis Response ─────────────────────────────────────
 
+class FreshnessMetadata(BaseModel):
+    generated_at: str = ""
+    stale: bool = True
+    partial: bool = True
+
+
 class AnalysisResponse(BaseModel):
     symbol: str
     market_data: Optional[MarketDataResponse] = None
@@ -80,6 +86,9 @@ class AnalysisResponse(BaseModel):
     sentiment: Optional[SentimentResponse] = None
     options_summary: Optional[OptionsSummaryResponse] = None
     technical_forecast: Optional[TechnicalForecastResponse] = None
+    generated_at: str = ""
+    stale: bool = True
+    partial: bool = True
 
 
 # ── Symbols Response ───────────────────────────────────────────
