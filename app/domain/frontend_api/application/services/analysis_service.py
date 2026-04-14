@@ -1,5 +1,6 @@
 import json
 import logging
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -11,6 +12,7 @@ from app.domain.frontend_api.interfaces.schemas import (
     OptionsSummaryResponse,
     SentimentResponse,
     SentimentTimeframeData,
+    TechnicalForecastResponse,
 )
 from app.shared.constants import RedisKeys, Timeframe
 
@@ -40,6 +42,7 @@ class AnalysisService:
         headlines = await self._read_headlines(symbol_upper)
         sentiment = await self._read_sentiment(symbol_upper)
         options_summary = await self._read_options(symbol_upper)
+        technical_forecast = await self._read_technical_forecast(symbol_upper)
 
         freshness = self._build_freshness(
             market_data=market_data,
@@ -49,7 +52,8 @@ class AnalysisService:
         )
 
         if freshness.stale or freshness.partial:
-            await self._trigger_background_refresh(symbol_upper)
+            task = asyncio.create_task(self._trigger_background_refresh(symbol_upper))
+            task.add_done_callback(self._log_background_task_error)
 
         return AnalysisResponse(
             symbol=symbol_upper,
@@ -57,7 +61,7 @@ class AnalysisService:
             headlines=headlines,
             sentiment=sentiment,
             options_summary=options_summary,
-            technical_forecast=None,
+            technical_forecast=technical_forecast,
             generated_at=freshness.generated_at,
             stale=freshness.stale,
             partial=freshness.partial,
@@ -199,6 +203,26 @@ class AnalysisService:
             Logger.warning("[%s] Failed reading options snapshot cache: %s", symbol, exc)
             return OptionsSummaryResponse(available=False)
 
+    async def _read_technical_forecast(self, symbol: str) -> Optional[TechnicalForecastResponse]:
+        try:
+            from app.shared.redis_client import GetRedisClient
+
+            redis = await GetRedisClient()
+            cached = await redis.get(RedisKeys.ML_PREDICTION.format(symbol=symbol))
+            if not cached:
+                return None
+
+            payload = json.loads(cached)
+            return TechnicalForecastResponse(
+                strategy=payload.get("strategy", "QuantCNN1D"),
+                prediction=payload.get("prediction", "NEUTRAL"),
+                confidence=float(payload.get("confidence", 0.0)),
+                confluence_status=payload.get("confluence_status", "NEUTRAL"),
+            )
+        except Exception as exc:
+            Logger.warning("[%s] Failed reading technical forecast cache: %s", symbol, exc)
+            return None
+
     async def _trigger_background_refresh(self, symbol: str) -> None:
         """Fire-and-forget refresh request event to ingestion workers."""
         try:
@@ -214,6 +238,14 @@ class AnalysisService:
             Logger.info("[%s] Published analysis refresh request event", symbol)
         except Exception as exc:
             Logger.warning("[%s] Failed to publish background refresh request: %s", symbol, exc)
+
+    @staticmethod
+    def _log_background_task_error(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            Logger.warning("Background refresh task failed: %s", exc)
 
     def _build_freshness(
         self,

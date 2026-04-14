@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.config import GetSettings
+from app.domain.nlp_logic.application.inference import InferenceEngine
 from app.domain.nlp_logic.domain.analyzer import SentimentAnalyzer
 from app.domain.nlp_logic.domain.finbert_engine import FinBertEngine
 from app.domain.nlp_logic.domain.timeframes import TimeframeComputer
@@ -32,6 +33,7 @@ _RETRY_IDLE_MS = int(os.getenv("SENTIMENT_RETRY_IDLE_MS", "30000"))
 class SubscriberDependencies:
     analyzer: SentimentAnalyzer
     timeframe_computer: TimeframeComputer
+    inference_engine: InferenceEngine
     redis: object
     db_pool: object
     stream_bus: DurableEventStream
@@ -102,7 +104,12 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
     Logger.info("[%s] Scored & Saved: %s → %s (%.3f)", symbol, scored_event.headline[:50], scored_event.sentiment_label, scored_event.sentiment_score)
 
     # 3. Recompute Aggregates and Publish
-    await recompute_and_publish_aggregates(symbol.upper(), deps)
+    tf_data = await recompute_and_publish_aggregates(symbol.upper(), deps)
+    await compute_and_cache_ml_prediction(
+        symbol=symbol.upper(),
+        deps=deps,
+        tf_data=tf_data,
+    )
 
 
 async def handle_price_trigger(channel: str, event: dict, deps: SubscriberDependencies) -> None:
@@ -151,10 +158,15 @@ async def handle_price_trigger(channel: str, event: dict, deps: SubscriberDepend
     Logger.warning("[%s] Injecting synthetic AI signal for trigger %s: %s (%.2f)", symbol, trigger_type, label, score)
 
     # Recompute aggregates so the synthetic sentiment affects the timelines immediately
-    await recompute_and_publish_aggregates(symbol.upper(), deps)
+    tf_data = await recompute_and_publish_aggregates(symbol.upper(), deps)
+    await compute_and_cache_ml_prediction(
+        symbol=symbol.upper(),
+        deps=deps,
+        tf_data=tf_data,
+    )
 
 
-async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependencies) -> None:
+async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependencies) -> dict[str, dict]:
     """Queries Postgres for the last 30 days of scores for a symbol and recomputes multi-timeframe sentiment."""
     async with deps.db_pool.acquire() as conn:
         rows = await conn.fetch(
@@ -167,7 +179,7 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
         )
 
     if not rows:
-        return
+        return {}
 
     # Format for TimeframeComputer
     headline_list = []
@@ -178,7 +190,8 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
             "published_at": r["published_at"].isoformat()
         })
 
-    tf_data = deps.timeframe_computer.compute_all(headline_list)
+    # CPU-bound window filtering and aggregation should not block the event loop.
+    tf_data = await asyncio.to_thread(deps.timeframe_computer.compute_all, headline_list)
 
     # Publish each aggregate
     for tf, agg in tf_data.items():
@@ -197,6 +210,42 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
         await deps.stream_bus.publish(Streams.AGGREGATE_UPDATED, agg_event)
 
     Logger.info("[%s] Recomputed multi-timeframe aggregates (scored items: %d)", symbol, len(headline_list))
+    return tf_data
+
+
+async def compute_and_cache_ml_prediction(
+    *,
+    symbol: str,
+    deps: SubscriberDependencies,
+    tf_data: dict[str, dict],
+) -> None:
+    """Compute QuantCNN prediction out-of-band and cache it for API reads."""
+    if not deps.inference_engine.is_loaded:
+        return
+
+    daily = tf_data.get("daily", {})
+    current_label = str(daily.get("label", "NEUTRAL"))
+    current_score = float(daily.get("avg_score", 0.0))
+
+    prediction = await asyncio.to_thread(
+        deps.inference_engine.predict,
+        symbol,
+        current_label,
+        current_score,
+    )
+    if not prediction:
+        return
+
+    payload = {
+        **prediction,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await deps.redis.set(
+        RedisKeys.ML_PREDICTION.format(symbol=symbol),
+        json.dumps(payload),
+        ex=TTL.ML_PREDICTION,
+    )
+    Logger.info("[%s] Cached QuantCNN prediction", symbol)
 
 
 async def main():
@@ -208,10 +257,12 @@ async def main():
     db_pool = await GetDatabasePool()
     finbert_engine = FinBertEngine.get_instance(cache_path=cfg.ModelCacheDir)
     analyzer = SentimentAnalyzer(finbert_engine)
+    inference_engine = InferenceEngine.get_instance()
 
     deps = SubscriberDependencies(
         analyzer=analyzer,
         timeframe_computer=TimeframeComputer(),
+        inference_engine=inference_engine,
         redis=redis,
         db_pool=db_pool,
         stream_bus=DurableEventStream(redis),
