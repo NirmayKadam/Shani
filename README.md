@@ -2,7 +2,7 @@
 
 A Python-based **Event-Driven Modular Monolith** that combines **Financial News Sentiment** (scored by FinBERT AI) with **Real-Time F&O Options Analytics** to generate complete market overviews and real-time streaming updates.
 
-Built with **FastAPI, Celery, Redis Pub/Sub, TimescaleDB, and PyTorch**.
+Built with **FastAPI, Celery, Redis Streams + Pub/Sub, TimescaleDB, and PyTorch**.
 
 ---
 
@@ -20,7 +20,7 @@ Built with **FastAPI, Celery, Redis Pub/Sub, TimescaleDB, and PyTorch**.
 
 *   **Time-Series DB:** [TimescaleDB](https://www.timescale.com/) (PostgreSQL 15) for high-performance tick storage
 *   **In-Memory Store:** [Redis 7](https://redis.io/) (Used as Cache, Message Broker, and Event Bus)
-*   **Messaging:** Redis Pub/Sub (Native Domain-Driven Event architecture)
+*   **Messaging:** Redis Streams (durable) + Redis Pub/Sub (ephemeral live fan-out)
 
 ### AI & Machine Learning
 
@@ -44,6 +44,21 @@ Built with **FastAPI, Celery, Redis Pub/Sub, TimescaleDB, and PyTorch**.
 ## 💡 The Architecture (Domain-Driven Design)
 
 AlphaStreams V2 is designed using Domain-Driven Design (DDD) with strict boundaries. All cross-domain communication happens exclusively through an asynchronous **Redis Event Bus**.
+
+### Durable vs Ephemeral Topics
+
+| Topic | Transport | Purpose |
+|---|---|---|
+| `stream:headlines.fetched` | Durable (Redis Stream + consumer group) | Critical ingestion → NLP headline processing with retries/ack/DLQ. |
+| `stream:market.price_trigger` | Durable (Redis Stream + consumer group) | Critical ingestion → NLP trigger handling with retries/ack/DLQ. |
+| `stream:sentiment.scored` | Durable (Redis Stream) | Critical NLP output for downstream API/read-model consumers. |
+| `stream:sentiment.aggregate_updated` | Durable (Redis Stream) | Critical NLP aggregate updates for downstream API/read-model consumers. |
+| `headlines.fetched.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
+| `market.price_updated.{symbol}` | Ephemeral (Pub/Sub) | Live websocket updates. |
+| `market.options_updated.{symbol}` | Ephemeral (Pub/Sub) | Live websocket updates. |
+| `market.price_trigger.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
+| `sentiment.scored.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
+| `sentiment.aggregate_updated.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
 
 ### 🌊 Domain 1: Data Ingestion (`/app/domain/ingestion`)
 
