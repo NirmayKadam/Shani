@@ -1,6 +1,6 @@
 # app/domain/api/schemas.py — Pydantic response models for all API endpoints
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -57,7 +57,7 @@ class OptionsSummaryResponse(BaseModel):
     ce_oi: int = 0
     pe_oi: int = 0
     total_strikes: int = 0
-    expiry_dates: list[str] = []
+    expiry_dates: list[str] = Field(default_factory=list)
     available: bool = False
     last_updated: str = ""
 
@@ -82,7 +82,7 @@ class FreshnessMetadata(BaseModel):
 class AnalysisResponse(BaseModel):
     symbol: str
     market_data: Optional[MarketDataResponse] = None
-    headlines: list[HeadlineItem] = []
+    headlines: list[HeadlineItem] = Field(default_factory=list)
     sentiment: Optional[SentimentResponse] = None
     options_summary: Optional[OptionsSummaryResponse] = None
     technical_forecast: Optional[TechnicalForecastResponse] = None
