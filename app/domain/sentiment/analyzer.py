@@ -6,6 +6,8 @@
 import json
 import logging
 from typing import Optional
+
+from app.domain.sentiment.finbert_engine import FinBertEngine
 from datetime import datetime, timezone
 
 from app.shared.constants import SentimentLabel, RedisKeys, TTL
@@ -23,6 +25,9 @@ class SentimentAnalyzer:
         aggregate = analyzer.compute_aggregate(scored_headlines_list)
     """
 
+    def __init__(self, engine: Optional[FinBertEngine] = None):
+        self._Engine = engine
+
     async def score_headlines(self, headlines: list[dict]) -> list[dict]:
         """
         Score a batch of headlines with FinBERT.
@@ -33,8 +38,7 @@ class SentimentAnalyzer:
         if not headlines:
             return []
 
-        from app.domain.sentiment.finbert_engine import FinBertEngine
-        engine = FinBertEngine.get_instance()
+        engine = self._Engine or FinBertEngine.get_instance()
 
         # Combine headline + content for richer context, truncate to 512 chars
         texts = [
