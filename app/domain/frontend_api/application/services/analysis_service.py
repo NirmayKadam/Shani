@@ -200,14 +200,20 @@ class AnalysisService:
             return OptionsSummaryResponse(available=False)
 
     async def _trigger_background_refresh(self, symbol: str) -> None:
-        """Fire-and-forget refresh command to ingestion workers."""
+        """Fire-and-forget refresh request event to ingestion workers."""
         try:
-            from app.celery_app import CeleryApp
+            from app.shared.constants import Streams
+            from app.shared.event_bus.contracts import AnalysisRefreshRequestedV1
+            from app.shared.event_bus.streams import DurableEventStream
+            from app.shared.redis_client import GetRedisClient
 
-            CeleryApp.send_task("ingestion.refresh_symbol", args=[symbol])
-            Logger.info("[%s] Enqueued background refresh task", symbol)
+            redis = await GetRedisClient()
+            stream_bus = DurableEventStream(redis)
+            event = AnalysisRefreshRequestedV1(symbol=symbol, reason="stale_or_partial_read_model")
+            await stream_bus.publish(Streams.ANALYSIS_REFRESH_REQUESTED, event.to_dict())
+            Logger.info("[%s] Published analysis refresh request event", symbol)
         except Exception as exc:
-            Logger.warning("[%s] Failed to enqueue background refresh: %s", symbol, exc)
+            Logger.warning("[%s] Failed to publish background refresh request: %s", symbol, exc)
 
     def _build_freshness(
         self,

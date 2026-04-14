@@ -34,6 +34,7 @@ class Streams:
     # NLP -> API/read model consumers (critical)
     SENTIMENT_SCORED      = "stream:sentiment.scored"
     AGGREGATE_UPDATED     = "stream:sentiment.aggregate_updated"
+    ANALYSIS_REFRESH_REQUESTED = "stream:analysis.refresh_requested"
 
     # Dead-letter topics
     INGESTION_TO_NLP_DLQ  = "stream:dlq:ingestion_to_nlp"
