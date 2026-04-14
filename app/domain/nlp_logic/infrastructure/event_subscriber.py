@@ -193,13 +193,8 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
             count=int(agg.get("count", 0)),
             trend=agg.get("trend", "STABLE"),
         ).to_dict()
-        # Publish event
+        # Durable publish; downstream read-model updater owns persistence + websocket fan-out.
         await deps.stream_bus.publish(Streams.AGGREGATE_UPDATED, agg_event)
-        await deps.redis.publish(Channels.AGGREGATE_UPDATED.format(symbol=symbol), json.dumps(agg_event, default=str))
-
-        # Update cache for API reads
-        cache_key = RedisKeys.SENTIMENT_AGG.format(symbol=symbol, tf=tf)
-        await deps.redis.set(cache_key, json.dumps(agg_event, default=str), ex=TTL.SENTIMENT_AGG)
 
     Logger.info("[%s] Recomputed multi-timeframe aggregates (scored items: %d)", symbol, len(headline_list))
 
