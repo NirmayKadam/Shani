@@ -52,6 +52,7 @@ async def _poll_news_async():
     from app.domain.ingestion.news_fetcher import NewsFetcher
     from app.shared.redis_client import GetRedisClient
     from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.event_bus.contracts import HeadlineFetchedEvent
     from app.config import GetSettings
 
     cfg = GetSettings()
@@ -64,14 +65,14 @@ async def _poll_news_async():
 
             for h in headlines:
                 # Publish each headline as an event
-                event = {
-                    "symbol": symbol.upper(),
-                    "headline": h["headline"],
-                    "content": h["content"],
-                    "source_url": h["source_url"],
-                    "source_name": h["source_name"],
-                    "published_at": h["published_at"],
-                }
+                event = HeadlineFetchedEvent(
+                    symbol=symbol.upper(),
+                    headline=h["headline"],
+                    content=h["content"],
+                    source_url=h["source_url"],
+                    source_name=h["source_name"],
+                    published_at=h["published_at"],
+                ).to_dict()
                 channel = Channels.HEADLINE_FETCHED.format(symbol=symbol.upper())
                 await redis.publish(channel, json.dumps(event, default=str))
 
@@ -101,6 +102,7 @@ async def _poll_prices_async():
     from app.shared.redis_client import GetRedisClient
     from app.shared.database import GetDatabasePool
     from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.event_bus.contracts import PriceTriggerEvent, PriceUpdatedEvent
 
     redis = await GetRedisClient()
     db_pool = await GetDatabasePool()
@@ -135,7 +137,19 @@ async def _poll_prices_async():
 
         # Publish price update event
         channel = Channels.PRICE_UPDATED.format(symbol=symbol.upper())
-        await redis.publish(channel, json.dumps(data, default=str))
+        price_event = PriceUpdatedEvent(
+            symbol=symbol.upper(),
+            last_price=float(data.get("last_price", 0.0)),
+            open=float(data.get("open", 0.0)),
+            high=float(data.get("high", 0.0)),
+            low=float(data.get("low", 0.0)),
+            volume=int(data.get("volume", 0)),
+            previous_close=float(data.get("previous_close", 0.0)),
+            change_percent=float(data.get("change_percent", 0.0)),
+            market_status=str(data.get("market_status", "UNKNOWN")),
+            last_updated=str(data.get("last_updated", now.isoformat())),
+        )
+        await redis.publish(channel, json.dumps(price_event.to_dict(), default=str))
 
         # Check for price triggers
         triggers = await trigger_detector.check(
@@ -144,8 +158,9 @@ async def _poll_prices_async():
             current_volume=data.get("volume", 0),
         )
         for trigger in triggers:
+            trigger_event = PriceTriggerEvent.from_dict(trigger)
             trigger_channel = Channels.PRICE_TRIGGER.format(symbol=symbol.upper())
-            await redis.publish(trigger_channel, json.dumps(trigger, default=str))
+            await redis.publish(trigger_channel, json.dumps(trigger_event.to_dict(), default=str))
 
         Logger.debug("[%s] Price cached and DB write done: ₹%.2f", symbol, data["last_price"])
 
@@ -169,6 +184,7 @@ async def _poll_options_async():
     from app.shared.redis_client import GetRedisClient
     from app.shared.database import GetDatabasePool
     from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.event_bus.contracts import OptionsUpdatedEvent
 
     redis = await GetRedisClient()
     db_pool = await GetDatabasePool()
@@ -217,13 +233,13 @@ async def _poll_options_async():
             # Publish options update event
             channel = Channels.OPTIONS_UPDATED.format(symbol=symbol.upper())
             # Send summary (not full chain — too large for pub/sub)
-            summary_event = {
-                "symbol": symbol.upper(),
-                "spot_price": data["spot_price"],
-                "expiry_dates": data["expiry_dates"],
-                "summary": data["summary"],
-            }
-            await redis.publish(channel, json.dumps(summary_event, default=str))
+            summary_event = OptionsUpdatedEvent(
+                symbol=symbol.upper(),
+                spot_price=float(data.get("spot_price", 0.0)),
+                expiry_dates=data.get("expiry_dates", []),
+                summary=data.get("summary", {}),
+            )
+            await redis.publish(channel, json.dumps(summary_event.to_dict(), default=str))
 
             Logger.info("[%s] Options cached & %d ticks written to DB", symbol, sum(len(c) for c in data["chains"].values()))
 
@@ -254,6 +270,12 @@ async def _refresh_symbol_async(symbol: str):
     from app.domain.ingestion.price_triggers import PriceTriggerDetector
     from app.shared.constants import Channels, RedisKeys, TTL
     from app.shared.database import GetDatabasePool
+    from app.shared.event_bus.contracts import (
+        HeadlineFetchedEvent,
+        OptionsUpdatedEvent,
+        PriceTriggerEvent,
+        PriceUpdatedEvent,
+    )
     from app.shared.redis_client import GetRedisClient
 
     redis = await GetRedisClient()
@@ -286,9 +308,21 @@ async def _refresh_symbol_async(symbol: str):
                     price_data.get("volume", 0),
                 )
 
+            price_event = PriceUpdatedEvent(
+                symbol=symbol_upper,
+                last_price=float(price_data.get("last_price", 0.0)),
+                open=float(price_data.get("open", 0.0)),
+                high=float(price_data.get("high", 0.0)),
+                low=float(price_data.get("low", 0.0)),
+                volume=int(price_data.get("volume", 0)),
+                previous_close=float(price_data.get("previous_close", 0.0)),
+                change_percent=float(price_data.get("change_percent", 0.0)),
+                market_status=str(price_data.get("market_status", "UNKNOWN")),
+                last_updated=str(price_data.get("last_updated", now.isoformat())),
+            )
             await redis.publish(
                 Channels.PRICE_UPDATED.format(symbol=symbol_upper),
-                json.dumps(price_data, default=str),
+                json.dumps(price_event.to_dict(), default=str),
             )
 
             trigger_detector = PriceTriggerDetector(redis)
@@ -298,9 +332,10 @@ async def _refresh_symbol_async(symbol: str):
                 current_volume=price_data.get("volume", 0),
             )
             for trigger in triggers:
+                trigger_event = PriceTriggerEvent.from_dict(trigger)
                 await redis.publish(
                     Channels.PRICE_TRIGGER.format(symbol=symbol_upper),
-                    json.dumps(trigger, default=str),
+                    json.dumps(trigger_event.to_dict(), default=str),
                 )
     except Exception as exc:
         Logger.warning("[%s] Refresh price step failed: %s", symbol_upper, exc)
@@ -321,17 +356,15 @@ async def _refresh_symbol_async(symbol: str):
                 ex=TTL.MARKET_OPTIONS,
             )
 
+            options_event = OptionsUpdatedEvent(
+                symbol=symbol_upper,
+                spot_price=float(options_data.get("spot_price", 0.0)),
+                expiry_dates=options_data.get("expiry_dates", []),
+                summary=options_data.get("summary", {}),
+            )
             await redis.publish(
                 Channels.OPTIONS_UPDATED.format(symbol=symbol_upper),
-                json.dumps(
-                    {
-                        "symbol": symbol_upper,
-                        "spot_price": options_data.get("spot_price"),
-                        "expiry_dates": options_data.get("expiry_dates", []),
-                        "summary": options_data.get("summary", {}),
-                    },
-                    default=str,
-                ),
+                json.dumps(options_event.to_dict(), default=str),
             )
     except Exception as exc:
         Logger.warning("[%s] Refresh options step failed: %s", symbol_upper, exc)
@@ -346,14 +379,14 @@ async def _refresh_symbol_async(symbol: str):
             await news_fetcher.close()
 
         for h in headlines:
-            event = {
-                "symbol": symbol_upper,
-                "headline": h.get("headline", ""),
-                "content": h.get("content", ""),
-                "source_url": h.get("source_url", ""),
-                "source_name": h.get("source_name", ""),
-                "published_at": h.get("published_at", ""),
-            }
+            event = HeadlineFetchedEvent(
+                symbol=symbol_upper,
+                headline=h.get("headline", ""),
+                content=h.get("content", ""),
+                source_url=h.get("source_url", ""),
+                source_name=h.get("source_name", ""),
+                published_at=h.get("published_at", ""),
+            ).to_dict()
             await redis.publish(
                 Channels.HEADLINE_FETCHED.format(symbol=symbol_upper),
                 json.dumps(event, default=str),
