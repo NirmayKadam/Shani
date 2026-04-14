@@ -47,9 +47,9 @@ async def Health():
 
 # ── Register Domain Routers ────────────────────────────────────
 
-from app.domain.api.routers.symbols import Router as SymbolsRouter
-from app.domain.api.routers.analyze import Router as AnalyzeRouter
-from app.domain.api.routers.websocket import Router as WebSocketRouter
+from app.domain.frontend_api.interfaces.routers.symbols import Router as SymbolsRouter
+from app.domain.frontend_api.interfaces.routers.analyze import Router as AnalyzeRouter
+from app.domain.frontend_api.interfaces.routers.websocket import Router as WebSocketRouter
 
 App.include_router(
     SymbolsRouter,
