@@ -1,7 +1,13 @@
-# app/domain/api/schemas.py — Pydantic response models for all API endpoints
+from typing import Optional
 
 from pydantic import BaseModel, Field
-from typing import Optional
+
+
+class ResponseMetadata(BaseModel):
+    generated_at: str = ""
+    source: str = ""
+    stale: bool = True
+    partial: bool = True
 
 
 # ── Market Data ─────────────────────────────────────────────────
@@ -73,26 +79,29 @@ class TechnicalForecastResponse(BaseModel):
 
 # ── Full Analysis Response ─────────────────────────────────────
 
-class FreshnessMetadata(BaseModel):
-    generated_at: str = ""
-    stale: bool = True
-    partial: bool = True
+class FreshnessMetadata(ResponseMetadata):
+    pass
 
 
-class AnalysisResponse(BaseModel):
+class AnalysisResponse(ResponseMetadata):
     symbol: str
     market_data: Optional[MarketDataResponse] = None
     headlines: list[HeadlineItem] = Field(default_factory=list)
     sentiment: Optional[SentimentResponse] = None
     options_summary: Optional[OptionsSummaryResponse] = None
     technical_forecast: Optional[TechnicalForecastResponse] = None
-    generated_at: str = ""
-    stale: bool = True
-    partial: bool = True
 
 
 # ── Symbols Response ───────────────────────────────────────────
 
-class SymbolsResponse(BaseModel):
-    symbols: list[str]
+class SymbolsResponse(ResponseMetadata):
+    symbols: list[str] = Field(default_factory=list)
     count: int
+
+
+# ── Error Envelope ──────────────────────────────────────────────
+
+class ErrorEnvelope(ResponseMetadata):
+    error: str
+    code: str
+    details: dict | list[dict] | None = None

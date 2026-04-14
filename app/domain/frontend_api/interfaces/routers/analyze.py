@@ -1,6 +1,8 @@
 # app/domain/api/routers/analyze.py — GET /v1/analyze/{symbol} endpoint
 
 import logging
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException
 
 from app.config import GetSettings
@@ -10,6 +12,22 @@ Logger = logging.getLogger(__name__)
 
 Router = APIRouter()
 _Service = None
+
+
+def _generated_at() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _error_envelope(*, error: str, code: str, details=None) -> dict:
+    return {
+        "generated_at": _generated_at(),
+        "source": "frontend_api",
+        "stale": False,
+        "partial": True,
+        "error": error,
+        "code": code,
+        "details": details,
+    }
 
 
 def _get_service():
@@ -41,11 +59,14 @@ async def AnalyzeSymbol(symbol: str):
     if symbol_upper not in allowed:
         raise HTTPException(
             status_code=400,
-            detail={
-                "error": f"Symbol '{symbol_upper}' is not in the watchlist.",
-                "allowed_symbols": allowed,
-                "hint": "Use GET /v1/symbols to see available symbols.",
-            },
+            detail=_error_envelope(
+                error=f"Symbol '{symbol_upper}' is not in the watchlist.",
+                code="invalid_symbol",
+                details={
+                    "allowed_symbols": allowed,
+                    "hint": "Use GET /v1/symbols to see available symbols.",
+                },
+            ),
         )
 
     try:
@@ -55,5 +76,9 @@ async def AnalyzeSymbol(symbol: str):
         Logger.error("[%s] Analysis failed: %s", symbol_upper, exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Analysis failed for {symbol_upper}. Please try again. Error: {str(exc)}",
+            detail=_error_envelope(
+                error=f"Analysis failed for {symbol_upper}. Please try again.",
+                code="analysis_runtime_failure",
+                details={"exception": str(exc)},
+            ),
         )

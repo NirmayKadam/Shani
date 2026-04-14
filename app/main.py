@@ -5,12 +5,32 @@
 
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from datetime import datetime, timezone
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from app.shared.redis_client import GetRedisClient, CloseRedisClient
 from app.shared.database import GetDatabasePool, CloseDatabasePool
 
 Logger = logging.getLogger(__name__)
+
+
+def _generated_at() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _error_envelope(*, error: str, code: str, details=None, source: str = "frontend_api") -> dict:
+    return {
+        "generated_at": _generated_at(),
+        "source": source,
+        "stale": False,
+        "partial": True,
+        "error": error,
+        "code": code,
+        "details": details,
+    }
 
 
 @asynccontextmanager
@@ -36,6 +56,49 @@ App = FastAPI(
     description="Event-driven quantitative sentiment analytics platform",
     lifespan=Lifespan
 )
+
+
+@App.exception_handler(RequestValidationError)
+async def HandleRequestValidationError(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content=_error_envelope(
+            error="Request validation failed.",
+            code="request_validation_error",
+            details=exc.errors(),
+            source=str(request.url.path),
+        ),
+    )
+
+
+@App.exception_handler(HTTPException)
+async def HandleHttpException(request: Request, exc: HTTPException):
+    if isinstance(exc.detail, dict) and "error" in exc.detail and "code" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_error_envelope(
+            error=str(exc.detail),
+            code="http_error",
+            details={"status_code": exc.status_code},
+            source=str(request.url.path),
+        ),
+    )
+
+
+@App.exception_handler(Exception)
+async def HandleRuntimeException(request: Request, exc: Exception):
+    Logger.error("Unhandled runtime error on %s: %s", request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content=_error_envelope(
+            error="Internal server error.",
+            code="runtime_error",
+            details={"exception": str(exc)},
+            source=str(request.url.path),
+        ),
+    )
 
 
 # ── Health Check ────────────────────────────────────────────────

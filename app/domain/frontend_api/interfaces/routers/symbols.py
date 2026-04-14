@@ -16,4 +16,11 @@ async def GetSymbols():
     """
     cfg = GetSettings()
     symbols = cfg.GetWatchlistAsList()
-    return SymbolsResponse(symbols=symbols, count=len(symbols))
+    return SymbolsResponse(
+        symbols=symbols,
+        count=len(symbols),
+        generated_at="",
+        source="settings_watchlist",
+        stale=False,
+        partial=False,
+    )

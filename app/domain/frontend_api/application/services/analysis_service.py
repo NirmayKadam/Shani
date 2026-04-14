@@ -63,6 +63,7 @@ class AnalysisService:
             options_summary=options_summary,
             technical_forecast=technical_forecast,
             generated_at=freshness.generated_at,
+            source=freshness.source,
             stale=freshness.stale,
             partial=freshness.partial,
         )
@@ -292,7 +293,12 @@ class AnalysisService:
 
         stale = partial or (any(stale_checks) if stale_checks else True)
 
-        return FreshnessMetadata(generated_at=generated_at, stale=stale, partial=partial)
+        return FreshnessMetadata(
+            generated_at=generated_at,
+            source="redis_read_model",
+            stale=stale,
+            partial=partial,
+        )
 
     @staticmethod
     def _parse_iso(value: str) -> Optional[datetime]:
