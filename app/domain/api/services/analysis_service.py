@@ -174,7 +174,7 @@ class AnalysisService:
 
     async def _read_options(self, symbol: str) -> Optional[OptionsSummaryResponse]:
         try:
-            from app.domain.sentiment.analyzer import SentimentAnalyzer
+            from app.domain.api.read_models import OptionChainSummaryReadModel, compute_pcr
             from app.shared.redis_client import GetRedisClient
 
             redis = await GetRedisClient()
@@ -182,8 +182,8 @@ class AnalysisService:
             if not cached:
                 return OptionsSummaryResponse(available=False)
 
-            option_chain = json.loads(cached)
-            pcr_data = SentimentAnalyzer.compute_pcr(option_chain)
+            option_chain = OptionChainSummaryReadModel(**json.loads(cached)).model_dump()
+            pcr_data = compute_pcr(option_chain)
             return OptionsSummaryResponse(
                 pcr=float((pcr_data or {}).get("pcr", 0.0)),
                 ce_volume=int((pcr_data or {}).get("ce_volume", 0)),

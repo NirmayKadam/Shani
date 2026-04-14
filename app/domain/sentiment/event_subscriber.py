@@ -17,6 +17,7 @@ from app.domain.sentiment.timeframes import TimeframeComputer
 from app.shared.constants import Channels, RedisKeys, TTL
 from app.shared.database import GetDatabasePool
 from app.shared.event_bus import EventBus
+from app.shared.event_bus.contracts import AggregateUpdatedEvent, PriceTriggerEvent, SentimentScoredEvent
 from app.shared.redis_client import GetRedisClient
 
 # Configure root logger for the script
@@ -43,10 +44,21 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
         return
 
     result = scored[0]
+    scored_event = SentimentScoredEvent(
+        symbol=symbol.upper(),
+        headline=result.get("headline", ""),
+        content=result.get("content", ""),
+        source_url=result.get("source_url", ""),
+        source_name=result.get("source_name", ""),
+        published_at=result.get("published_at", ""),
+        sentiment_label=result["sentiment_label"],
+        sentiment_score=float(result["sentiment_score"]),
+        confidence=float(result["confidence"]),
+    )
 
     # 1. Store in Redis sorted set (latest 50)
     headlines_key = RedisKeys.NEWS_HEADLINES.format(symbol=symbol.upper())
-    headline_json = json.dumps(result, default=str)
+    headline_json = json.dumps(scored_event.to_dict(), default=str)
     try:
         ts_dt = datetime.fromisoformat(result.get("published_at", "").replace("Z", "+00:00"))
     except (ValueError, TypeError):
@@ -73,16 +85,16 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """,
             symbol.upper(),
-            result["sentiment_label"],
-            result["sentiment_score"],
-            result["confidence"],
+            scored_event.sentiment_label,
+            scored_event.sentiment_score,
+            scored_event.confidence,
             "NEWS",
-            result.get("source_url", ""),
-            result.get("headline", ""),
+            scored_event.source_url,
+            scored_event.headline,
             ts_dt
         )
 
-    Logger.info("[%s] Scored & Saved: %s → %s (%.3f)", symbol, result.get("headline", "")[:50], result["sentiment_label"], result["sentiment_score"])
+    Logger.info("[%s] Scored & Saved: %s → %s (%.3f)", symbol, scored_event.headline[:50], scored_event.sentiment_label, scored_event.sentiment_score)
 
     # 3. Recompute Aggregates and Publish
     await recompute_and_publish_aggregates(symbol.upper(), deps)
@@ -90,8 +102,9 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
 
 async def handle_price_trigger(channel: str, event: dict, deps: SubscriberDependencies) -> None:
     """Invoked when 'market.price_trigger.*' is received. Injects synthetic sentiment."""
-    symbol = event.get("symbol", "")
-    trigger_type = event.get("trigger_type", "")
+    trigger_event = PriceTriggerEvent.from_dict(event)
+    symbol = trigger_event.symbol
+    trigger_type = trigger_event.trigger_type
     if not symbol or not trigger_type:
         return
 
@@ -107,7 +120,7 @@ async def handle_price_trigger(channel: str, event: dict, deps: SubscriberDepend
         label = "NEUTRAL"
         score = 0.0
 
-    ts_str = event.get("triggered_at", "")
+    ts_str = trigger_event.triggered_at
     try:
         ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
     except (ValueError, TypeError):
@@ -126,7 +139,7 @@ async def handle_price_trigger(channel: str, event: dict, deps: SubscriberDepend
             score,
             1.0,
             "MARKET",
-            event.get("description", f"Price trigger: {trigger_type}"),
+            trigger_event.description or f"Price trigger: {trigger_type}",
             ts_dt
         )
 
@@ -164,11 +177,17 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
 
     # Publish each aggregate
     for tf, agg in tf_data.items():
-        agg_event = {
-            "symbol": symbol,
-            "timeframe": tf,
-            **agg
-        }
+        agg_event = AggregateUpdatedEvent(
+            symbol=symbol,
+            timeframe=tf,
+            label=agg.get("label", "NEUTRAL"),
+            avg_score=float(agg.get("avg_score", 0.0)),
+            bullish_pct=float(agg.get("bullish_pct", 0.0)),
+            bearish_pct=float(agg.get("bearish_pct", 0.0)),
+            neutral_pct=float(agg.get("neutral_pct", 0.0)),
+            count=int(agg.get("count", 0)),
+            trend=agg.get("trend", "STABLE"),
+        ).to_dict()
         # Publish event
         await deps.redis.publish(Channels.AGGREGATE_UPDATED.format(symbol=symbol), json.dumps(agg_event, default=str))
 

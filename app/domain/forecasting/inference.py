@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from app.domain.forecasting.model import QuantCNN1D
-from app.domain.api.schemas import TechnicalForecastResponse
 
 Logger = logging.getLogger(__name__)
 
@@ -84,7 +83,7 @@ class InferenceEngine:
 
         return df
 
-    def predict(self, symbol: str, current_sentiment_label: str, current_sentiment_score: float) -> TechnicalForecastResponse | None:
+    def predict(self, symbol: str, current_sentiment_label: str, current_sentiment_score: float) -> dict | None:
         if not self.is_loaded:
             return None
             
@@ -132,12 +131,12 @@ class InferenceEngine:
             else:
                 confluence = "DIVERGENT"
                 
-            return TechnicalForecastResponse(
-                strategy="QuantCNN1D",
-                prediction=prediction,
-                confidence=round(confidence, 3),
-                confluence_status=confluence
-            )
+            return {
+                "strategy": "QuantCNN1D",
+                "prediction": prediction,
+                "confidence": round(confidence, 3),
+                "confluence_status": confluence,
+            }
             
         except Exception as e:
             Logger.error(f"Error executing CNN inference for {symbol}: {e}")
