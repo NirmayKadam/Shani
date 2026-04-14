@@ -1,144 +1,97 @@
-# AlphaStreams — Project Walkthrough & Onboarding
+# AlphaStreams — Project Walkthrough & Onboarding (Current Runtime)
 
-Welcome to the **Alpha Streams** backend! This document summarizes the project's current architecture, completed milestones, and the underlying event-driven philosophy so that new coworkers can easily pick up where we left off.
+This walkthrough reflects the **current codebase layout** and runtime behavior in this repository.
 
-## 📌 Project Overview & Data Pipelines
-We are building an **Institutional-Grade Quantitative Analytics Engine**. The platform leverages three completely independent Event-Driven Data Pipelines to track the market and trigger alerts:
+## 1) What the system does
 
-### 🌊 Pipeline A: News Sentiment (`/NewsSentiment`)
-**The "Confirming Indicator" (Public Narrative)**
-- Ingests financial news, scores it using FinBERT AI, and computes Moving Averages (SMA) to mathematically track shifting public sentiment trends.
+AlphaStreams is an event-driven analytics backend that combines:
 
-### 🌊 Pipeline B: Quantitative Math Engine (`/Derivatives`)
-**The "Leading Indicator" (Smart Money / Institutional Footprint)**
-- Fetches real-time F&O option chain data directly from the NSE India API.
-- Back-solves the Black-Scholes-Merton formula (via SciPy) to compute instantaneous Implied Volatility (IV) and tracks Put-Call Ratios to read institutional leverage.
-- Detects massive sweeps/anomalies in Open Interest and volume patterns.
+- **Market ingestion** (prices, options, headlines)
+- **NLP processing** (FinBERT sentiment + timeframe aggregates)
+- **Frontend delivery** (REST analysis + WebSocket fan-out)
 
-### 🌊 Pipeline C: Machine Learning Forecaster (`/MLForecasting`)
-**The "Statistical Engine" (End-of-Day Predictions)**
-- Transforms massive OHLCV datasets into pure-Pandas Technical Indicators (MACD, Bollinger Bands, RSI).
-- Feeds features into a meticulously trained Random Forest Classifier to output statistical probabilities of the next day's price movement.
+The current deployment model is a **single application container** running API and background processes together during the migration phase.
 
-**Tech Stack:**
-* **REST API:** FastAPI
-* **Message Broker / Workers:** Celery + Redis
-* **Database:** PostgreSQL (TimescaleDB)
-* **ML Inference:** PyTorch + HuggingFace Transformers (FinBERT)
-* **Quantitative Math:** SciPy (Brent's root-finding, BSM pricing)
-* **Market Data:** NSE India API (free, no key needed)
+## 2) Active bounded contexts
 
-## ✅ Accomplishments to Date (Phases 0–4)
+### `ingestion`
+- Polls news, market prices, and option-chain snapshots.
+- Writes hot cache/read-model data where appropriate.
+- Publishes durable stream events for downstream consumers.
 
-### Phases 0–2: Sentiment Pipeline (Event-Driven)
+Primary module:
+- `app/domain/ingestion/application/tasks.py`
 
-1. **The Ingestion Hand-Off:**
-   `NewsIngestor.py` pulls articles from NewsAPI and deduplicates them against Redis. It strictly verifies the Celery task dispatch *before* caching to prevent data drops on broker failures.
+### `nlp_logic`
+- Consumes durable ingestion events via Redis Streams consumer groups.
+- Scores headlines with FinBERT.
+- Recomputes timeframe aggregates and publishes durable aggregate events.
 
-2. **The NLP Inference Engine (`worker-nlp`):**
-   A dedicated Celery worker scores text using FinBERT. It converts confidence probabilities into hard Polarity Scores (supporting both `NEGATIVE` and model-specific `BEARISH` labels) ranging from `[-1.0 to 1.0]`.
+Primary module:
+- `app/domain/nlp_logic/infrastructure/event_subscriber.py`
 
-3. **The Signal Composer (`worker-signals`):**
-   Upon NLP success, `SignalComposer.py` fetches the last 20 finalized polar scores to calculate a **Simple Moving Average (SMA)**. It detects technical crossovers (e.g., `STRONG_BULLISH_CROSSOVER >= 0.70`) by comparing against cached values in Redis.
+### `frontend_api`
+- Exposes cache-first query endpoints.
+- Publishes async refresh requests when responses are stale/partial.
+- Maintains websocket live updates using Pub/Sub mirrors.
 
-4. **Alert Dispatching:**
-   If a crossover fires, `AlertDispatcher.py` queries `AlertRules` and blasts JSON POST payloads using an `asyncio.Semaphore(50)` to securely limit concurrent TCP sockets.
+Primary modules:
+- `app/domain/frontend_api/interfaces/routers/analyze.py`
+- `app/domain/frontend_api/interfaces/routers/websocket.py`
+- `app/domain/frontend_api/application/services/analysis_service.py`
+- `app/domain/frontend_api/infrastructure/read_model_updater.py`
 
-5. **Hot APIs:**
-   Built `SignalsRouter.py` and `EventsRouter.py` to allow the frontend UI to consume real-time Moving Averages (pulled in `<1ms` from Redis) and the historical timeline of crossover events.
+## 3) Runtime processes (single-container)
 
-### Phase 3: Derivatives Analytics
+The app container starts these child processes via `scripts/entrypoint_single_container.sh`:
 
-6. **MetricsComputer (BSM + SciPy):**
-   `MetricsComputer.py` processes incoming tick batches to compute:
-   - **PCR** (Put-Call Ratio) from aggregated CE/PE volumes per symbol/expiry
-   - **Implied Volatility** per strike using `scipy.optimize.brentq` to solve the BSM equation, with Corrado-Miller approximation as fallback for edge cases
-   - Results cached in Redis for instant API access
+1. FastAPI (`uvicorn app.main:App`)
+2. Celery ingestion worker (`-Q ingestion`)
+3. Celery beat scheduler
+4. NLP stream subscriber (`python -m app.domain.sentiment.event_subscriber`)
 
-7. **Anomaly Detection (Rule-Based):**
-   `AnomalyDetector.py` uses exponentially smoothed rolling averages to detect:
-   - **OI Surges** — single-strike OI exceeding 3× the rolling average
-   - **Volume Sweeps** — total CE/PE volume spiking 5× the trailing average
-   - Anomalies are persisted to `DetectedEvents` and emitted to the existing AlertDispatcher webhook pipeline
+> Note: `app.domain.sentiment.event_subscriber` is a compatibility alias forwarding to `app.domain.nlp_logic.infrastructure.event_subscriber`.
 
-8. **Derivatives API:**
-   `DerivativesRouter.py` exposes `GET /v1/derivatives/{symbol}` returning PCR, IV surface, and recent anomalies.
+## 4) Event transport model
 
-### Phase 4: Live Tick Data Ingestion
+### Durable streams (correctness path)
+- `stream:headlines.fetched`
+- `stream:market.price_trigger`
+- `stream:sentiment.scored`
+- `stream:sentiment.aggregate_updated`
+- `stream:analysis.refresh_requested`
 
-9. **NSE India Live Feed:**
-   `TickIngestor.py` fetches real-time option chain data directly from the NSE India website API (free, no key needed). It handles cookie-based authentication, parses the full option chain JSON, and falls back to mock data per-symbol if NSE is unreachable.
+### Ephemeral Pub/Sub (UX fan-out)
+- `headlines.fetched.{symbol}`
+- `market.price_updated.{symbol}`
+- `market.options_updated.{symbol}`
+- `market.price_trigger.{symbol}`
+- `sentiment.scored.{symbol}`
+- `sentiment.aggregate_updated.{symbol}`
 
-10. **Celery Periodic Tasks:**
-    `DataIngestion/Tasks.py` defines periodic tasks for both news and tick ingestion cycles, runnable via Celery Beat.
+For complete producer/consumer and schema mapping, see `docs/EVENT_TOPICS.md`.
 
-### Phase 5: Machine Learning Daily Predictor
+## 5) Request path summary (`GET /v1/analyze/{symbol}`)
 
-11. **EOD Forecasting (Random Forest):**
-    `TrainDailyPredictor.py` downloads 5 years of daily OHLCV data from Yahoo Finance, engineers technical indicators (RSI, MACD, BB, ATR) using pure Pandas math, and trains a universal binary classification model to predict if tomorrow's close will be strictly higher than today's.
-    
-12. **Live Inference Engine:**
-    `DailyPredictor.py` loads the `.joblib` pipeline into RAM. Triggered by a Celery Beat schedule everyday at 3:45 PM IST, it fetches the last 60 days of live market data, reconstructs the identical TA features used during training, and logs probability forecasts to Redis. High conviction predictions (>70%) are automatically emitted to the `AlertDispatcher` webhook pipeline.
-    
-13. **Predictions API:**
-    `PredictionsRouter.py` provides `GET /v1/predictions/{symbol}` with AI probability scores.
+1. API validates symbol against configured watchlist.
+2. Analysis service reads market/headline/sentiment/options/forecast from Redis-first read models.
+3. If data is stale or partial, API still returns quickly and publishes an async refresh request (`stream:analysis.refresh_requested`).
+4. Ingestion + NLP flows continue asynchronously and update caches/read-models consumed by API and websocket clients.
 
-## 📊 Technical Data Flow
+## 6) Compatibility aliases (temporary migration layer)
 
-```mermaid
-graph TD
-    A[NewsAPI] -->|Ingest| B(NewsIngestor)
-    B -->|Check| C{Redis Dedup}
-    C -->|New| D[PostgreSQL: SentimentScores]
-    D -->|Task| E(worker-nlp)
-    E -->|FinBERT| F[Calculate Polarity]
-    F -->|Result| G[(Redis: Hot Cache)]
-    F -->|Task| H(worker-signals)
-    H -->|Fetch Past 20| D
-    H -->|Calculate SMA| I{SMA Crossover?}
-    I -->|Yes| J[PostgreSQL: DetectedEvents]
-    J -->|Task| K(worker-alerts)
-    K -->|Webhook| L[User Endpoint]
-    G -->|API Pull| M[FastAPI REST Routers]
-    J -->|API Pull| M
-    N[NSE India API] -->|Fetch| O(TickIngestor)
-    O -->|Save| P[TimescaleDB: TickData]
-    O -->|Task| Q(worker-derivatives)
-    Q -->|SciPy BSM| R[PCR + IV Calc]
-    R -->|Cache| G
-    R -->|Anomaly?| J
-    S[Yahoo Finance] -->|Fetch OHLCV| T(DailyPredictor ML)
-    T -->|TA Features| U[RandomForest]
-    U -->|Prob > 70%?| J
-    U -->|EOD Forecast| G
-```
+The following paths exist as compatibility shims and currently re-export the new module locations:
 
-### 🛠️ Method & File Mapping
-| **Stage** | **File Path** | **Primary Method(s)** |
-|:---|:---|:---|
-| **News Ingestion** | `NewsSentiment/Ingestion/NewsIngestor.py` | `IngestForSymbol()`, `_FetchFromNewsApi()` |
-| **Deduplication** | `NewsSentiment/Ingestion/NewsIngestor.py` | `_IsDuplicate()`, `_MarkSeen()` |
-| **NLP Scoring** | `NewsSentiment/Tasks.py` | `ProcessArticleTask()` |
-| **AI Inference** | `NewsSentiment/AI_Engine/FinBertClient.py` | `ScoreBatch()` |
-| **Aggregation** | `NewsSentiment/Alerts/SignalComposer.py` | `ProcessNewSentiment()` |
-| **Crossover** | `NewsSentiment/SignalTasks.py` | `ComposeSignalTask()` |
-| **Dispatching** | `NewsSentiment/Alerts/AlertDispatcher.py` | `Dispatch()` |
-| **Tick Ingestion** | `Derivatives/Ingestion/TickIngestor.py` | `IngestOnce()`, `_FetchFromNSE()` |
-| **PCR + IV** | `Derivatives/Analytics/MetricsComputer.py` | `ProcessTickBatch()`, `_ComputeIV()` |
-| **Anomalies** | `Derivatives/Anomalies/AnomalyDetector.py` | `CheckForAnomalies()` |
-| **ML Training**  | `scripts/TrainDailyPredictor.py` | `EngineerFeatures()`, `Pipe.fit()` |
-| **ML Inference** | `MLForecasting/Inference/DailyPredictor.py` | `PredictNextDay()` |
-| **API — Sentiment** | `Analytics/SentimentRouter.py` | `GetLatestSentiment()` |
-| **API — Signals** | `Analytics/SignalsRouter.py` | `GetLatestSignal()` |
-| **API — Events** | `Analytics/EventsRouter.py` | `GetEventsTimeline()` |
-| **API — Derivatives** | `Analytics/DerivativesRouter.py` | `GetDerivativesSnapshot()` |
-| **API — ML Forecasts** | `Analytics/PredictionsRouter.py` | `GetLatestPrediction()` |
+- `app/domain/api/*` -> `app/domain/frontend_api/*`
+- `app/domain/sentiment/*` -> `app/domain/nlp_logic/*`
 
-## 🛡️ DevOps & Security Improvements
-* **Image Size Reduction**: Transitioned to **Multi-Stage Builds** and **CPU-Only PyTorch**, reducing the image size by ~2.5GB and preventing WSL2 disk bloat.
-* **Network Hardening**: Blocked unauthenticated LAN scans by removing host-level port bindings for `Postgres` and `Redis`. All database traffic is now strictly internal to the Docker network.
-* **Healthchecks**: Implemented `postgres_ready` healthchecks on Compose boot so FastAPI and Celery wait for the database to be fully ready before connecting.
-* **Hot-Reloading**: All Celery workers are mapped via `volumes`. Simply save any python file, and the workers will hot-reload on the next task!
+These should be removed once all runtime/tooling references are migrated.
 
-## 🔜 Next Steps
-Review `research_fno_pivot.md` for the long-term vision (LSTM fair-value model, social media alt-data, advanced F&O dashboard).
+## 7) Suggested onboarding order
+
+1. Read `README.md` for architecture + startup.
+2. Read `docs/adr/ADR-001-bounded-contexts.md` and `docs/adr/ADR-002-event-transport.md`.
+3. Read `app/shared/event_bus/contracts.py` and `app/shared/event_bus/streams.py`.
+4. Read ingestion tasks and NLP subscriber modules.
+5. Read frontend API service/router modules.
+6. Use runbooks in `docs/runbooks/` for ops workflows.
