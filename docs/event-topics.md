@@ -26,7 +26,7 @@ DLQ:
 
 DLQ:
 
-- `stream:dlq:nlp_to_api` (reserved for downstream durable consumers)
+- `stream:dlq:nlp_to_api`
 
 ## Ephemeral topics (Redis Pub/Sub)
 

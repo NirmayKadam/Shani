@@ -34,6 +34,14 @@ services:
     depends_on: [redis, postgres]
     volumes: ['./app:/app/app']
 
+
+  worker-read-model:            # Durable NLP -> API aggregate read-model updater
+    image: nexusquant-app
+    command: python -m app.domain.frontend_api.infrastructure.read_model_updater
+    env_file: .env
+    depends_on: [redis]
+    volumes: ['./app:/app/app']
+
   beat:                         # Celery Beat scheduler
     image: nexusquant-app
     command: celery -A app.celery_app beat --loglevel=info
