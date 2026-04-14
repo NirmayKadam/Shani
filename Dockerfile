@@ -21,5 +21,5 @@ ENV PATH=/root/.local/bin:$PATH
 # Copy application code
 COPY . .
 
-# Default command (overridden by docker-compose per service)
-CMD ["uvicorn", "app.main:App", "--host", "0.0.0.0", "--port", "8000"]
+# Default command runs all core in-container processes
+CMD ["./scripts/entrypoint_single_container.sh"]

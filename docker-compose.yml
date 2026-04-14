@@ -1,11 +1,11 @@
 # docker-compose.yml
 
 services:
-  app:                          # FastAPI REST API + WebSocket
+  app:                          # Single app container: API + internal workers
     build: .
     image: nexusquant-app
     ports: ['8000:8000']
-    command: uvicorn app.main:App --host 0.0.0.0 --port 8000 --reload
+    command: ./scripts/entrypoint_single_container.sh
     env_file: .env
     restart: unless-stopped
     depends_on:
@@ -13,47 +13,7 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-    volumes: ['./app:/app/app']  # Hot reload for development
-
-  worker-ingestion:             # Data Ingestion workers
-    image: nexusquant-app
-    command: celery -A app.celery_app worker -Q ingestion -c 2 --loglevel=info
-    env_file: .env
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-    volumes: ['./app:/app/app']
-
-  worker-nlp:                   # NLP + Sentiment workers — native event subscriber
-    image: nexusquant-app
-    command: python -m app.domain.sentiment.event_subscriber
-    env_file: .env
-    depends_on: [redis, postgres]
-    volumes: ['./app:/app/app']
-
-
-  worker-read-model:            # Durable NLP -> API aggregate read-model updater
-    image: nexusquant-app
-    command: python -m app.domain.frontend_api.infrastructure.read_model_updater
-    env_file: .env
-    depends_on: [redis]
-    volumes: ['./app:/app/app']
-
-  beat:                         # Celery Beat scheduler
-    image: nexusquant-app
-    command: celery -A app.celery_app beat --loglevel=info
-    env_file: .env
-    depends_on: [redis]
-    volumes: ['./app:/app/app']
-
-  flower:                       # Task monitoring dashboard
-    image: nexusquant-app
-    command: celery -A app.celery_app flower --port=5555
-    ports: ['5555:5555']
-    depends_on: [redis]
+    volumes: ['./app:/app/app']  # Hot reload for development code edits
 
   redis:
     image: redis:7-alpine
