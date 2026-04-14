@@ -51,13 +51,15 @@ def PollNewsTask(self):
 async def _poll_news_async():
     from app.domain.ingestion.news_fetcher import NewsFetcher
     from app.shared.redis_client import GetRedisClient
-    from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.constants import Channels, RedisKeys, Streams, TTL
     from app.shared.event_bus.contracts import HeadlineFetchedEvent
+    from app.shared.event_bus.streams import DurableEventStream
     from app.config import GetSettings
 
     cfg = GetSettings()
     fetcher = NewsFetcher(api_key=cfg.NewsApiKey)
     redis = await GetRedisClient()
+    stream_bus = DurableEventStream(redis)
 
     try:
         for symbol in _WATCHLIST:
@@ -73,6 +75,7 @@ async def _poll_news_async():
                     source_name=h["source_name"],
                     published_at=h["published_at"],
                 ).to_dict()
+                await stream_bus.publish(Streams.HEADLINE_FETCHED, event)
                 channel = Channels.HEADLINE_FETCHED.format(symbol=symbol.upper())
                 await redis.publish(channel, json.dumps(event, default=str))
 
@@ -101,10 +104,12 @@ async def _poll_prices_async():
     from app.domain.ingestion.price_triggers import PriceTriggerDetector
     from app.shared.redis_client import GetRedisClient
     from app.shared.database import GetDatabasePool
-    from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.constants import Channels, RedisKeys, Streams, TTL
     from app.shared.event_bus.contracts import PriceTriggerEvent, PriceUpdatedEvent
+    from app.shared.event_bus.streams import DurableEventStream
 
     redis = await GetRedisClient()
+    stream_bus = DurableEventStream(redis)
     db_pool = await GetDatabasePool()
     fetcher = MarketPriceFetcher()
     trigger_detector = PriceTriggerDetector(redis)
@@ -159,6 +164,7 @@ async def _poll_prices_async():
         )
         for trigger in triggers:
             trigger_event = PriceTriggerEvent.from_dict(trigger)
+            await stream_bus.publish(Streams.PRICE_TRIGGER, trigger_event.to_dict())
             trigger_channel = Channels.PRICE_TRIGGER.format(symbol=symbol.upper())
             await redis.publish(trigger_channel, json.dumps(trigger_event.to_dict(), default=str))
 
@@ -183,7 +189,7 @@ async def _poll_options_async():
     from app.domain.ingestion.market_data_fetcher import OptionChainFetcher
     from app.shared.redis_client import GetRedisClient
     from app.shared.database import GetDatabasePool
-    from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.constants import Channels, RedisKeys, Streams, TTL
     from app.shared.event_bus.contracts import OptionsUpdatedEvent
 
     redis = await GetRedisClient()
@@ -268,7 +274,7 @@ async def _refresh_symbol_async(symbol: str):
     from app.domain.ingestion.market_data_fetcher import MarketPriceFetcher, OptionChainFetcher
     from app.domain.ingestion.news_fetcher import NewsFetcher
     from app.domain.ingestion.price_triggers import PriceTriggerDetector
-    from app.shared.constants import Channels, RedisKeys, TTL
+    from app.shared.constants import Channels, RedisKeys, Streams, TTL
     from app.shared.database import GetDatabasePool
     from app.shared.event_bus.contracts import (
         HeadlineFetchedEvent,
@@ -277,8 +283,10 @@ async def _refresh_symbol_async(symbol: str):
         PriceUpdatedEvent,
     )
     from app.shared.redis_client import GetRedisClient
+    from app.shared.event_bus.streams import DurableEventStream
 
     redis = await GetRedisClient()
+    stream_bus = DurableEventStream(redis)
     db_pool = await GetDatabasePool()
     now = datetime.now(timezone.utc)
 
@@ -333,6 +341,7 @@ async def _refresh_symbol_async(symbol: str):
             )
             for trigger in triggers:
                 trigger_event = PriceTriggerEvent.from_dict(trigger)
+                await stream_bus.publish(Streams.PRICE_TRIGGER, trigger_event.to_dict())
                 await redis.publish(
                     Channels.PRICE_TRIGGER.format(symbol=symbol_upper),
                     json.dumps(trigger_event.to_dict(), default=str),
@@ -387,6 +396,7 @@ async def _refresh_symbol_async(symbol: str):
                 source_name=h.get("source_name", ""),
                 published_at=h.get("published_at", ""),
             ).to_dict()
+            await stream_bus.publish(Streams.HEADLINE_FETCHED, event)
             await redis.publish(
                 Channels.HEADLINE_FETCHED.format(symbol=symbol_upper),
                 json.dumps(event, default=str),

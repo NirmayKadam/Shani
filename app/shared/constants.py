@@ -22,6 +22,31 @@ class Channels:
     AGGREGATE_UPDATED     = "sentiment.aggregate_updated.{symbol}"
 
 
+# ── Redis Streams (Durable Topics) ────────────────────────────
+
+class Streams:
+    """Redis Stream names for durable/replayable cross-domain events."""
+
+    # Ingestion -> NLP (critical)
+    HEADLINE_FETCHED      = "stream:headlines.fetched"
+    PRICE_TRIGGER         = "stream:market.price_trigger"
+
+    # NLP -> API/read model consumers (critical)
+    SENTIMENT_SCORED      = "stream:sentiment.scored"
+    AGGREGATE_UPDATED     = "stream:sentiment.aggregate_updated"
+
+    # Dead-letter topics
+    INGESTION_TO_NLP_DLQ  = "stream:dlq:ingestion_to_nlp"
+    NLP_TO_API_DLQ        = "stream:dlq:nlp_to_api"
+
+
+class StreamGroups:
+    """Consumer-group names for durable stream processing."""
+
+    INGESTION_TO_NLP = "cg:ingestion_to_nlp"
+    NLP_TO_API = "cg:nlp_to_api"
+
+
 # ── Enums ──────────────────────────────────────────────────────
 
 class SentimentLabel(str, Enum):

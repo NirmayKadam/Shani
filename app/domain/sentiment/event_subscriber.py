@@ -7,6 +7,7 @@
 import asyncio
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -14,15 +15,17 @@ from app.config import GetSettings
 from app.domain.sentiment.analyzer import SentimentAnalyzer
 from app.domain.sentiment.finbert_engine import FinBertEngine
 from app.domain.sentiment.timeframes import TimeframeComputer
-from app.shared.constants import Channels, RedisKeys, TTL
+from app.shared.constants import Channels, RedisKeys, StreamGroups, Streams, TTL
 from app.shared.database import GetDatabasePool
-from app.shared.event_bus import EventBus
 from app.shared.event_bus.contracts import AggregateUpdatedEvent, PriceTriggerEvent, SentimentScoredEvent
+from app.shared.event_bus.streams import DurableEventStream, StreamMessage
 from app.shared.redis_client import GetRedisClient
 
 # Configure root logger for the script
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 Logger = logging.getLogger(" sentiment_subscriber")
+_CONSUMER_NAME = os.getenv("SENTIMENT_CONSUMER_NAME", "sentiment-worker-1")
+_RETRY_IDLE_MS = int(os.getenv("SENTIMENT_RETRY_IDLE_MS", "30000"))
 
 
 @dataclass(slots=True)
@@ -31,6 +34,7 @@ class SubscriberDependencies:
     timeframe_computer: TimeframeComputer
     redis: object
     db_pool: object
+    stream_bus: DurableEventStream
 
 
 async def handle_headline(channel: str, event: dict, deps: SubscriberDependencies) -> None:
@@ -73,7 +77,8 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
     pipe.set(latest_key, headline_json, ex=TTL.SENTIMENT_LATEST)
     await pipe.execute()
 
-    # Publish SentimentScored event
+    # Publish SentimentScored event (durable stream + ephemeral pub/sub mirror for websockets)
+    await deps.stream_bus.publish(Streams.SENTIMENT_SCORED, scored_event.to_dict())
     await deps.redis.publish(Channels.SENTIMENT_SCORED.format(symbol=symbol.upper()), headline_json)
 
     # 2. Write to PostgreSQL SentimentScores
@@ -189,6 +194,7 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
             trend=agg.get("trend", "STABLE"),
         ).to_dict()
         # Publish event
+        await deps.stream_bus.publish(Streams.AGGREGATE_UPDATED, agg_event)
         await deps.redis.publish(Channels.AGGREGATE_UPDATED.format(symbol=symbol), json.dumps(agg_event, default=str))
 
         # Update cache for API reads
@@ -213,25 +219,78 @@ async def main():
         timeframe_computer=TimeframeComputer(),
         redis=redis,
         db_pool=db_pool,
+        stream_bus=DurableEventStream(redis),
     )
-
-    bus = EventBus(redis)
-    await bus.subscribe(
-        Channels.HEADLINE_FETCHED.format(symbol="*"),
-        lambda channel, event: handle_headline(channel, event, deps),
-    )
-    await bus.subscribe(
-        Channels.PRICE_TRIGGER.format(symbol="*"),
-        lambda channel, event: handle_price_trigger(channel, event, deps),
-    )
+    await deps.stream_bus.ensure_group(Streams.HEADLINE_FETCHED, StreamGroups.INGESTION_TO_NLP)
+    await deps.stream_bus.ensure_group(Streams.PRICE_TRIGGER, StreamGroups.INGESTION_TO_NLP)
 
     try:
-        await bus.listen()  # Blocking call
+        await _consume_ingestion_streams(deps)
     except KeyboardInterrupt:
         Logger.info("Subscriber interrupted.")
     finally:
         finbert_engine.shutdown()
-        await bus.stop()
+
+
+async def _consume_ingestion_streams(deps: SubscriberDependencies) -> None:
+    while True:
+        messages = await deps.stream_bus.read_group(
+            group=StreamGroups.INGESTION_TO_NLP,
+            consumer=_CONSUMER_NAME,
+            streams=[Streams.HEADLINE_FETCHED, Streams.PRICE_TRIGGER],
+            count=20,
+            block_ms=3000,
+        )
+
+        if not messages:
+            stale_headlines = await deps.stream_bus.claim_stale(
+                stream=Streams.HEADLINE_FETCHED,
+                group=StreamGroups.INGESTION_TO_NLP,
+                consumer=_CONSUMER_NAME,
+                min_idle_ms=_RETRY_IDLE_MS,
+                count=10,
+            )
+            stale_triggers = await deps.stream_bus.claim_stale(
+                stream=Streams.PRICE_TRIGGER,
+                group=StreamGroups.INGESTION_TO_NLP,
+                consumer=_CONSUMER_NAME,
+                min_idle_ms=_RETRY_IDLE_MS,
+                count=10,
+            )
+            messages = stale_headlines + stale_triggers
+
+        for message in messages:
+            await _process_stream_message(deps, message)
+
+
+async def _process_stream_message(deps: SubscriberDependencies, message: StreamMessage) -> None:
+    try:
+        if message.stream == Streams.HEADLINE_FETCHED:
+            symbol = str(message.payload.get("symbol", "")).upper()
+            await handle_headline(
+                Channels.HEADLINE_FETCHED.format(symbol=symbol),
+                message.payload,
+                deps,
+            )
+        elif message.stream == Streams.PRICE_TRIGGER:
+            symbol = str(message.payload.get("symbol", "")).upper()
+            await handle_price_trigger(
+                Channels.PRICE_TRIGGER.format(symbol=symbol),
+                message.payload,
+                deps,
+            )
+        else:
+            Logger.warning("Unknown stream=%s message_id=%s", message.stream, message.message_id)
+
+        await deps.stream_bus.ack(message.stream, StreamGroups.INGESTION_TO_NLP, message.message_id)
+    except Exception as exc:
+        await deps.stream_bus.retry_or_dead_letter(
+            stream=message.stream,
+            dlq_stream=Streams.INGESTION_TO_NLP_DLQ,
+            group=StreamGroups.INGESTION_TO_NLP,
+            message=message,
+            error=exc,
+        )
 
 
 if __name__ == "__main__":
