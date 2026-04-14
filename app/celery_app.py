@@ -12,7 +12,7 @@ CeleryApp = Celery(
     broker=os.getenv("REDIS_URL", "redis://redis:6379/0"),
     backend=os.getenv("REDIS_URL", "redis://redis:6379/0"),
     include=[
-        "app.domain.ingestion.tasks",
+        "app.domain.ingestion.application.tasks",
     ],
 )
 
@@ -28,7 +28,7 @@ CeleryApp.conf.update(
 
     # Queue routing — each worker listens on its own queue
     task_routes={
-        "app.domain.ingestion.tasks.*":   {"queue": "ingestion"},
+        "app.domain.ingestion.application.tasks.*":   {"queue": "ingestion"},
     },
 
     # Sensible defaults

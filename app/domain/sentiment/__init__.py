@@ -1,1 +1,1 @@
-# Domain 2: Sentiment Analysis
+"""Compatibility package for nlp_logic sentiment modules."""

@@ -1,8 +1,1 @@
-"""Backward-compatible aliases for sentiment event contracts.
-
-Prefer importing from app.shared.event_bus.contracts.
-"""
-
-from app.shared.event_bus.contracts import AggregateUpdatedEvent, SentimentScoredEvent
-
-__all__ = ["SentimentScoredEvent", "AggregateUpdatedEvent"]
+from app.domain.nlp_logic.domain.events import *  # noqa: F401,F403
