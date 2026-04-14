@@ -41,183 +41,66 @@ Built with **FastAPI, Celery, Redis Streams + Pub/Sub, TimescaleDB, and PyTorch*
 
 ---
 
-## 💡 Current-State Architecture (What is truly synchronous vs event-driven)
+## 💡 Architecture (Current Runtime)
 
-The repository is currently a **hybrid** runtime:
-
-### Event-driven paths (asynchronous, decoupled)
-
-* **Ingestion ➜ NLP/Sentiment** is event-driven via Redis Streams with consumer groups.
-  * Ingestion publishes durable `stream:headlines.fetched` and `stream:market.price_trigger` events.
-  * Sentiment subscriber consumes these streams, acknowledges/retries, and publishes durable downstream sentiment events.
-* **Live client updates** use Redis Pub/Sub mirrors for WebSocket fan-out (`*.{symbol}` channels).
-* **Background collection/refresh** is asynchronous through Celery workers + beat scheduler.
-
-### Synchronous paths (request/response, direct reads)
-
-* **`/v1/analyze/{symbol}`** remains synchronous from the API caller perspective.
-  * It executes a cache-first read-model composition flow synchronously inside the request.
-  * If data is stale/partial, it enqueues a background ingestion refresh command and returns immediately (fire-and-forget).
-* **Forecasting endpoint flow** (when invoked) is synchronous request/response over in-process domain code.
-
-### Durable vs Ephemeral Topics
-
-| Topic | Transport | Purpose |
-|---|---|---|
-| `stream:headlines.fetched` | Durable (Redis Stream + consumer group) | Critical ingestion → NLP headline processing with retries/ack/DLQ semantics. |
-| `stream:market.price_trigger` | Durable (Redis Stream + consumer group) | Critical ingestion → NLP trigger handling with retries/ack/DLQ semantics. |
-| `stream:sentiment.scored` | Durable (Redis Stream) | Critical NLP output for downstream consumers/read models. |
-| `stream:sentiment.aggregate_updated` | Durable (Redis Stream) | Critical aggregate updates for downstream consumers/read models. |
-| `headlines.fetched.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
-| `market.price_updated.{symbol}` | Ephemeral (Pub/Sub) | Live websocket updates only. |
-| `market.options_updated.{symbol}` | Ephemeral (Pub/Sub) | Live websocket updates only. |
-| `market.price_trigger.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
-| `sentiment.scored.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
-| `sentiment.aggregate_updated.{symbol}` | Ephemeral (Pub/Sub) | Live websocket push mirror only. |
-
----
-
-## 🧭 Bounded Context Boundaries (Target 3-domain model)
-
-The accepted target boundary model is:
+The codebase is aligned to a **3-domain DDD modular monolith** with explicit context boundaries:
 
 1. **`ingestion`**
-   * External connector reliability, normalization, deduplication, schema validation.
-   * Emits canonical ingestion events only.
+   * Polls external market/news sources.
+   * Publishes canonical ingestion events.
 2. **`nlp_logic`**
-   * Consumes ingestion contracts.
-   * Performs sentiment scoring, enrichment, and derived analytics generation.
+   * Consumes ingestion events from durable streams.
+   * Runs FinBERT scoring, timeframe aggregation, and ML cache updates.
 3. **`frontend_api`**
-   * Serves read models and client-facing endpoints.
-   * Must not run heavy NLP inline.
+   * Exposes REST + WebSocket interfaces.
+   * Serves read models and avoids heavy NLP in request paths.
 
-### Boundary rules
+### Single-container runtime (actual deployment)
 
-* Cross-context communication uses explicit versioned contracts/events.
-* No cross-context domain model imports.
-* Shared code is limited to non-domain concerns (config/logging/tracing/infrastructure adapters).
+`docker-compose.yml` runs one **`app` container** for all core processes, launched by `scripts/entrypoint_single_container.sh`:
 
-### Current code mapping note
+* FastAPI (`uvicorn app.main:App`)
+* Celery ingestion worker (`-Q ingestion`)
+* Celery beat scheduler
+* NLP stream subscriber (`python -m app.domain.sentiment.event_subscriber`)
 
-The repository folders still include `app/domain/ingestion`, `app/domain/sentiment`, `app/domain/api`, plus `app/domain/forecasting`. Migration work will fold the current sentiment/forecasting responsibilities into the `nlp_logic` context contract boundary where applicable.
-
----
-
-## 🚢 Deployment Model
-
-### Current deployment (today)
-
-`docker-compose.yml` currently runs a **multi-service compose topology**:
-
-* `app` (FastAPI)
-* `worker-ingestion` (Celery ingestion worker)
-* `worker-nlp` (sentiment stream subscriber)
-* `beat` (Celery scheduler)
-* `flower` (monitoring)
-* `redis`, `postgres`
-
-These services share one application image but execute as separate containers/process roles.
-
-### Migration target deployment posture
-
-For the DDD migration transition, architecture ADRs define a **single deployable app container runtime** for domain modules (`ingestion`, `nlp_logic`, `frontend_api`) with explicit in-code boundaries and transport abstractions preserved.
-
-In practice:
-
-* **Code boundary target:** modular-monolith style separation by bounded context.
-* **Runtime transition target:** single deployable app container for core contexts during migration.
-* **Later evolution path:** split back into independently deployable services when scale/ownership/fault-isolation criteria are met.
+Redis and Postgres run as supporting containers.
 
 ---
 
-## 🛣 Migration Plan: Current layout ➜ Target 3-domain DDD layout
+## 📡 Event Model (Durable-first)
 
-1. **Establish boundary ownership and contracts**
-   * Confirm context owners and catalog existing events/endpoints.
-   * Freeze non-essential schema changes during cutover windows.
+Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-group semantics). Pub/Sub is used only for UX/live push.
 
-2. **Refactor module boundaries in code**
-   * Remove direct cross-domain imports.
-   * Introduce explicit DTO/event contracts at context edges.
-   * Add architecture tests/checks for boundary enforcement.
+### Durable streams (state/correctness path)
 
-3. **Formalize topic classification**
-   * Route critical state-change events to durable streams first.
-   * Keep ephemeral channels as mirror-only for UX/cache signaling.
-   * Add producer policy checks to prevent critical events on ephemeral topics.
+| Stream | Producer domain | Consumer domain | Notes |
+|---|---|---|---|
+| `stream:headlines.fetched` | ingestion | nlp_logic | Canonical fetched headlines. |
+| `stream:market.price_trigger` | ingestion | nlp_logic | Triggered market anomalies. |
+| `stream:sentiment.scored` | nlp_logic | downstream/read-model consumers | Per-headline sentiment result. |
+| `stream:sentiment.aggregate_updated` | nlp_logic | frontend_api read-model consumers | Timeframe aggregates. |
+| `stream:analysis.refresh_requested` | frontend_api | ingestion | Async refresh command path. |
 
-4. **Consolidate migration runtime**
-   * Build/run one deployable app container carrying all three contexts.
-   * Keep per-context observability tags and health probes.
-   * Use feature flags for selective cutover.
+### Ephemeral Pub/Sub mirrors (UX-only)
 
-5. **Dual-run validation and parity checks**
-   * Shadow legacy/new flows where possible.
-   * Compare sentiment outputs, derived analytics, and API response parity.
-   * Fix drift before shifting meaningful traffic.
+| Channel pattern | Purpose |
+|---|---|
+| `headlines.fetched.{symbol}` | Live headline notifications. |
+| `market.price_updated.{symbol}` | Live price updates. |
+| `market.options_updated.{symbol}` | Live options summary updates. |
+| `market.price_trigger.{symbol}` | Live trigger notifications. |
+| `sentiment.scored.{symbol}` | Live scored-sentiment fan-out. |
+| `sentiment.aggregate_updated.{symbol}` | Live aggregate fan-out. |
 
-6. **Gradual cutover and stabilization**
-   * Canary traffic shifts with rollback switches ready.
-   * Monitor lag/latency/error/freshness SLOs.
-   * Remove compatibility shims and publish post-cutover review.
+**Policy:** publish critical events to durable streams first; Pub/Sub mirrors are non-replayable and not correctness-critical.
 
 ---
 
-## ⚖️ Known trade-offs
+## 🧯 Operational runbooks
 
-* **Latency:** Durable stream-first correctness adds hops/processing delay vs direct synchronous updates.
-* **Durability:** Pub/Sub mirrors are intentionally non-replayable; correctness must rely on durable streams/read models.
-* **Coupling:** A single deployable container simplifies operations but increases noisy-neighbor and release-cadence coupling until service split.
-
----
-
-## 📊 Event-Driven Flow
-
-```mermaid
-graph LR
-    subgraph Ingestion
-        A[News API] --> C[Celery Beat]
-        B[yfinance + NSE] --> C
-    end
-
-    subgraph Redis_Event_Bus
-        E1[headlines.fetched]
-        E2[market.price_updated]
-        E3[market.price_trigger]
-    end
-
-    subgraph Sentiment
-        D[Native Subscriber]
-        F[FinBERT Engine]
-        G[Timeframe Aggregator]
-    end
-
-    subgraph API_Gateway
-        H[REST Endpoint]
-        J[WebSockets]
-    end
-
-    subgraph Forecasting
-        K[PyTorch Engine]
-        L[CNN1D Model Weights]
-    end
-
-    C --> E1
-    C --> E2
-    C --> E3
-    E1 --> D
-    E3 --> D
-    D --> F
-    F --> G
-    G -->|"aggregate_updated"| J
-    E1 --> J
-    E2 --> J
-    H --> K
-    K --> L
-    L -->|"Confluence Check"| H
-```
-
----
+* Startup runbook: [`docs/runbooks/startup.md`](docs/runbooks/startup.md)
+* Failure & recovery runbook: [`docs/runbooks/failure-recovery.md`](docs/runbooks/failure-recovery.md)
 
 ## 🚀 Getting Started
 
