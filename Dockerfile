@@ -12,6 +12,10 @@ RUN pip install --user --no-cache-dir --upgrade pip && \
 # ----- Final Runtime Stage -----
 FROM python:3.11-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Pull only the compiled libraries, leaving all pip caches/metadata behind

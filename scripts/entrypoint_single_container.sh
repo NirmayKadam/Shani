@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Wait for Postgres to be ready
+echo "[entrypoint] waiting for postgres..."
+until pg_isready -h postgres -U "${DB_USER:-postgres}" -d NexusQuantDB; do
+  echo "[entrypoint] postgres is unavailable - sleeping"
+  sleep 2
+done
+echo "[entrypoint] postgres is up - executing schema check"
+
+# Explicitly run the schema script as a fallback
+# (In case the volume was already initialized and docker-entrypoint-initdb.d skipped)
+export PGPASSWORD="${DB_PASSWORD:-postgres}"
+psql -h postgres -U "${DB_USER:-postgres}" -d NexusQuantDB -f ./scripts/init_schema.sql
+
 PIDS=()
 
 start_process() {
@@ -31,6 +44,7 @@ start_process "uvicorn-api" uvicorn app.main:App --host 0.0.0.0 --port 8000
 start_process "ingestion-worker" celery -A app.celery_app worker -Q ingestion -c 2 --loglevel=info
 start_process "beat-scheduler" celery -A app.celery_app beat --loglevel=info
 start_process "nlp-subscriber" python -m app.domain.sentiment.event_subscriber
+start_process "read-model-updater" python -m app.domain.frontend_api.infrastructure.read_model_updater
 
 set +e
 wait -n

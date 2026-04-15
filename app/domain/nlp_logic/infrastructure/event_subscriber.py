@@ -5,6 +5,7 @@
 # sentiment, and publishes aggregate events back to the bus.
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -41,8 +42,16 @@ class SubscriberDependencies:
 
 async def handle_headline(channel: str, event: dict, deps: SubscriberDependencies) -> None:
     """Invoked when 'headlines.fetched.*' event is received."""
-    symbol = event.get("symbol", "")
-    if not symbol:
+    symbol = str(event.get("symbol", "")).upper()
+    headline = event.get("headline", "")
+    if not symbol or not headline:
+        return
+
+    # 0. Deduplication check (avoid re-scoring identical headlines for the same symbol)
+    headline_hash = hashlib.md5(headline.encode("utf-8")).hexdigest()
+    dedup_key = f"seen:headline:{symbol}:{headline_hash}"
+    if await deps.redis.exists(dedup_key):
+        Logger.info("[%s] Skipping already seen headline: %s", symbol, headline[:50])
         return
 
     scored = await deps.analyzer.score_headlines([event])
@@ -51,7 +60,7 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
 
     result = scored[0]
     scored_event = SentimentScoredEvent(
-        symbol=symbol.upper(),
+        symbol=symbol,
         headline=result.get("headline", ""),
         content=result.get("content", ""),
         source_url=result.get("source_url", ""),
@@ -63,8 +72,13 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
     )
 
     # 1. Store in Redis sorted set (latest 50)
-    headlines_key = RedisKeys.NEWS_HEADLINES.format(symbol=symbol.upper())
-    headline_json = json.dumps(scored_event.to_dict(), default=str)
+    headlines_key = RedisKeys.NEWS_HEADLINES.format(symbol=symbol)
+
+    # Strip scored_at to allow ZADD to deduplicate if re-scored later
+    payload = scored_event.to_dict()
+    payload.pop("scored_at", None)
+    headline_json = json.dumps(payload, default=str, sort_keys=True)
+
     try:
         ts_dt = datetime.fromisoformat(result.get("published_at", "").replace("Z", "+00:00"))
     except (ValueError, TypeError):
@@ -75,23 +89,30 @@ async def handle_headline(channel: str, event: dict, deps: SubscriberDependencie
     pipe.zremrangebyrank(headlines_key, 0, -51)
     pipe.expire(headlines_key, TTL.HEADLINES)
     # Cache latest individual score
-    latest_key = RedisKeys.SENTIMENT_LATEST.format(symbol=symbol.upper())
+    latest_key = RedisKeys.SENTIMENT_LATEST.format(symbol=symbol)
     pipe.set(latest_key, headline_json, ex=TTL.SENTIMENT_LATEST)
+    # Mark as seen for 1 hour to prevent rapid duplicates
+    pipe.set(dedup_key, "1", ex=3600)
     await pipe.execute()
 
     # Publish SentimentScored event (durable stream + ephemeral pub/sub mirror for websockets)
+    # We still publish the event with scored_at to the bus for downstream consumers
     await deps.stream_bus.publish(Streams.SENTIMENT_SCORED, scored_event.to_dict())
-    await deps.redis.publish(Channels.SENTIMENT_SCORED.format(symbol=symbol.upper()), headline_json)
+    await deps.redis.publish(Channels.SENTIMENT_SCORED.format(symbol=symbol), headline_json)
 
-    # 2. Write to PostgreSQL SentimentScores
+    # 2. Write to PostgreSQL SentimentScores with existence check
     async with deps.db_pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO SentimentScores
             (Symbol, SentimentLabel, SentimentScore, Confidence, SourceType, SourceUrl, Headline, CreatedAt)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            SELECT $1::VARCHAR(20), $2::VARCHAR(10), $3, $4, $5::VARCHAR(10), $6, $7, $8
+            WHERE NOT EXISTS (
+                SELECT 1 FROM SentimentScores 
+                WHERE Symbol = $1::VARCHAR(20) AND Headline = $7 AND CreatedAt = $8
+            )
             """,
-            symbol.upper(),
+            symbol,
             scored_event.sentiment_label,
             scored_event.sentiment_score,
             scored_event.confidence,

@@ -122,6 +122,22 @@ class AggregateUpdatedV1(VersionedEvent):
     def __post_init__(self) -> None:
         self.event_type = "sentiment.aggregate_updated"
 
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "AggregateUpdatedV1":
+        return cls(
+            schema_version="v1",
+            symbol=str(payload.get("symbol", "")),
+            timeframe=str(payload.get("timeframe", "")),
+            label=str(payload.get("label", "NEUTRAL")),
+            avg_score=float(payload.get("avg_score", 0.0)),
+            bullish_pct=float(payload.get("bullish_pct", 0.0)),
+            bearish_pct=float(payload.get("bearish_pct", 0.0)),
+            neutral_pct=float(payload.get("neutral_pct", 0.0)),
+            count=int(payload.get("count", 0)),
+            trend=str(payload.get("trend", "")),
+            computed_at=str(payload.get("computed_at", _utc_now_iso())),
+        )
+
 
 @dataclass(slots=True)
 class AnalysisRefreshRequestedV1(VersionedEvent):

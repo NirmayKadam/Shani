@@ -1,5 +1,5 @@
 -- TimescaleDB hypertable for tick data
-CREATE TABLE TickData (
+CREATE TABLE IF NOT EXISTS TickData (
     Timestamp       TIMESTAMPTZ     NOT NULL,
     Symbol          VARCHAR(20)     NOT NULL,
     Exchange        VARCHAR(5)      NOT NULL,
@@ -10,10 +10,17 @@ CREATE TABLE TickData (
     ExpiryDate      DATE,
     StrikePrice     DECIMAL(10,2)
 );
-SELECT create_hypertable('tickdata', 'timestamp');
+
+-- Idempotent hypertable creation
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'tickdata') THEN
+        PERFORM create_hypertable('tickdata', 'timestamp');
+    END IF;
+END $$;
 
 -- Processed sentiment scores
-CREATE TABLE SentimentScores (
+CREATE TABLE IF NOT EXISTS SentimentScores (
     ScoreId         UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
     Symbol          VARCHAR(20)     NOT NULL,
     SentimentLabel  VARCHAR(10)     NOT NULL,  -- BULLISH | BEARISH | NEUTRAL
@@ -25,10 +32,10 @@ CREATE TABLE SentimentScores (
     ModelVersion    VARCHAR(50),
     CreatedAt       TIMESTAMPTZ     DEFAULT NOW()
 );
-CREATE INDEX idx_sentiment_symbol_time ON SentimentScores (Symbol, CreatedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_sentiment_symbol_time ON SentimentScores (Symbol, CreatedAt DESC);
 
 -- Detected events
-CREATE TABLE DetectedEvents (
+CREATE TABLE IF NOT EXISTS DetectedEvents (
     EventId         UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
     Symbol          VARCHAR(20)     NOT NULL,
     EventType       VARCHAR(30)     NOT NULL,
@@ -38,10 +45,10 @@ CREATE TABLE DetectedEvents (
     Confidence      DECIMAL(5,4)    DEFAULT 1.0,
     DetectedAt      TIMESTAMPTZ     DEFAULT NOW()
 );
-CREATE INDEX idx_events_symbol_time ON DetectedEvents (Symbol, DetectedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_events_symbol_time ON DetectedEvents (Symbol, DetectedAt DESC);
 
 -- Alert rules (user-defined)
-CREATE TABLE AlertRules (
+CREATE TABLE IF NOT EXISTS AlertRules (
     RuleId          UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
     Symbol          VARCHAR(20)     NOT NULL,
     ConditionField  VARCHAR(30)     NOT NULL,

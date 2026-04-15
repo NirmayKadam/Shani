@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.shared.redis_client import GetRedisClient, CloseRedisClient
 from app.shared.database import GetDatabasePool, CloseDatabasePool
@@ -130,3 +131,20 @@ App.include_router(
     WebSocketRouter,
     tags=["WebSocket"]
 )
+
+# ── Static Files & Dashboard ──────────────────────────────────
+import os
+
+_STATIC_PATH = os.path.join(os.path.dirname(__file__), "static")
+if not os.path.exists(_STATIC_PATH):
+    os.makedirs(_STATIC_PATH, exist_ok=True)
+
+App.mount("/static", StaticFiles(directory=_STATIC_PATH), name="static")
+
+
+@App.get("/")
+async def Dashboard():
+    index_file = os.path.join(_STATIC_PATH, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return JSONResponse(content={"message": "AlphaStreams v2 API is running. UI not found."})

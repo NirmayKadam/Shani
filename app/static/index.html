@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaStreams | Quant Sentiment Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet"/>
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="ri-pulse-fill"></i>
+                <span>AlphaStreams</span>
+            </div>
+            <nav class="nav-menu">
+                <div class="nav-label">Main</div>
+                <a href="#" class="nav-item active"><i class="ri-dashboard-3-line"></i> Dashboard</a>
+                <a href="#" class="nav-item"><i class="ri-line-chart-line"></i> Analytics</a>
+                <a href="#" class="nav-item"><i class="ri-notification-3-line"></i> Alerts</a>
+                <div class="nav-label">Watchlist</div>
+                <div id="watchlist-container" class="watchlist">
+                    <!-- Symbols injected here -->
+                    <div class="loading-spinner-small"></div>
+                </div>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="dot online"></span>
+                    <span>Live Systems</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="search-bar">
+                    <i class="ri-search-line"></i>
+                    <input type="text" placeholder="Search symbol..." id="symbol-search">
+                </div>
+                <div class="top-actions">
+                    <button class="btn-icon"><i class="ri-notification-line"></i></button>
+                    <div class="user-profile">
+                        <div class="avatar">NK</div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                <!-- Left Column: Snapshot & Sentiment -->
+                <div class="dashboard-left">
+                    <div class="symbol-header">
+                        <div class="title-group">
+                            <h1 id="active-symbol">SELECT SYMBOL</h1>
+                            <span class="badge" id="instrument-type">EQ</span>
+                        </div>
+                        <div class="price-group">
+                            <div class="main-price" id="last-price">₹0.00</div>
+                            <div class="price-change" id="price-change">+0.00%</div>
+                        </div>
+                    </div>
+
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <div class="stat-label">Volume</div>
+                            <div class="stat-value" id="volume">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Open</div>
+                            <div class="stat-value" id="open-price">₹0.00</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">High</div>
+                            <div class="stat-value" id="high-price">₹0.00</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Low</div>
+                            <div class="stat-value" id="low-price">₹0.00</div>
+                        </div>
+                    </div>
+
+                    <div class="sentiment-section">
+                        <h2>Sentiment Analysis</h2>
+                        <div class="sentiment-grid">
+                            <div class="sentiment-card main-sentiment">
+                                <div class="card-header">
+                                    <span>Global Bias</span>
+                                    <i class="ri-information-line"></i>
+                                </div>
+                                <div class="sentiment-value" id="global-sentiment">NEUTRAL</div>
+                                <div class="sentiment-score-bar">
+                                    <div class="bar-bg">
+                                        <div class="bar-fill" id="global-score-fill" style="width: 50%"></div>
+                                    </div>
+                                    <div class="bar-labels">
+                                        <span>Bearish</span>
+                                        <span id="global-score-text">0.00</span>
+                                        <span>Bullish</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="sentiment-timeframes">
+                                <div class="tf-card">
+                                    <div class="tf-label">Intraday</div>
+                                    <div class="tf-val" id="tf-intraday">--</div>
+                                </div>
+                                <div class="tf-card">
+                                    <div class="tf-label">Daily</div>
+                                    <div class="tf-val" id="tf-daily">--</div>
+                                </div>
+                                <div class="tf-card">
+                                    <div class="tf-label">Weekly</div>
+                                    <div class="tf-val" id="tf-weekly">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="forecast-section">
+                        <div class="card glass">
+                            <div class="card-header">
+                                <h3>QuantCNN Forecast</h3>
+                                <span class="badge-outline">AI MODEL</span>
+                            </div>
+                            <div class="forecast-body">
+                                <div class="prediction" id="ml-prediction">WAITING</div>
+                                <div class="confidence-meter">
+                                    <div class="label">Confidence</div>
+                                    <div class="value" id="ml-confidence">0%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Headlines -->
+                <div class="dashboard-right">
+                    <div class="headlines-section card glass">
+                        <div class="card-header">
+                            <h3>Real-time Headlines</h3>
+                            <button class="btn-small" onclick="refreshAnalysis()"><i class="ri-refresh-line"></i></button>
+                        </div>
+                        <div class="headlines-list" id="headlines-list">
+                            <div class="empty-state">Select a symbol to see latest news</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
