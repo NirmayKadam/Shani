@@ -1,0 +1,5 @@
+QUEUE_NLP = "nlp"
+QUEUE_DERIVATIVES = "derivatives"
+QUEUE_SIGNALS = "signals"
+QUEUE_ALERTS = "alerts"
+QUEUE_ML = "ml"

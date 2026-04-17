@@ -1,29 +1,20 @@
-# ----- Builder Stage -----
-FROM python:3.11-slim as builder
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Python dependencies strictly into the local user space
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir --upgrade pip && \
-    pip install --user --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --user --no-cache-dir -r requirements.txt
-
-# ----- Final Runtime Stage -----
-FROM python:3.11-slim
-
+# Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Install python deps sequentially to save RAM/Space
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Pull only the compiled libraries, leaving all pip caches/metadata behind
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
-
-# Copy application code
+# Copy source
 COPY . .
 
-# Default command runs all core in-container processes
-CMD ["./scripts/entrypoint_single_container.sh"]
+# Run Celery and Uvicorn in one container
+CMD ["sh", "-c", "celery -A shared.messaging.CeleryApp:celery_app worker -l info & uvicorn Main:App --host 0.0.0.0 --port 8000"]

@@ -1,11 +1,10 @@
 # docker-compose.yml
 
 services:
-  app:                          # Single app container: API + internal workers
+  app:
     build: .
     image: nexusquant-app
     ports: ['8000:8000']
-    command: ./scripts/entrypoint_single_container.sh
     env_file: .env
     restart: unless-stopped
     depends_on:
@@ -13,7 +12,7 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-    volumes: ['./app:/app/app']  # Hot reload for development code edits
+    volumes: ['.:/app']
 
   redis:
     image: redis:7-alpine
