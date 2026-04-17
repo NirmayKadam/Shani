@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Optional
 
-from app.domain.nlp_logic.domain.finbert_engine import FinBertEngine
+from domains.analytics.application.nlp.finbert_engine import FinBertEngine
 from datetime import datetime, timezone
 
 from app.shared.constants import SentimentLabel, RedisKeys, TTL

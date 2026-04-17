@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from app.domain.nlp_logic.domain.model import QuantCNN1D
+from domains.analytics.application.nlp.model import QuantCNN1D
 
 Logger = logging.getLogger(__name__)
 

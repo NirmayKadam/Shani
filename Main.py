@@ -23,11 +23,15 @@ App.include_router(predictions_router)
 
 @App.on_event("startup")
 async def startup_event():
-    # Dependency Injection wireup mapping
-    # caching = RedisAdapter()
-    # db = TimescaleAdapter()
-    # webhook = WebhookAdapter()
-    pass
+    import os
+    from domains.analytics.adapters.outbound.RedisAdapter import RedisAdapter
+    from domains.analytics.adapters.outbound.TimescaleAdapter import TimescaleAdapter
+    from domains.analytics.adapters.outbound.WebhookAdapter import WebhookAdapter
+
+    caching = RedisAdapter(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+    db = TimescaleAdapter(os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/NexusQuantDB"))
+    webhook = WebhookAdapter(os.getenv("WEBHOOK_URL", ""))
+
 
 @App.get("/")
 def root():

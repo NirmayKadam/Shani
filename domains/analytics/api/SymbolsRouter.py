@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from app.config import GetSettings
-from app.domain.frontend_api.interfaces.schemas import SymbolsResponse
+from domains.analytics.api.schemas import SymbolsResponse
 
 Router = APIRouter()
 
