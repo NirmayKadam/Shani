@@ -6,4 +6,4 @@ from domains.ingestion.dto.RawArticleDTO import RawArticleDTO
 
 class CeleryConsumerAdapter(IArticleProcessor, ITickProcessor):
     def process(self, dto) -> None:
-        pass
+        raise NotImplementedError(" प्रोसेस() not implemented.")

@@ -1,7 +1,12 @@
+import logging
 from domains.ingestion.ports.outbound.INewsSource import INewsSource
 from domains.ingestion.ports.outbound.IMarketDataSource import IMarketDataSource
 from domains.ingestion.ports.outbound.IDedupStore import IDedupStore
 from domains.ingestion.ports.outbound.IEventPublisher import IEventPublisher
+from domains.ingestion.domain.events.ArticleIngested import ArticleIngested
+from domains.ingestion.domain.events.TickBatchIngested import TickBatchIngested
+
+log = logging.getLogger(__name__)
 
 class IngestionService:
     def __init__(self, news: INewsSource, mkt: IMarketDataSource, dedup: IDedupStore, pub: IEventPublisher):
@@ -11,15 +16,16 @@ class IngestionService:
         self.pub = pub
 
     async def ingest_news(self, symbol: str):
-        import logging
-        log = logging.getLogger(__name__)
-        
-        articles = await self.news.fetch_articles(symbol)
+        try:
+            articles = await self.news.fetch_articles(symbol)
+        except Exception as e:
+            log.error(f"[{symbol}] Failed to fetch articles: {e}")
+            return
+
         for article in articles:
             # Simple dedup check (e.g. by URL)
             is_new = await self.dedup.is_new('news', article.url)
             if is_new:
-                from domains.ingestion.domain.events.ArticleIngested import ArticleIngested
                 event = ArticleIngested(
                     symbol=article.symbol,
                     headline=article.headline,
@@ -33,14 +39,15 @@ class IngestionService:
         log.info(f"[{symbol}] Ingested {len(articles)} articles")
 
     async def ingest_market_data(self, symbol: str):
-        import logging
-        log = logging.getLogger(__name__)
-
-        ticks = await self.mkt.fetch_option_chain(symbol)
+        try:
+            ticks = await self.mkt.fetch_option_chain(symbol)
+        except Exception as e:
+            log.error(f"[{symbol}] Failed to fetch option chain: {e}")
+            return
+            
         if not ticks:
             return
 
-        from domains.ingestion.domain.events.TickBatchIngested import TickBatchIngested
         event = TickBatchIngested(
             symbol=symbol,
             ticks=[t.to_dict() for t in ticks]

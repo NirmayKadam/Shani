@@ -16,5 +16,5 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy source
 COPY . .
 
-# Run Celery and Uvicorn in one container
-CMD ["sh", "-c", "celery -A shared.messaging.CeleryApp:celery_app worker -l info & uvicorn Main:App --host 0.0.0.0 --port 8000"]
+# Run Uvicorn
+CMD ["uvicorn", "Main:App", "--host", "0.0.0.0", "--port", "8000"]

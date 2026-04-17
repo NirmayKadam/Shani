@@ -1,5 +1,4 @@
 import os
-import shutil
 
 src_dir = r"c:\Users\Siddharth\Desktop\CODING\CAPSTONE SEM6-7\MarketSentimentAnalysis-ADM-MLDL-\MarketSentimentAnalysis2\app\domain\nlp_logic"
 dest_dir = r"c:\Users\Siddharth\Desktop\CODING\CAPSTONE SEM6-7\MarketSentimentAnalysis-ADM-MLDL-\MarketSentimentAnalysis2\domains\analytics\application\nlp"
