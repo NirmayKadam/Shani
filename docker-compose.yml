@@ -7,47 +7,10 @@ services:
     ports: ['8000:8000']
     env_file: .env
     restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-    volumes: ['.:/app']
-
-  celery_worker:
-    build: .
-    image: nexusquant-app
-    command: celery -A shared.messaging.CeleryApp:celery_app worker -l info
-    env_file: .env
-    restart: unless-stopped
-    depends_on:
-      app:
-        condition: service_started
-      redis:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-    volumes: ['.:/app']
-
-  redis:
-    image: redis:7-alpine
-    volumes: ['redis_data:/data']
-
-  postgres:
-    image: timescale/timescaledb:latest-pg15
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: NexusQuantDB
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes: 
+      - .:/app
       - pg_data:/var/lib/postgresql/data
-      - ./scripts/init_schema.sql:/docker-entrypoint-initdb.d/init_schema.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d NexusQuantDB"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - redis_data:/var/lib/redis
 
 volumes:
   redis_data:

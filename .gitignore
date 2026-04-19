@@ -44,3 +44,4 @@ nlp_logs.txt
 
 # Downloaded ML Models (HuggingFace)
 model_cache/
+models/

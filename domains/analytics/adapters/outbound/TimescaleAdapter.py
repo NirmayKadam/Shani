@@ -5,6 +5,8 @@ from domains.analytics.domain.entities.SentimentScore import SentimentScore
 from typing import List
 
 class TimescaleAdapter(ISentimentStore, IEventStore):
+    def __init__(self, url: str = None):
+        self._url = url
     def save_score(self, score: SentimentScore) -> None: pass
     def get_last_n(self, symbol: str, n: int) -> List[SentimentScore]: return []
     def save_event(self, event: BaseDomainEvent) -> None: pass

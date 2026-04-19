@@ -3,8 +3,8 @@ from celery import Celery
 
 CeleryApp = Celery(
     "AlphaStreams",
-    broker=os.getenv("REDIS_URL", "redis://redis:6379/0"),
-    backend=os.getenv("REDIS_URL", "redis://redis:6379/0"),
+    broker=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+    backend=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     include=[
         "domains.ingestion.tasks.IngestionTasks",
     ],
@@ -40,4 +40,4 @@ CeleryApp.conf.beat_schedule = {
     },
 }
 
-app = CeleryApp
+celery_app = CeleryApp

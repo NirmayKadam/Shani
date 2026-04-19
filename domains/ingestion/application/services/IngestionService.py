@@ -1,56 +1,113 @@
+import json
 import logging
-from domains.ingestion.ports.outbound.INewsSource import INewsSource
-from domains.ingestion.ports.outbound.IMarketDataSource import IMarketDataSource
-from domains.ingestion.ports.outbound.IDedupStore import IDedupStore
-from domains.ingestion.ports.outbound.IEventPublisher import IEventPublisher
-from domains.ingestion.domain.events.ArticleIngested import ArticleIngested
-from domains.ingestion.domain.events.TickBatchIngested import TickBatchIngested
+from datetime import datetime, timezone
 
-log = logging.getLogger(__name__)
+from domains.ingestion.adapters.outbound.NewsApiAdapter import NewsApiAdapter, NewsFetcher
+from domains.ingestion.adapters.outbound.NseApiAdapter import NseApiAdapter, MarketPriceFetcher, OptionChainFetcher
+from domains.ingestion.adapters.outbound.RedisDedupAdapter import RedisDedupAdapter
+from domains.ingestion.adapters.outbound.RedisEventBusAdapter import RedisEventBusAdapter
+from app.shared.constants import RedisKeys, Streams, TTL
+
+Logger = logging.getLogger(__name__)
+
 
 class IngestionService:
-    def __init__(self, news: INewsSource, mkt: IMarketDataSource, dedup: IDedupStore, pub: IEventPublisher):
-        self.news = news
-        self.mkt = mkt
-        self.dedup = dedup
-        self.pub = pub
+    """Orchestrates news, price, and options ingestion.
 
-    async def ingest_news(self, symbol: str):
+    Uses sync Redis (runs inside Celery workers).
+    """
+
+    def __init__(
+        self,
+        news_fetcher: NewsFetcher,
+        price_fetcher: MarketPriceFetcher,
+        option_fetcher: OptionChainFetcher,
+        redis_client,
+        event_bus: RedisEventBusAdapter,
+    ):
+        self._news = news_fetcher
+        self._price = price_fetcher
+        self._option = option_fetcher
+        self._redis = redis_client
+        self._bus = event_bus
+
+    # ── News ────────────────────────────────────────────────────
+
+    async def ingest_news(self, symbol: str) -> None:
         try:
-            articles = await self.news.fetch_articles(symbol)
+            headlines = await self._news.fetch(symbol)
         except Exception as e:
-            log.error(f"[{symbol}] Failed to fetch articles: {e}")
+            Logger.error("[%s] Failed to fetch news: %s", symbol, e)
             return
 
-        for article in articles:
-            # Simple dedup check (e.g. by URL)
-            is_new = await self.dedup.is_new('news', article.url)
-            if is_new:
-                event = ArticleIngested(
-                    symbol=article.symbol,
-                    headline=article.headline,
-                    body=article.body,
-                    source=article.source,
-                    url=article.url,
-                    published_at=article.published_at
-                )
-                await self.pub.publish("ingestion.news", event.to_dict())
-                await self.dedup.mark_seen('news', article.url)
-        log.info(f"[{symbol}] Ingested {len(articles)} articles")
+        if not headlines:
+            Logger.info("[%s] No headlines fetched", symbol)
+            return
 
-    async def ingest_market_data(self, symbol: str):
+        count = 0
+        for h in headlines:
+            url = h.get("source_url", "")
+            dedup_key = f"news:seen:{hash(url) & 0xFFFFFFFF:08x}"
+
+            if self._redis.exists(dedup_key):
+                continue
+
+            # Build event payload matching HeadlineFetchedV1 contract
+            event_payload = {
+                "event_type": "headline.fetched",
+                "schema_version": "v1",
+                "symbol": symbol.upper(),
+                "headline": h.get("headline", ""),
+                "content": h.get("content", ""),
+                "source_url": url,
+                "source_name": h.get("source_name", ""),
+                "published_at": h.get("published_at", ""),
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Publish to durable stream for SentimentOrchestrator
+            self._bus.publish("ingestion.news", event_payload)
+
+            # Mark seen
+            self._redis.set(dedup_key, "1", ex=TTL.NEWS_DEDUP)
+            count += 1
+
+        Logger.info("[%s] Ingested %d new headlines (fetched %d total)", symbol, count, len(headlines))
+
+    # ── Market Price ────────────────────────────────────────────
+
+    async def ingest_market_data(self, symbol: str) -> None:
         try:
-            ticks = await self.mkt.fetch_option_chain(symbol)
+            data = await self._price.fetch(symbol)
         except Exception as e:
-            log.error(f"[{symbol}] Failed to fetch option chain: {e}")
-            return
-            
-        if not ticks:
+            Logger.error("[%s] Failed to fetch market price: %s", symbol, e)
             return
 
-        event = TickBatchIngested(
-            symbol=symbol,
-            ticks=[t.to_dict() for t in ticks]
-        )
-        await self.pub.publish("ingestion.mkt", event.to_dict())
-        log.info(f"[{symbol}] Ingested {len(ticks)} ticks")
+        if not data:
+            Logger.warning("[%s] No market price data", symbol)
+            return
+
+        # Cache price snapshot in Redis for API reads
+        cache_key = RedisKeys.MARKET_PRICE.format(symbol=symbol.upper())
+        self._redis.set(cache_key, json.dumps(data, default=str), ex=TTL.MARKET_PRICE)
+        Logger.info("[%s] Cached market price: %.2f", symbol, data.get("last_price", 0))
+
+    # ── Options ─────────────────────────────────────────────────
+
+    async def ingest_options(self, symbol: str) -> None:
+        try:
+            data = await self._option.fetch(symbol)
+        except Exception as e:
+            Logger.error("[%s] Failed to fetch option chain: %s", symbol, e)
+            return
+
+        if not data:
+            Logger.warning("[%s] No option chain data", symbol)
+            return
+
+        # Add fetched_at timestamp
+        data["fetched_at"] = datetime.now(timezone.utc).isoformat()
+
+        cache_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol.upper())
+        self._redis.set(cache_key, json.dumps(data, default=str), ex=TTL.MARKET_OPTIONS)
+        Logger.info("[%s] Cached option chain (%d expiries)", symbol, len(data.get("expiry_dates", [])))

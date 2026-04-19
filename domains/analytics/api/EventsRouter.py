@@ -1,4 +1,4 @@
-# app/domain/api/routers/websocket.py — WebSocket /ws/{symbol} for real-time push
+# domains/analytics/api/EventsRouter.py — WebSocket /ws/{symbol} for real-time push
 #
 # When a client connects, subscribes to all relevant Redis Pub/Sub channels
 # for that symbol and forwards events as JSON messages in real-time.
@@ -15,7 +15,7 @@ from app.shared.constants import Channels
 
 Logger = logging.getLogger(__name__)
 
-Router = APIRouter()
+router = APIRouter()
 
 _CLIENT_QUEUE_MAX_SIZE = 200
 _CLIENT_SEND_TIMEOUT_SECONDS = 5.0
@@ -218,7 +218,7 @@ class ConnectionManager:
 _Manager = ConnectionManager()
 
 
-@Router.websocket("/ws/{symbol}")
+@router.websocket("/ws/{symbol}")
 async def WebSocketEndpoint(websocket: WebSocket, symbol: str):
     """
     Real-time WebSocket endpoint for a symbol.

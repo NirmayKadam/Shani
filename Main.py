@@ -15,11 +15,11 @@ logging.basicConfig(level=logging.INFO)
 
 App = FastAPI(title="AlphaStreams DDD Engine")
 
-App.include_router(sentiment_router)
-App.include_router(signals_router)
-App.include_router(events_router)
-App.include_router(derivatives_router)
-App.include_router(predictions_router)
+App.include_router(sentiment_router, prefix="/v1")
+App.include_router(signals_router, prefix="/v1")
+App.include_router(events_router, prefix="/v1")
+App.include_router(derivatives_router, prefix="/v1")
+App.include_router(predictions_router, prefix="/v1")
 
 @App.on_event("startup")
 async def startup_event():

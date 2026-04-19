@@ -1,4 +1,4 @@
-# app/domain/api/routers/analyze.py — GET /v1/analyze/{symbol} endpoint
+# domains/analytics/api/SentimentRouter.py — GET /v1/analyze/{symbol} endpoint
 
 import logging
 from datetime import datetime, timezone
@@ -10,7 +10,7 @@ from domains.analytics.api.schemas import AnalysisResponse
 
 Logger = logging.getLogger(__name__)
 
-Router = APIRouter()
+router = APIRouter()
 _Service = None
 
 
@@ -38,7 +38,7 @@ def _get_service():
     return _Service
 
 
-@Router.get("/analyze/{symbol}", response_model=AnalysisResponse)
+@router.get("/analyze/{symbol}", response_model=AnalysisResponse)
 async def AnalyzeSymbol(symbol: str):
     """
     Cache-first analysis endpoint.

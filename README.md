@@ -10,11 +10,11 @@ Built with **FastAPI, Celery, Redis Streams + Pub/Sub, TimescaleDB, and PyTorch*
 
 ### Backend Infrastructure
 
-*   **Language:** Python 3.11+ (Asynchronous)
-*   **Web Framework:** [FastAPI](https://fastapi.tiangolo.com/) (ASGI) with Uvicorn
-*   **Task Queue:** [Celery](https://docs.celeryq.dev/en/stable/) (Distributed Task Management)
-*   **Real-time Engine:** [WebSockets](https://fastapi.tiangolo.com/advanced/websockets/) for live push-notifications
-*   **Monitoring:** [Flower](https://flower.readthedocs.io/en/latest/) (Real-time task dashboard)
+* **Language:** Python 3.11+ (Asynchronous)
+* **Web Framework:** [FastAPI](https://fastapi.tiangolo.com/) (ASGI) with Uvicorn
+* **Task Queue:** [Celery](https://docs.celeryq.dev/en/stable/) (Distributed Task Management)
+* **Real-time Engine:** [WebSockets](https://fastapi.tiangolo.com/advanced/websockets/) for live push-notifications
+* **Monitoring:** [Flower](https://flower.readthedocs.io/en/latest/) (Real-time task dashboard)
 
 ### Databases & Messaging
 
@@ -43,28 +43,87 @@ Built with **FastAPI, Celery, Redis Streams + Pub/Sub, TimescaleDB, and PyTorch*
 
 ## 💡 Architecture (Current Runtime)
 
+```mermaid
+graph LR
+    subgraph External_Sources [External Data Sources]
+        NewsAPI([News API])
+        YFinance([yfinance])
+        NSE([NSE India])
+    end
+
+    subgraph App_Domain [AlphaStreams Modular Monolith]
+        subgraph Ingestion_Domain [Ingestion Domain]
+            CeleryTasks[Celery Tasks]
+            CeleryBeat[Celery Beat]
+        end
+
+        subgraph NLP_Logic [NLP Logic Domain]
+            EventSubscriber[Event Subscriber]
+            FinBERT[FinBERT Model]
+        end
+
+        subgraph Frontend_Domain [Frontend API Domain]
+            FastAPI[FastAPI]
+            AnalysisService[Analysis Service]
+            WSServer[WebSocket Server]
+        end
+    end
+
+    subgraph Infrastructure
+        RedisStreams[(Redis Streams)]
+        RedisPubSub[(Redis Pub/Sub)]
+        TimescaleDB[(TimescaleDB)]
+    end
+
+    %% Ingestion Flow
+    External_Sources --> Ingestion_Domain
+    Ingestion_Domain -- "Publish" --> RedisStreams
+
+    %% NLP Flow
+    RedisStreams -- "Consume" --> NLP_Logic
+    NLP_Logic -- "Store" --> TimescaleDB
+    NLP_Logic -- "Publish" --> RedisStreams
+
+    %% Frontend Flow
+    Frontend_Domain -- "Read" --> RedisStreams
+    Frontend_Domain -- "Query" --> TimescaleDB
+    Frontend_Domain -- "Fan-out" --> RedisPubSub
+    RedisPubSub -- "Push Updates" --> WSServer
+```
+
 The codebase is aligned to a **3-domain DDD modular monolith** with explicit context boundaries:
 
-1. **`ingestion`**
-   * Polls external market/news sources.
-   * Publishes canonical ingestion events.
-2. **`nlp_logic`**
-   * Consumes ingestion events from durable streams.
-   * Runs FinBERT scoring, timeframe aggregation, and ML cache updates.
-3. **`frontend_api`**
-   * Exposes REST + WebSocket interfaces.
-   * Serves read models and avoids heavy NLP in request paths.
+### Active Bounded Contexts
 
-### Single-container runtime (actual deployment)
+#### `ingestion`
+- Polls news, market prices, and option-chain snapshots.
+- Writes hot cache/read-model data where appropriate.
+- Publishes durable stream events for downstream consumers.
+- **Primary module:** `domains/ingestion/tasks/IngestionTasks.py`
 
-`docker-compose.yml` runs one **`app` container** for all core processes, launched by `scripts/entrypoint_single_container.sh`:
+#### `nlp_logic`
+- Consumes durable ingestion events via Redis Streams consumer groups.
+- Scores headlines with FinBERT.
+- Recomputes timeframe aggregates and publishes durable aggregate events.
+- **Primary module:** `domains/analytics/application/nlp/SentimentOrchestrator.py`
 
-* FastAPI (`uvicorn app.main:App`)
-* Celery ingestion worker (`-Q ingestion`)
-* Celery beat scheduler
-* NLP stream subscriber (`python -m app.domain.sentiment.event_subscriber`)
+#### `frontend_api`
 
-Redis and Postgres run as supporting containers.
+- Exposes cache-first query endpoints.
+- Publishes async refresh requests when responses are stale/partial.
+- Maintains websocket live updates using Pub/Sub mirrors.
+- **Primary modules:**
+  - `domains/analytics/api/SentimentRouter.py`
+  - `domains/analytics/api/EventsRouter.py`
+
+### Runtime Processes (Single-Container)
+
+The `app` container starts these child processes via `scripts/entrypoint_single_container.sh`:
+
+1.  **FastAPI** (`uvicorn Main:App`)
+2.  **Celery ingestion worker** (`-Q ingestion`)
+3.  **Celery beat scheduler**
+4.  **NLP stream subscriber** (`python -m domains.analytics.application.nlp.SentimentOrchestrator`)
 
 ---
 
@@ -94,6 +153,25 @@ Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-g
 | `sentiment.aggregate_updated.{symbol}` | Live aggregate fan-out. |
 
 **Policy:** publish critical events to durable streams first; Pub/Sub mirrors are non-replayable and not correctness-critical.
+
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant I as Ingestion Domain
+    participant R as Redis Streams
+    participant N as NLP Logic Domain
+    participant T as TimescaleDB
+    participant F as Frontend API
+
+    I->>R: stream:headlines.fetched
+    R->>N: headlines.fetched
+    N->>N: FinBERT Scoring
+    N->>T: Save Sentiment
+    N->>R: stream:sentiment.scored
+    R->>F: sentiment.scored (Read Model Update)
+    F->>F: Update Cache
+```
 
 ---
 
@@ -148,8 +226,50 @@ curl http://localhost:8000/v1/analyze/NIFTY
 ### 2. Live WebSocket Streaming (Push)
 
 Using a websocket client (e.g. VS Code Bruno or Postman), connect to:
-`ws://localhost:8000/ws/NIFTY`
+`ws://localhost:8000/v1/ws/NIFTY`
 Events will spontaneously push to you whenever new prices, options, headlines, or sentiment updates enter the architecture!
 
 > [!NOTE]
 > **On Closed Markets**: Rather than crashing or blank-screening, the system gracefully degrades outside of NSE trading hours (9:15 AM – 3:30 PM IST), relying on Redis closures and asynchronous persistence to serve the last-known "CLOSED" state, while continuing to poll 24/7 web news APIs for weekend sentiment!
+
+---
+
+## 🔄 Workflow (Request-Response Path)
+
+### `GET /v1/analyze/{symbol}`
+
+1. API validates symbol against configured watchlist.
+2. Analysis service reads market/headline/sentiment/options/forecast from Redis-first read models.
+3. If data is stale or partial, API still returns quickly and publishes an async refresh request (`stream:analysis.refresh_requested`).
+4. Ingestion + NLP flows continue asynchronously and update caches/read-models consumed by API and websocket clients.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as FastAPI /analyze
+    participant RM as Read Model (Redis)
+    participant S as Stream
+    participant I as Ingestion
+
+    U->>API: GET /v1/analyze/{symbol}
+    API->>RM: Fetch cached analysis
+    API-->>U: Return cached data (fast)
+    
+    rect rgb(200, 220, 255)
+        Note right of API: If stale or partial
+        API->>S: stream:analysis.refresh_requested
+        S->>I: Trigger background refresh
+    end
+```
+
+---
+
+## 🏁 Suggested Onboarding Order
+
+1. Read `README.md` for architecture + startup.
+2. Read `docs/adr/ADR-001-bounded-contexts.md` and `docs/adr/ADR-002-event-transport.md`.
+3. Read `app/shared/event_bus/contracts.py` and `app/shared/event_bus/streams.py`.
+4. Read ingestion tasks and NLP subscriber modules.
+5. Read frontend API service/router modules.
+6. Use runbooks in `docs/runbooks/` for ops workflows.
+
