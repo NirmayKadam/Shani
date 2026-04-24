@@ -10,11 +10,11 @@ Built with **FastAPI, Celery, Redis Streams + Pub/Sub, TimescaleDB, and PyTorch*
 
 ### Backend Infrastructure
 
-* **Language:** Python 3.11+ (Asynchronous)
-* **Web Framework:** [FastAPI](https://fastapi.tiangolo.com/) (ASGI) with Uvicorn
-* **Task Queue:** [Celery](https://docs.celeryq.dev/en/stable/) (Distributed Task Management)
-* **Real-time Engine:** [WebSockets](https://fastapi.tiangolo.com/advanced/websockets/) for live push-notifications
-* **Monitoring:** [Flower](https://flower.readthedocs.io/en/latest/) (Real-time task dashboard)
+* Language: Python 3.11+ (Asynchronous)
+* Web Framework: [FastAPI](https://fastapi.tiangolo.com/) (ASGI) with Uvicorn
+* Task Queue: [Celery](https://docs.celeryq.dev/en/stable/) (Distributed Task Management)
+* Real-time Engine: [WebSockets](https://fastapi.tiangolo.com/advanced/websockets/) for live push-notifications
+* Monitoring: [Flower](https://flower.readthedocs.io/en/latest/) (Real-time task dashboard)
 
 ### Databases & Messaging
 
@@ -24,9 +24,9 @@ Built with **FastAPI, Celery, Redis Streams + Pub/Sub, TimescaleDB, and PyTorch*
 
 ### AI & Machine Learning
 
-*   **Deep Learning:** [PyTorch](https://pytorch.org/) (Custom 1D-CNN for Quant forecasting)
-*   **NLP / LLM:** [HuggingFace Transformers](https://huggingface.co/docs/transformers/index) (FinBERT for narrative analysis)
-*   **Feature Engineering:** [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/), and [SciPy](https://scipy.org/)
+* Deep Learning: [PyTorch](https://pytorch.org/) (Custom MTF-CNN-LSTM for Quant forecasting with CUDA acceleration)
+* NLP / LLM: [HuggingFace Transformers](https://huggingface.co/docs/transformers/index) (FinBERT for narrative analysis)
+* Feature Engineering: [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/), [SciPy](https://scipy.org/), and Macro-indicators (VIX, TNX, DXY)
 
 ### Data Sources
 
@@ -49,6 +49,7 @@ graph LR
         NewsAPI([News API])
         YFinance([yfinance])
         NSE([NSE India])
+        Macro([Macro: VIX, TNX, DXY])
     end
 
     subgraph App_Domain [AlphaStreams Modular Monolith]
@@ -62,6 +63,11 @@ graph LR
             FinBERT[FinBERT Model]
         end
 
+        subgraph Prediction_Domain [Prediction Domain]
+            CNNPredictor[MTF-CNN-LSTM]
+            ResearchScripts[Research & Training]
+        end
+
         subgraph Frontend_Domain [Frontend API Domain]
             FastAPI[FastAPI]
             AnalysisService[Analysis Service]
@@ -73,6 +79,7 @@ graph LR
         RedisStreams[(Redis Streams)]
         RedisPubSub[(Redis Pub/Sub)]
         TimescaleDB[(TimescaleDB)]
+        ModelStore[(Model Store: .pt)]
     end
 
     %% Ingestion Flow
@@ -83,6 +90,12 @@ graph LR
     RedisStreams -- "Consume" --> NLP_Logic
     NLP_Logic -- "Store" --> TimescaleDB
     NLP_Logic -- "Publish" --> RedisStreams
+
+    %% Prediction Flow
+    External_Sources --> Prediction_Domain
+    Prediction_Domain -- "Save Weights" --> ModelStore
+    AnalysisService -- "Inference" --> CNNPredictor
+    CNNPredictor -- "Load" --> ModelStore
 
     %% Frontend Flow
     Frontend_Domain -- "Read" --> RedisStreams
@@ -96,16 +109,17 @@ The codebase is aligned to a **3-domain DDD modular monolith** with explicit con
 ### Active Bounded Contexts
 
 #### `ingestion`
-- Polls news, market prices, and option-chain snapshots.
-- Writes hot cache/read-model data where appropriate.
-- Publishes durable stream events for downstream consumers.
-- **Primary module:** `domains/ingestion/tasks/IngestionTasks.py`
+* Polls news, market prices, and option-chain snapshots.
+* Writes hot cache/read-model data where appropriate.
+* Publishes durable stream events for downstream consumers.
+* **Primary module:** `domains/ingestion/tasks/IngestionTasks.py`
 
 #### `nlp_logic`
-- Consumes durable ingestion events via Redis Streams consumer groups.
-- Scores headlines with FinBERT.
-- Recomputes timeframe aggregates and publishes durable aggregate events.
-- **Primary module:** `domains/analytics/application/nlp/SentimentOrchestrator.py`
+
+* Consumes durable ingestion events via Redis Streams consumer groups.
+* Scores headlines with FinBERT.
+* Recomputes timeframe aggregates and publishes durable aggregate events.
+* **Primary module:** `domains/analytics/application/nlp/SentimentOrchestrator.py`
 
 #### `frontend_api`
 
@@ -114,7 +128,16 @@ The codebase is aligned to a **3-domain DDD modular monolith** with explicit con
 - Maintains websocket live updates using Pub/Sub mirrors.
 - **Primary modules:**
   - `domains/analytics/api/SentimentRouter.py`
+  - `domains/analytics/api/PredictionsRouter.py`
   - `domains/analytics/api/EventsRouter.py`
+
+#### `prediction` (Research & ML)
+- Handles model training and validation using historical data.
+- Implements Multi-Timeframe (MTF) sequence building.
+- Provides high-performance inference via PyTorch (CPU/CUDA).
+- **Primary modules:**
+  - `research/TrainCNNPredictor.py`
+  - `domains/analytics/application/ml_forecasting/CNNPredictor.py`
 
 ### Runtime Processes (Single-Container)
 
@@ -135,22 +158,22 @@ Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-g
 
 | Stream | Producer domain | Consumer domain | Notes |
 |---|---|---|---|
-| `stream:headlines.fetched` | ingestion | nlp_logic | Canonical fetched headlines. |
-| `stream:market.price_trigger` | ingestion | nlp_logic | Triggered market anomalies. |
-| `stream:sentiment.scored` | nlp_logic | downstream/read-model consumers | Per-headline sentiment result. |
-| `stream:sentiment.aggregate_updated` | nlp_logic | frontend_api read-model consumers | Timeframe aggregates. |
-| `stream:analysis.refresh_requested` | frontend_api | ingestion | Async refresh command path. |
+*   `stream:headlines.fetched` | ingestion | nlp_logic | Canonical fetched headlines.
+*   `stream:market.price_trigger` | ingestion | nlp_logic | Triggered market anomalies.
+*   `stream:sentiment.scored` | nlp_logic | downstream/read-model consumers | Per-headline sentiment result.
+*   `stream:sentiment.aggregate_updated` | nlp_logic | frontend_api read-model consumers | Timeframe aggregates.
+*   `stream:analysis.refresh_requested` | frontend_api | ingestion | Async refresh command path.
 
 ### Ephemeral Pub/Sub mirrors (UX-only)
 
 | Channel pattern | Purpose |
 |---|---|
-| `headlines.fetched.{symbol}` | Live headline notifications. |
-| `market.price_updated.{symbol}` | Live price updates. |
-| `market.options_updated.{symbol}` | Live options summary updates. |
-| `market.price_trigger.{symbol}` | Live trigger notifications. |
-| `sentiment.scored.{symbol}` | Live scored-sentiment fan-out. |
-| `sentiment.aggregate_updated.{symbol}` | Live aggregate fan-out. |
+*   `headlines.fetched.{symbol}` | Live headline notifications.
+*   `market.price_updated.{symbol}` | Live price updates.
+*   `market.options_updated.{symbol}` | Live options summary updates.
+*   `market.price_trigger.{symbol}` | Live trigger notifications.
+*   `sentiment.scored.{symbol}` | Live scored-sentiment fan-out.
+*   `sentiment.aggregate_updated.{symbol}` | Live aggregate fan-out.
 
 **Policy:** publish critical events to durable streams first; Pub/Sub mirrors are non-replayable and not correctness-critical.
 
@@ -198,7 +221,7 @@ This system is completely dockerized. All configurations are driven via the `.en
     docker compose up -d
     ```
 
-    *Note: PyTorch initializes securely in CPU mode to drastically reduce Docker image size requirements by bypassing heavy CUDA dependencies.*
+    *Note: PyTorch supports both CPU and CUDA modes. If an NVIDIA GPU is available, the system automatically leverages it for 10x-20x faster training and inference benchmarking.*
 
 3.  **Initialize the Database Schema**
 
@@ -223,11 +246,22 @@ Returns the live options chain surface, current price, latest headlines, and the
 curl http://localhost:8000/v1/analyze/NIFTY
 ```
 
-### 2. Live WebSocket Streaming (Push)
+### 2. Market Volatility Prediction
+Predicts the 5-day forward volatility shift using the MTF-CNN-LSTM model.
 
+```bash
+curl http://localhost:8000/v1/predictions/NIFTY
+```
+
+**Output Classes:**
+- `VOL_CRUSH`: Significant decrease in volatility.
+- `NEUTRAL`: Stable market conditions.
+- `VOL_EXPAND`: Significant increase/breakout expected.
+
+### 3. Live WebSocket Streaming (Push)
 Using a websocket client (e.g. VS Code Bruno or Postman), connect to:
 `ws://localhost:8000/v1/ws/NIFTY`
-Events will spontaneously push to you whenever new prices, options, headlines, or sentiment updates enter the architecture!
+Events (including ML predictions) will spontaneously push to you whenever new data enters the architecture!
 
 > [!NOTE]
 > **On Closed Markets**: Rather than crashing or blank-screening, the system gracefully degrades outside of NSE trading hours (9:15 AM – 3:30 PM IST), relying on Redis closures and asynchronous persistence to serve the last-known "CLOSED" state, while continuing to poll 24/7 web news APIs for weekend sentiment!
@@ -254,7 +288,7 @@ sequenceDiagram
     U->>API: GET /v1/analyze/{symbol}
     API->>RM: Fetch cached analysis
     API-->>U: Return cached data (fast)
-    
+
     rect rgb(200, 220, 255)
         Note right of API: If stale or partial
         API->>S: stream:analysis.refresh_requested

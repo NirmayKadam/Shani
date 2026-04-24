@@ -210,10 +210,25 @@ class AnalysisService:
 
             redis = await GetRedisClient()
             cached = await redis.get(RedisKeys.ML_PREDICTION.format(symbol=symbol))
-            if not cached:
-                return None
+            
+            payload = None
+            if cached:
+                payload = json.loads(cached)
+            else:
+                # Real-time fallback if cache empty
+                Logger.info("[%s] ML Cache empty, triggering real-time CNN inference", symbol)
+                from domains.analytics.application.ml_forecasting.CNNPredictor import CNNPredictor
+                predictor = CNNPredictor()
+                # Run in executor to avoid blocking event loop
+                loop = asyncio.get_event_loop()
+                payload = await loop.run_in_executor(None, predictor.predict, symbol)
+                
+                if payload and "error" not in payload:
+                    # Optional: cache it for 1 hour to avoid repeated heavy inference
+                    await redis.set(RedisKeys.ML_PREDICTION.format(symbol=symbol), json.dumps(payload), ex=3600)
+                else:
+                    return None
 
-            payload = json.loads(cached)
             return TechnicalForecastResponse(
                 strategy=payload.get("strategy", "QuantCNN1D"),
                 prediction=payload.get("prediction", "NEUTRAL"),
@@ -221,7 +236,7 @@ class AnalysisService:
                 confluence_status=payload.get("confluence_status", "NEUTRAL"),
             )
         except Exception as exc:
-            Logger.warning("[%s] Failed reading technical forecast cache: %s", symbol, exc)
+            Logger.warning("[%s] Failed reading technical forecast: %s", symbol, exc)
             return None
 
     async def _trigger_background_refresh(self, symbol: str) -> None:

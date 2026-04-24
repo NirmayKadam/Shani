@@ -63,11 +63,14 @@ async def _handle_refresh(stream_bus: DurableEventStream, message: StreamMessage
 
         # Dispatch Celery tasks
         from domains.ingestion.tasks.IngestionTasks import poll_news, poll_prices, poll_options
+        from domains.analytics.tasks.MLTasks import run_stock_prediction
+        
         poll_news.delay(symbol)
         poll_prices.delay(symbol)
         poll_options.delay(symbol)
+        run_stock_prediction.delay(symbol)
 
-        Logger.info("[%s] Dispatched ingestion tasks (news + prices + options)", symbol)
+        Logger.info("[%s] Dispatched ingestion + prediction tasks", symbol)
         await stream_bus.ack(Streams.ANALYSIS_REFRESH_REQUESTED, _GROUP, message.message_id)
 
     except Exception as exc:

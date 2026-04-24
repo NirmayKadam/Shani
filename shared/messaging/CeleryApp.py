@@ -7,6 +7,7 @@ CeleryApp = Celery(
     backend=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     include=[
         "domains.ingestion.tasks.IngestionTasks",
+        "domains.analytics.tasks.MLTasks",
     ],
 )
 

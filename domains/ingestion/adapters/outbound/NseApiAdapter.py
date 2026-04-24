@@ -243,7 +243,7 @@ class OptionChainFetcher:
 
         Returns None if NSE is unreachable (market closed, rate limited).
         """
-        if self._Session is None:
+        if self._Session is None or self._Session.closed:
             await self.initialise()
 
         await self._refresh_cookies()

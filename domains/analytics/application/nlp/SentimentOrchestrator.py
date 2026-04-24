@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.config import GetSettings
-from domains.analytics.application.nlp.inference import InferenceEngine
+from domains.analytics.application.ml_forecasting.CNNPredictor import CNNPredictor
 from domains.analytics.application.nlp.analyzer import SentimentAnalyzer
 from domains.analytics.application.nlp.finbert_engine import FinBertEngine
 from domains.analytics.application.nlp.timeframes import TimeframeComputer
@@ -34,7 +34,7 @@ _RETRY_IDLE_MS = int(os.getenv("SENTIMENT_RETRY_IDLE_MS", "30000"))
 class SubscriberDependencies:
     analyzer: SentimentAnalyzer
     timeframe_computer: TimeframeComputer
-    inference_engine: InferenceEngine
+    inference_engine: CNNPredictor | None
     redis: object
     db_pool: object
     stream_bus: DurableEventStream
@@ -240,21 +240,15 @@ async def compute_and_cache_ml_prediction(
     deps: SubscriberDependencies,
     tf_data: dict[str, dict],
 ) -> None:
-    """Compute QuantCNN prediction out-of-band and cache it for API reads."""
-    if not deps.inference_engine.is_loaded:
+    """Compute MTF-CNN-LSTM-VOL prediction out-of-band and cache it for API reads."""
+    if deps.inference_engine is None or deps.inference_engine.model is None:
         return
-
-    daily = tf_data.get("daily", {})
-    current_label = str(daily.get("label", "NEUTRAL"))
-    current_score = float(daily.get("avg_score", 0.0))
 
     prediction = await asyncio.to_thread(
         deps.inference_engine.predict,
         symbol,
-        current_label,
-        current_score,
     )
-    if not prediction:
+    if not prediction or "error" in prediction:
         return
 
     payload = {
@@ -266,7 +260,7 @@ async def compute_and_cache_ml_prediction(
         json.dumps(payload),
         ex=TTL.ML_PREDICTION,
     )
-    Logger.info("[%s] Cached QuantCNN prediction", symbol)
+    Logger.info("[%s] Cached MTF-CNN-LSTM-VOL prediction", symbol)
 
 
 async def main():
@@ -278,7 +272,11 @@ async def main():
     db_pool = await GetDatabasePool()
     finbert_engine = FinBertEngine.get_instance(cache_path=cfg.ModelCacheDir)
     analyzer = SentimentAnalyzer(finbert_engine)
-    inference_engine = InferenceEngine.get_instance()
+    try:
+        inference_engine = CNNPredictor()
+    except Exception as e:
+        Logger.warning("CNN model not available, predictions disabled: %s", e)
+        inference_engine = None
 
     deps = SubscriberDependencies(
         analyzer=analyzer,

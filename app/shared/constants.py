@@ -117,4 +117,4 @@ class TTL:
 
 # ── Index Symbols (use option-chain-indices endpoint) ─────────
 
-INDEX_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
+INDEX_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
