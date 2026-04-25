@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     FinbertModel: str    = Field("ProsusAI/finbert", validation_alias="FINBERT_MODEL")
 
     # Ingestion
-    WatchlistSymbols: str       = Field(
+    DefaultSymbols: str       = Field(
         "NIFTY,BANKNIFTY,RELIANCE,INFY,HDFCBANK,TCS,ICICIBANK",
         validation_alias="WATCHLIST_SYMBOLS"
     )
@@ -48,9 +48,9 @@ class Settings(BaseSettings):
 
     # ── Helpers ────────────────────────────────────────────────
 
-    def GetWatchlistAsList(self) -> list[str]:
-        """Parse WATCHLIST_SYMBOLS into a clean list."""
-        return [s.strip().upper() for s in self.WatchlistSymbols.split(",") if s.strip()]
+    def GetDefaultSymbolsAsList(self) -> list[str]:
+        """Parse DefaultSymbols into a clean list."""
+        return [s.strip().upper() for s in self.DefaultSymbols.split(",") if s.strip()]
 
 
 @lru_cache()

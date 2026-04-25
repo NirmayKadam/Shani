@@ -11,16 +11,16 @@ Router = APIRouter()
 @Router.get("/symbols", response_model=SymbolsResponse)
 async def GetSymbols():
     """
-    Returns the list of available watchlist symbols.
-    Frontend uses this to populate the symbol dropdown.
+    Returns the list of recommended stock symbols.
+    Frontend uses this to populate the default symbol dropdown.
     """
     cfg = GetSettings()
-    symbols = cfg.GetWatchlistAsList()
+    symbols = cfg.GetDefaultSymbolsAsList()
     return SymbolsResponse(
         symbols=symbols,
         count=len(symbols),
         generated_at="",
-        source="settings_watchlist",
+        source="settings_defaults",
         stale=False,
         partial=False,
     )

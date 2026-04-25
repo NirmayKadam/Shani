@@ -28,8 +28,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score
 import joblib
 
-# Ensure /app is in path for imports
-sys.path.insert(0, "/app")
+# Ensure the project root is in path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 Logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -40,7 +40,7 @@ _WATCHLIST_RAW = os.getenv("WATCHLIST_SYMBOLS", "NIFTY,BANKNIFTY,RELIANCE,INFY,H
 _WATCHLIST = [s.strip() for s in _WATCHLIST_RAW if s.strip()]
 
 _YEARS_OF_HISTORY = 20
-_MODEL_DIR = "/app/app/Models"
+_MODEL_DIR = "/app/models"
 _MODEL_PATH = os.path.join(_MODEL_DIR, "DailyPredictor.joblib")
 
 

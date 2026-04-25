@@ -22,7 +22,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 
-sys.path.insert(0, "/app")
+# Ensure the project root is in path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 Logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -38,7 +39,7 @@ _EPOCHS = 100
 _LEARNING_RATE = 1e-3
 _EARLY_STOPPING_PATIENCE = 10  # Stop if val accuracy doesn't improve for 10 epochs
 
-_MODEL_DIR = "/app/app/Models"
+_MODEL_DIR = "/app/models"
 _MODEL_PATH = os.path.join(_MODEL_DIR, "CNN1DPredictor.pt")
 os.makedirs(_MODEL_DIR, exist_ok=True)
 

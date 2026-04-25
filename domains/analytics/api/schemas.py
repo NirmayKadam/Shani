@@ -8,6 +8,7 @@ class ResponseMetadata(BaseModel):
     source: str = ""
     stale: bool = True
     partial: bool = True
+    status: str = "COMPLETED"  # COMPLETED, CALCULATING, FAILED
 
 
 # ── Market Data ─────────────────────────────────────────────────
@@ -20,6 +21,7 @@ class MarketDataResponse(BaseModel):
     volume: int
     previous_close: float
     change_percent: float
+    currency: str = "INR"
     market_status: str
     last_updated: str
 

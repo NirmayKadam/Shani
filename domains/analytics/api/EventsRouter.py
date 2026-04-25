@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import GetSettings
-from app.shared.constants import Channels
+from shared.constants import Channels
 
 Logger = logging.getLogger(__name__)
 
@@ -230,15 +230,14 @@ async def WebSocketEndpoint(websocket: WebSocket, symbol: str):
         - {"type": "options", "data": {...}}
         - {"type": "trigger", "data": {...}}
     """
-    cfg = GetSettings()
-    allowed = cfg.GetWatchlistAsList()
-    symbol_upper = symbol.strip().upper()
-
-    if symbol_upper not in allowed:
-        await websocket.close(code=4001, reason=f"Symbol {symbol_upper} not in watchlist")
+    # Validate symbol format and existence
+    from shared.utils.symbol_validator import SymbolValidator
+    if not SymbolValidator.validate(symbol_upper):
+        await websocket.close(code=4001, reason=f"Symbol {symbol_upper} is invalid or not supported")
         return
 
-    await _Manager.connect(symbol_upper, websocket)
+    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+    await _Manager.connect(symbol_clean, websocket)
 
     try:
         # Keep connection alive — listen for client messages (ping/pong)
@@ -283,7 +282,7 @@ async def _redis_global_listener(stop_event: asyncio.Event):
     """Subscribe once globally and fan out messages by symbol."""
     pubsub = None
     try:
-        from app.shared.redis_client import GetRedisClient
+        from shared.infrastructure.redis_client import GetRedisClient
         redis = await GetRedisClient()
 
         # Create one shared pub/sub connection for all WS clients.

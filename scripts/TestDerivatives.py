@@ -14,9 +14,8 @@ import asyncio
 import sys
 import os
 
-# Ensure the app module is importable
-sys.path.insert(0, "/app")
-
+# Ensure the project root is in path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def Main():
     print("=" * 60)
@@ -24,30 +23,25 @@ async def Main():
     print("=" * 60)
 
     # Step 1: Run live tick ingestion
-    print("\n[1/3] Running live tick ingestion...")
-    from app.Derivatives.Ingestion.TickIngestor import TickIngestor
+    print("\n[1/3] Running live tick ingestion via IngestionService...")
+    from domains.ingestion.application.tasks.IngestionTasks import get_service
 
-    Ingestor = TickIngestor()
-    await Ingestor.Initialise()
+    svc = get_service()
 
     try:
-        Ticks = await Ingestor.IngestOnce()
-        print(f"  ✅ Fetched and persisted {len(Ticks)} live ticks from NSE")
+        # We trigger BOTH market data (spot) and options for a few symbols
+        Symbols = ["NIFTY", "RELIANCE"]
+        for Sym in Symbols:
+            print(f"  [+] Ingesting {Sym}...")
+            await svc.ingest_market_data(Sym)
+            await svc.ingest_options(Sym)
+            
+        print(f"  ✅ Triggered ingestion for {Symbols}")
 
-        # Count tick types
-        EqCount = sum(1 for t in Ticks if t.InstrumentType == "EQ")
-        CeCount = sum(1 for t in Ticks if t.InstrumentType == "CE")
-        PeCount = sum(1 for t in Ticks if t.InstrumentType == "PE")
-        print(f"     EQ: {EqCount}  |  CE: {CeCount}  |  PE: {PeCount}")
-
-        # Print a sample
-        Symbols = set(t.Symbol for t in Ticks if t.InstrumentType == "EQ")
-        for Sym in sorted(Symbols)[:3]:
-            EqTick = next(t for t in Ticks if t.Symbol == Sym and t.InstrumentType == "EQ")
-            print(f"     {Sym}: Spot = ₹{EqTick.LastPrice:,.2f}")
-
+    except Exception as e:
+        print(f"  ❌ Error during ingestion: {e}")
     finally:
-        await Ingestor.Shutdown()
+        pass
 
     # Step 2: Wait for worker to process
     print("\n[2/3] Waiting 5 seconds for derivatives worker to process...")

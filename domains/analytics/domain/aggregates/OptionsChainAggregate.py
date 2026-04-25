@@ -1,5 +1,5 @@
 from typing import List, Optional
-from domains.ingestion.dto.RawTickDTO import RawTickDTO
+from domains.ingestion.application.dto.RawTickDTO import RawTickDTO
 from domains.analytics.domain.events.AnomalyDetected import AnomalyDetected
 
 class OptionsChainAggregate:

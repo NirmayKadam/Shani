@@ -2,11 +2,11 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from domains.ingestion.adapters.outbound.NewsApiAdapter import NewsApiAdapter, NewsFetcher
-from domains.ingestion.adapters.outbound.NseApiAdapter import NseApiAdapter, MarketPriceFetcher, OptionChainFetcher
-from domains.ingestion.adapters.outbound.RedisDedupAdapter import RedisDedupAdapter
-from domains.ingestion.adapters.outbound.RedisEventBusAdapter import RedisEventBusAdapter
-from app.shared.constants import RedisKeys, Streams, TTL
+from domains.ingestion.infrastructure.adapters.outbound.NewsApiAdapter import NewsApiAdapter, NewsFetcher
+from domains.ingestion.infrastructure.adapters.outbound.NseApiAdapter import NseApiAdapter, MarketPriceFetcher, OptionChainFetcher
+from domains.ingestion.infrastructure.adapters.outbound.RedisDedupAdapter import RedisDedupAdapter
+from domains.ingestion.infrastructure.adapters.outbound.RedisEventBusAdapter import RedisEventBusAdapter
+from shared.constants import RedisKeys, Streams, TTL
 
 Logger = logging.getLogger(__name__)
 

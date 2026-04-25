@@ -14,7 +14,7 @@ from domains.analytics.api.schemas import (
     SentimentTimeframeData,
     TechnicalForecastResponse,
 )
-from app.shared.constants import RedisKeys, Timeframe
+from shared.constants import RedisKeys, Timeframe
 
 Logger = logging.getLogger(__name__)
 
@@ -66,11 +66,12 @@ class AnalysisService:
             source=freshness.source,
             stale=freshness.stale,
             partial=freshness.partial,
+            status=freshness.status,
         )
 
     async def _read_market_data(self, symbol: str) -> Optional[MarketDataResponse]:
         try:
-            from app.shared.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import GetRedisClient
 
             redis = await GetRedisClient()
             cached = await redis.get(RedisKeys.MARKET_PRICE.format(symbol=symbol))
@@ -82,7 +83,7 @@ class AnalysisService:
 
         # Postgres read-model fallback (latest EQ tick)
         try:
-            from app.shared.database import GetDatabasePool
+            from shared.infrastructure.database import GetDatabasePool
 
             db_pool = await GetDatabasePool()
             async with db_pool.acquire() as conn:
@@ -106,6 +107,7 @@ class AnalysisService:
                     volume=int(row["volume"] or 0),
                     previous_close=float(row["lastprice"] or 0.0),
                     change_percent=0.0,
+                    currency="INR", # Default for Postgres read-model fallback (NSE specific)
                     market_status="CLOSED",
                     last_updated=row["timestamp"].isoformat(),
                 )
@@ -116,7 +118,7 @@ class AnalysisService:
 
     async def _read_headlines(self, symbol: str) -> list[HeadlineItem]:
         try:
-            from app.shared.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import GetRedisClient
 
             redis = await GetRedisClient()
             cached_items = await redis.zrevrange(RedisKeys.NEWS_HEADLINES.format(symbol=symbol), 0, 19)
@@ -143,7 +145,7 @@ class AnalysisService:
 
     async def _read_sentiment(self, symbol: str) -> Optional[SentimentResponse]:
         try:
-            from app.shared.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import GetRedisClient
 
             redis = await GetRedisClient()
 
@@ -180,7 +182,7 @@ class AnalysisService:
     async def _read_options(self, symbol: str) -> Optional[OptionsSummaryResponse]:
         try:
             from domains.analytics.api.read_models import OptionChainSummaryReadModel, compute_pcr
-            from app.shared.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import GetRedisClient
 
             redis = await GetRedisClient()
             cached = await redis.get(RedisKeys.MARKET_OPTIONS.format(symbol=symbol))
@@ -206,7 +208,7 @@ class AnalysisService:
 
     async def _read_technical_forecast(self, symbol: str) -> Optional[TechnicalForecastResponse]:
         try:
-            from app.shared.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import GetRedisClient
 
             redis = await GetRedisClient()
             cached = await redis.get(RedisKeys.ML_PREDICTION.format(symbol=symbol))
@@ -217,7 +219,7 @@ class AnalysisService:
             else:
                 # Real-time fallback if cache empty
                 Logger.info("[%s] ML Cache empty, triggering real-time CNN inference", symbol)
-                from domains.analytics.application.ml_forecasting.CNNPredictor import CNNPredictor
+                from domains.analytics.application.services.ml_forecasting.CNNPredictor import CNNPredictor
                 predictor = CNNPredictor()
                 # Run in executor to avoid blocking event loop
                 loop = asyncio.get_event_loop()
@@ -242,10 +244,10 @@ class AnalysisService:
     async def _trigger_background_refresh(self, symbol: str) -> None:
         """Fire-and-forget refresh request event to ingestion workers."""
         try:
-            from app.shared.constants import Streams
-            from app.shared.event_bus.contracts import AnalysisRefreshRequestedV1
-            from app.shared.event_bus.streams import DurableEventStream
-            from app.shared.redis_client import GetRedisClient
+            from shared.constants import Channels, RedisKeys, StreamGroups, Streams, TTL
+            from shared.infrastructure.event_bus.contracts import AggregateUpdatedEvent, AnalysisRefreshRequestedV1
+            from shared.infrastructure.event_bus.streams import DurableEventStream, StreamMessage
+            from shared.infrastructure.redis_client import GetRedisClient
 
             redis = await GetRedisClient()
             stream_bus = DurableEventStream(redis)
@@ -299,7 +301,16 @@ class AnalysisService:
         generated_at_dt = max((ts for _, ts in timestamps), default=None)
         generated_at = generated_at_dt.isoformat() if generated_at_dt else ""
 
-        partial = not (market_data and headlines and sentiment and options_summary and options_summary.available)
+        partial = not (market_data and headlines and sentiment)
+        
+        # If market data is missing, we consider it "CALCULATING" or "FAILED"
+        # as without price we can't do much.
+        if not market_data:
+            status = "CALCULATING"
+        elif partial:
+            status = "CALCULATING"
+        else:
+            status = "COMPLETED"
 
         stale_checks: list[bool] = []
         for component, ts in timestamps:
@@ -307,12 +318,17 @@ class AnalysisService:
             stale_checks.append(age_seconds > self._STALE_SECONDS[component])
 
         stale = partial or (any(stale_checks) if stale_checks else True)
+        
+        # If very stale, might still be calculating a refresh
+        if stale and status == "COMPLETED":
+            status = "CALCULATING"
 
         return FreshnessMetadata(
             generated_at=generated_at,
             source="redis_read_model",
             stale=stale,
             partial=partial,
+            status=status,
         )
 
     @staticmethod

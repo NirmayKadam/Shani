@@ -53,25 +53,25 @@ async def AnalyzeSymbol(symbol: str):
     """
     symbol_upper = symbol.strip().upper()
 
-    # Validate symbol is in the watchlist
-    cfg = GetSettings()
-    allowed = cfg.GetWatchlistAsList()
-    if symbol_upper not in allowed:
+    # Validate symbol format and existence
+    from shared.utils.symbol_validator import SymbolValidator
+    if not SymbolValidator.validate(symbol_upper):
         raise HTTPException(
             status_code=400,
             detail=_error_envelope(
-                error=f"Symbol '{symbol_upper}' is not in the watchlist.",
+                error=f"Symbol '{symbol_upper}' is invalid or not supported.",
                 code="invalid_symbol",
                 details={
-                    "allowed_symbols": allowed,
-                    "hint": "Use GET /v1/symbols to see available symbols.",
+                    "hint": "Ensure the ticker is correct (e.g., RELIANCE or AAPL). Use .NS suffix for Indian stocks if needed.",
                 },
             ),
         )
 
+    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+
     try:
         service = _get_service()
-        return await service.analyze(symbol_upper)
+        return await service.analyze(symbol_clean)
     except Exception as exc:
         Logger.error("[%s] Analysis failed: %s", symbol_upper, exc, exc_info=True)
         raise HTTPException(

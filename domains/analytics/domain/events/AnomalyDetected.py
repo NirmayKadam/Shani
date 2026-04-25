@@ -1,4 +1,4 @@
-from shared.events.BaseDomainEvent import BaseDomainEvent
+from shared.domain.BaseDomainEvent import BaseDomainEvent
 
 class AnomalyDetected(BaseDomainEvent):
     pass

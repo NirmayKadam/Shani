@@ -6,36 +6,29 @@ import os
 # Add the project root to sys.path so 'app' can be imported
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.NewsSentiment.Ingestion.NewsIngestor import NewsIngestor
+from domains.ingestion.application.tasks.IngestionTasks import get_service
 
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
     
-    Ingestor = NewsIngestor()
-    print("\n[+] Initialising NewsIngestor...")
-    await Ingestor.Initialise()
+    svc = get_service()
+    print("\n[+] Initialising IngestionService...")
     
     Symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "INFY", "HDFCBANK", "TCS", "ICICIBANK"]
     
     try:
         for Symbol in Symbols:
-            print(f"\n[+] Triggering ingestion for: {Symbol}")
+            print(f"\n[+] Triggering news ingestion for: {Symbol}")
             try:
-                Articles = await Ingestor.IngestForSymbol(Symbol)
-                print(f"\n======================================")
-                print(f"Results for {Symbol}")
-                print(f"======================================")
-                print(f"Total new articles fetched & dispatched: {len(Articles)}\n")
-                
-                for i, Article in enumerate(Articles, 1):
-                    print(f"{i}. {Article.Headline}")
+                await svc.ingest_news(Symbol)
+                print(f"  ✅ Ingestion task dispatched to bus for {Symbol}")
             except Exception as e:
                 print(f"\n[!] Error during ingestion for {Symbol}: {e}")
                 
-        print("\n[+] Done pushing articles to worker queue.")
+        print("\n[+] Done triggering news ingestion.")
     finally:
-        print("\n[+] Shutting down Ingestor...")
-        await Ingestor.Shutdown()
+        # No shutdown needed for sync-redis based IngestionService
+        pass
 
 if __name__ == "__main__":
     asyncio.run(main())

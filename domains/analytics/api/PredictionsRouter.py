@@ -1,6 +1,6 @@
 import logging
 from fastapi import APIRouter, HTTPException
-from domains.analytics.application.ml_forecasting.CNNPredictor import CNNPredictor
+from domains.analytics.application.services.ml_forecasting.CNNPredictor import CNNPredictor
 
 Logger = logging.getLogger(__name__)
 

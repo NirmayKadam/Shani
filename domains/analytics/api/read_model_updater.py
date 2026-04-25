@@ -3,10 +3,10 @@ import json
 import logging
 import os
 
-from app.shared.constants import Channels, RedisKeys, StreamGroups, Streams, TTL
-from app.shared.event_bus.contracts import AggregateUpdatedEvent
-from app.shared.event_bus.streams import DurableEventStream, StreamMessage
-from app.shared.redis_client import GetRedisClient
+from shared.constants import Channels, RedisKeys, StreamGroups, Streams, TTL
+from shared.infrastructure.event_bus.contracts import AggregateUpdatedEvent
+from shared.infrastructure.event_bus.streams import DurableEventStream, StreamMessage
+from shared.infrastructure.redis_client import GetRedisClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 Logger = logging.getLogger("read_model_updater")
