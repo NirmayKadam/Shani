@@ -4,7 +4,7 @@ import logging
 import asyncpg
 from typing import Optional
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _Pool: Optional[asyncpg.Pool] = None
 
@@ -19,8 +19,8 @@ async def GetDatabasePool() -> asyncpg.Pool:
     if _Pool is not None:
         return _Pool
 
-    from app.config import GetSettings
-    Cfg = GetSettings()
+    from app.config import get_settings
+    Cfg = get_settings()
 
     try:
         _Pool = await asyncpg.create_pool(
@@ -29,9 +29,9 @@ async def GetDatabasePool() -> asyncpg.Pool:
             max_size=10,
             command_timeout=60
         )
-        Logger.info("PostgreSQL connection pool created")
+        logger.info("PostgreSQL connection pool created")
     except Exception as Error:
-        Logger.error(f"PostgreSQL connection failed: {Error}")
+        logger.error(f"PostgreSQL connection failed: {Error}")
         raise
 
     return _Pool
@@ -44,8 +44,8 @@ async def CloseDatabasePool() -> None:
     if _Pool is not None:
         try:
             await _Pool.close()
-            Logger.info("PostgreSQL connection pool closed")
+            logger.info("PostgreSQL connection pool closed")
         except Exception as Error:
-            Logger.error(f"Error closing database pool: {Error}")
+            logger.error(f"Error closing database pool: {Error}")
         finally:
             _Pool = None

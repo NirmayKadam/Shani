@@ -11,7 +11,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class FinBertEngine:
@@ -34,7 +34,7 @@ class FinBertEngine:
     _MaxTokenLength = 512
 
     def __init__(self, cache_path: Optional[str] = None):
-        Logger.info('Loading FinBERT model: %s', self._ModelName)
+        logger.info('Loading FinBERT model: %s', self._ModelName)
         start = time.monotonic()
 
         kwargs = {'pretrained_model_name_or_path': self._ModelName}
@@ -48,7 +48,7 @@ class FinBertEngine:
         self._IsReady = True
 
         elapsed = round(time.monotonic() - start, 2)
-        Logger.info('FinBERT model loaded in %.2fs', elapsed)
+        logger.info('FinBERT model loaded in %.2fs', elapsed)
 
     @classmethod
     def get_instance(cls, cache_path: Optional[str] = None) -> 'FinBertEngine':
@@ -66,7 +66,7 @@ class FinBertEngine:
     def shutdown(self) -> None:
         self._Executor.shutdown(wait=False)
         self._IsReady = False
-        Logger.info('FinBERT engine shut down')
+        logger.info('FinBERT engine shut down')
 
     def is_healthy(self) -> bool:
         return self._IsReady and self._Model is not None
@@ -134,11 +134,11 @@ class FinBertEngine:
                     },
                 })
 
-            Logger.debug('Scored %d texts', len(texts))
+            logger.debug('Scored %d texts', len(texts))
             return results
 
         except Exception as exc:
-            Logger.error('FinBERT inference failed: %s', exc, exc_info=True)
+            logger.error('FinBERT inference failed: %s', exc, exc_info=True)
             return [
                 {'label': 'NEUTRAL', 'score': 0.0, 'confidence': 0.0, 'probabilities': {}}
                 for _ in texts

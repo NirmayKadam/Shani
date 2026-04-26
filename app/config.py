@@ -48,11 +48,11 @@ class Settings(BaseSettings):
 
     # ── Helpers ────────────────────────────────────────────────
 
-    def GetDefaultSymbolsAsList(self) -> list[str]:
+    def get_default_symbols_as_list(self) -> list[str]:
         """Parse DefaultSymbols into a clean list."""
         return [s.strip().upper() for s in self.DefaultSymbols.split(",") if s.strip()]
 
 
 @lru_cache()
-def GetSettings() -> Settings:
+def get_settings() -> Settings:
     return Settings()

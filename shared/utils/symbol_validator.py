@@ -2,11 +2,12 @@ import logging
 import yfinance as yf
 from functools import lru_cache
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class SymbolValidator:
     """
     Utility to validate if a ticker symbol exists and is supported.
+    Strictsly limits validation to the Indian stock market (NSE/BSE).
     Uses yfinance for verification and handles result caching.
     """
 
@@ -14,7 +15,8 @@ class SymbolValidator:
     @lru_cache(maxsize=1000)
     def validate(symbol: str) -> bool:
         """
-        Check if a symbol is valid by attempting a light fetch from yfinance.
+        Check if a symbol is valid and from the Indian market.
+        Valid formats: Ticker.NS, Ticker.BO, or INDEX_SYMBOLS.
         """
         if not symbol:
             return False
@@ -23,53 +25,77 @@ class SymbolValidator:
         
         # 0. Allow known indices
         from shared.constants import INDEX_SYMBOLS
-        if symbol_upper in INDEX_SYMBOLS:
+        if symbol_upper in INDEX_SYMBOLS or "^" in symbol_upper:
+            # Allow NIFTY, BANKNIFTY etc or explicit yfinance indices like ^NSEI
             return True
 
-        # 1. Try exactly as provided
-        try:
-            ticker = yf.Ticker(symbol_upper)
-            hist = ticker.history(period="1d")
-            if not hist.empty:
-                return True
-        except Exception:
-            pass
+        # 1. Check if it's already an Indian market symbol
+        if symbol_upper.endswith(".NS") or symbol_upper.endswith(".BO"):
+            try:
+                ticker = yf.Ticker(symbol_upper)
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    return True
+            except Exception:
+                pass
+            return False
 
-        # 2. Heuristic for NSE symbols: if not explicitly provided with .NS and likely an Indian ticker (letters only)
-        if not symbol_upper.endswith(".NS") and symbol_upper.isalpha():
-             try:
-                # Use a specific ticker to avoid lru_cache side effects during validation
+        # 2. Heuristic for Indian stocks: If no suffix, try .NS then .BO
+        if symbol_upper.isalnum():
+            # Try NSE first (default)
+            try:
                 ticker = yf.Ticker(f"{symbol_upper}.NS")
                 hist = ticker.history(period="1d")
                 if not hist.empty:
                     return True
-             except Exception:
+            except Exception:
                 pass
                 
+            # Try BSE
+            try:
+                ticker = yf.Ticker(f"{symbol_upper}.BO")
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    return True
+            except Exception:
+                pass
+                
+        # 3. Reject everything else (foreign stocks, etc.)
         return False
 
     @staticmethod
     def get_clean_symbol(symbol: str) -> str:
         """
-        Returns the formatted version of the symbol (e.g., adding .NS if it's an Indian stock).
+        Returns the Indian market formatted version of the symbol (e.g., adding .NS).
         """
+        if not symbol:
+            return ""
+            
         symbol_upper = symbol.strip().upper()
-        if symbol_upper.endswith(".NS") or "^" in symbol_upper:
-            return symbol_upper
-            
-        # If it's a known NSE index, return as is (mapped later in fetcher)
+        
+        # Already has correct suffix or is an index
         from shared.constants import INDEX_SYMBOLS
-        if symbol_upper in INDEX_SYMBOLS:
+        if symbol_upper.endswith(".NS") or symbol_upper.endswith(".BO") or symbol_upper in INDEX_SYMBOLS or "^" in symbol_upper:
             return symbol_upper
             
-        # Try to see if it's an Indian stock without .NS
-        try:
-            ticker = yf.Ticker(f"{symbol_upper}.NS")
-            # history is much more reliable than fast_info
-            hist = ticker.history(period="1d")
-            if not hist.empty:
-                return f"{symbol_upper}.NS"
-        except:
-            pass
+        # Try to resolve bare symbol to Indian market
+        if symbol_upper.isalnum():
+            # Try NSE
+            try:
+                ticker = yf.Ticker(f"{symbol_upper}.NS")
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    return f"{symbol_upper}.NS"
+            except:
+                pass
+                
+            # Try BSE
+            try:
+                ticker = yf.Ticker(f"{symbol_upper}.BO")
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    return f"{symbol_upper}.BO"
+            except:
+                pass
             
         return symbol_upper

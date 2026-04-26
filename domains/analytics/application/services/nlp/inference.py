@@ -6,7 +6,7 @@ import pandas as pd
 import yfinance as yf
 from domains.analytics.application.services.nlp.model import QuantCNN1D
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 MODEL_PATH = "/app/models/CNN1DPredictor.pt"
 SEQ_LEN = 21
@@ -23,12 +23,12 @@ class InferenceEngine:
                 self.model.load_state_dict(torch.load(MODEL_PATH, map_location=self.device))
                 self.model.eval()
                 self.is_loaded = True
-                Logger.info("QuantCNN1D model loaded successfully for live inference.")
+                logger.info("QuantCNN1D model loaded successfully for live inference.")
             except Exception as e:
-                Logger.error(f"Failed to load QuantCNN1D at {MODEL_PATH}: {e}")
+                logger.error(f"Failed to load QuantCNN1D at {MODEL_PATH}: {e}")
                 self.is_loaded = False
         else:
-            Logger.warning(f"CNN model weights not found at {MODEL_PATH}. Inference disabled.")
+            logger.warning(f"CNN model weights not found at {MODEL_PATH}. Inference disabled.")
             self.is_loaded = False
 
     @staticmethod
@@ -88,7 +88,7 @@ class InferenceEngine:
             return None
             
         try:
-            from domains.ingestion.infrastructure.adapters.outbound.NseApiAdapter import _to_yfinance_symbol
+            from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import _to_yfinance_symbol
 
             # Map Indian Indices correctly for yfinance historical pulls
             yh_symbol = _to_yfinance_symbol(symbol)
@@ -97,7 +97,7 @@ class InferenceEngine:
             ticker = yf.Ticker(yh_symbol)
             hist = ticker.history(period="60d")
             if len(hist) < 40:
-                Logger.warning(f"Not enough historical data for {symbol} inference.")
+                logger.warning(f"Not enough historical data for {symbol} inference.")
                 return None
                 
             # 2. Engineer features
@@ -139,5 +139,5 @@ class InferenceEngine:
             }
             
         except Exception as e:
-            Logger.error(f"Error executing CNN inference for {symbol}: {e}")
+            logger.error(f"Error executing CNN inference for {symbol}: {e}")
             return None

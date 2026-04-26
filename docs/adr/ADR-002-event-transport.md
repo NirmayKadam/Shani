@@ -18,8 +18,8 @@ Use for business-critical events that require retention and replay.
 
 - Typical usage:
   - `ingestion.raw.normalized`
-  - `nlp_logic.sentiment.scored`
-  - `nlp_logic.features.derived`
+  - `analytics.sentiment.scored`
+  - `analytics.features.derived`
 - Requirements:
   - persistent storage/replication
   - consumer offsets/checkpointing
@@ -41,7 +41,7 @@ Use for non-critical, short-lived updates where replay is unnecessary.
 
 - Domain state changes must be published to **durable** topics first.
 - Derived live notifications may be mirrored to **ephemeral** topics.
-- `frontend_api` can subscribe to both, but read-model correctness must depend only on durable streams.
+- `app` can subscribe to both, but read-model correctness must depend only on durable streams.
 
 ## Consequences
 

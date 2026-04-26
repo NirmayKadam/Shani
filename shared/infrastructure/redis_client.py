@@ -5,13 +5,13 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # ── Module-level singleton ──────────────────────────────────────
 _RedisClient: Optional[aioredis.Redis] = None
 
 
-async def GetRedisClient() -> aioredis.Redis:
+async def get_redis_client() -> aioredis.Redis:
     """
     Return the shared async Redis client.
     Creates the connection pool on first call; reuses it thereafter.
@@ -21,8 +21,8 @@ async def GetRedisClient() -> aioredis.Redis:
     if _RedisClient is not None:
         return _RedisClient
 
-    from app.config import GetSettings
-    Cfg = GetSettings()
+    from app.config import get_settings
+    Cfg = get_settings()
 
     try:
         _RedisClient = aioredis.from_url(
@@ -31,9 +31,9 @@ async def GetRedisClient() -> aioredis.Redis:
             max_connections=20,
         )
         await _RedisClient.ping()
-        Logger.info("Redis connected  (%s)", Cfg.RedisUrl)
+        logger.info("Redis connected  (%s)", Cfg.RedisUrl)
     except (aioredis.ConnectionError, aioredis.RedisError, OSError) as Exc:
-        Logger.error("Redis connection failed: %s  — continuing without Redis", Exc)
+        logger.error("Redis connection failed: %s  — continuing without Redis", Exc)
         if _RedisClient is None:
             _RedisClient = aioredis.from_url(
                 Cfg.RedisUrl,
@@ -51,9 +51,9 @@ async def CloseRedisClient() -> None:
     if _RedisClient is not None:
         try:
             await _RedisClient.aclose()
-            Logger.info("Redis client closed")
+            logger.info("Redis client closed")
         except Exception as Exc:
-            Logger.error("Error closing Redis client: %s", Exc)
+            logger.error("Error closing Redis client: %s", Exc)
         finally:
             _RedisClient = None
 
@@ -61,7 +61,7 @@ def get_redis_sync():
     """
     Returns a sync Redis client connection.
     """
-    from app.config import GetSettings
-    Cfg = GetSettings()
+    from app.config import get_settings
+    Cfg = get_settings()
     import redis
     return redis.Redis.from_url(Cfg.RedisUrl, decode_responses=True)

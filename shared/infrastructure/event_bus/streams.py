@@ -6,7 +6,7 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _RETRY_FIELD = "__retry_count"
 
@@ -36,7 +36,7 @@ class DurableEventStream:
     async def ensure_group(self, stream: str, group: str) -> None:
         try:
             await self._Redis.xgroup_create(stream, group, id="0-0", mkstream=True)
-            Logger.info("Created stream group %s on %s", group, stream)
+            logger.info("Created stream group %s on %s", group, stream)
         except aioredis.ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
@@ -116,7 +116,7 @@ class DurableEventStream:
                 approximate=True,
             )
             await self.ack(stream, group, message.message_id)
-            Logger.error(
+            logger.error(
                 "Moved message %s from %s to DLQ=%s after %d retries",
                 message.message_id,
                 stream,
@@ -131,7 +131,7 @@ class DurableEventStream:
         }
         await self._Redis.xadd(stream, retry_fields, maxlen=self._MaxLen, approximate=True)
         await self.ack(stream, group, message.message_id)
-        Logger.warning(
+        logger.warning(
             "Re-queued message %s on %s (retry=%d): %s",
             message.message_id,
             stream,

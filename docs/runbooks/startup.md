@@ -14,6 +14,8 @@ This runbook covers booting the current runtime where one `app` container hosts 
 docker compose up -d --build
 ```
 
+**Configuration Note**: Ensure `WATCHLIST` in `.env` is populated with NSE/BSE symbols (e.g., `NIFTY,RELIANCE.NS`) for Indian market tracking.
+
 Expected services:
 
 - `app` (single container with core processes)

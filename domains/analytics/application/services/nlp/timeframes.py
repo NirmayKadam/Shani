@@ -9,7 +9,7 @@ from typing import Optional
 
 from shared.constants import Timeframe
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # Timeframe window definitions
 _WINDOWS = {

@@ -1,41 +1,27 @@
 # Event Topics Catalog
 
-Canonical topic inventory for cross-domain events, including transport durability and payload contracts.
+Canonical topic inventory for cross-domain events.
 
 ## Durable stream topics (Redis Streams)
 
-| Topic name | Producer | Consumer | Payload schema | Durability level |
-|---|---|---|---|---|
-| `stream:headlines.fetched` | `app.domain.ingestion.application.tasks` | `app.domain.nlp_logic.infrastructure.event_subscriber` (consumer group: `cg:ingestion_to_nlp`) | `HeadlineFetchedV1` (`HeadlineFetchedEvent` alias) | **Durable stream** |
-| `stream:market.price_trigger` | `app.domain.ingestion.application.tasks` | `app.domain.nlp_logic.infrastructure.event_subscriber` (consumer group: `cg:ingestion_to_nlp`) | `PriceTriggerV1` (`PriceTriggerEvent` alias) | **Durable stream** |
-| `stream:sentiment.scored` | `app.domain.nlp_logic.infrastructure.event_subscriber` | Downstream durable consumers (optional; none currently in-repo) | `SentimentScoredV1` (`SentimentScoredEvent` alias) | **Durable stream** |
-| `stream:sentiment.aggregate_updated` | `app.domain.nlp_logic.infrastructure.event_subscriber` | `app.domain.frontend_api.infrastructure.read_model_updater` (consumer group: `cg:nlp_to_api`) | `AggregateUpdatedV1` (`AggregateUpdatedEvent` alias) | **Durable stream** |
-| `stream:dlq:ingestion_to_nlp` | `DurableEventStream.retry_or_dead_letter` | Operators / replay tooling | DLQ envelope (`original_stream`, `original_message_id`, `retry_count`, `error`, `payload`) | **Durable stream** |
-| `stream:dlq:nlp_to_api` | Reserved | Operators / replay tooling | DLQ envelope (`original_stream`, `original_message_id`, `retry_count`, `error`, `payload`) | **Durable stream** |
+| Topic name | Producer | Consumer | Payload schema |
+| --- | --- | --- | --- |
+| `stream:headlines.fetched` | `domains.ingestion.application.tasks` | `domains.analytics.infrastructure.event_subscriber` | `HeadlineFetchedV1` |
+| `stream:market.price_updated` | `domains.ingestion.application.tasks` | `domains.analytics.infrastructure.event_subscriber` | `PriceUpdatedV1` |
+| `stream:market.options_updated` | `domains.ingestion.application.tasks` | `domains.analytics.infrastructure.event_subscriber` | `OptionsUpdatedV1` |
+| `stream:market.price_trigger` | `domains.ingestion.application.tasks` | `domains.analytics.infrastructure.event_subscriber` | `PriceTriggerV1` |
+| `stream:sentiment.scored` | `domains.analytics.infrastructure.event_subscriber` | - | `SentimentScoredV1` |
+| `stream:sentiment.aggregate_updated` | `domains.analytics.infrastructure.event_subscriber` | `domains.analytics.infrastructure.read_model_updater` | `AggregateUpdatedV1` |
+| `stream:analysis.refresh_requested` | `domains.analytics.api` | `domains.ingestion.application.tasks` | `AnalysisRefreshRequestedV1` |
+| `stream:dlq:ingestion_to_analytics` | `DurableEventStream` | Operators | DLQ envelope |
 
 ## Ephemeral pub/sub topics (Redis Pub/Sub)
 
-| Topic name | Producer | Consumer | Payload schema | Durability level |
-|---|---|---|---|---|
-| `headlines.fetched.{symbol}` | `app.domain.ingestion.application.tasks` | Frontend websocket router (`app.domain.frontend_api.interfaces.routers.websocket`) | `HeadlineFetchedV1` (`HeadlineFetchedEvent` alias) | **Ephemeral pubsub** |
-| `market.price_updated.{symbol}` | `app.domain.ingestion.application.tasks` | Frontend websocket router | `PriceUpdatedV1` (`PriceUpdatedEvent` alias) | **Ephemeral pubsub** |
-| `market.options_updated.{symbol}` | `app.domain.ingestion.application.tasks` | Frontend websocket router | `OptionsUpdatedV1` (`OptionsUpdatedEvent` alias) | **Ephemeral pubsub** |
-| `market.price_trigger.{symbol}` | `app.domain.ingestion.application.tasks` | Frontend websocket router | `PriceTriggerV1` (`PriceTriggerEvent` alias) | **Ephemeral pubsub** |
-| `sentiment.scored.{symbol}` | `app.domain.nlp_logic.infrastructure.event_subscriber` | Frontend websocket router | `SentimentScoredV1` (`SentimentScoredEvent` alias) | **Ephemeral pubsub** |
-| `sentiment.aggregate_updated.{symbol}` | `app.domain.nlp_logic.infrastructure.event_subscriber` | Frontend websocket router | `AggregateUpdatedV1` (`AggregateUpdatedEvent` alias) | **Ephemeral pubsub** |
-
-## Payload versioning policy
-
-All domain payload contracts include:
-
-- `event_type`: canonical event discriminator.
-- `schema_version`: currently `"v1"`.
-
-Current concrete versions are defined in `app/shared/event_bus/contracts.py` as:
-
-- `HeadlineFetchedV1`
-- `PriceUpdatedV1`
-- `OptionsUpdatedV1`
-- `PriceTriggerV1`
-- `SentimentScoredV1`
-- `AggregateUpdatedV1`
+| Topic name | Producer | Consumer | Payload schema |
+| --- | --- | --- | --- |
+| `headlines.fetched.{symbol}` | `domains.ingestion.application.tasks` | `domains.analytics.api.events_router` | `HeadlineFetchedV1` |
+| `market.price_updated.{symbol}` | `domains.ingestion.application.tasks` | `domains.analytics.api.events_router` | `PriceUpdatedV1` |
+| `market.options_updated.{symbol}` | `domains.ingestion.application.tasks` | `domains.analytics.api.events_router` | `OptionsUpdatedV1` |
+| `market.price_trigger.{symbol}` | `domains.ingestion.application.tasks` | `domains.analytics.api.events_router` | `PriceTriggerV1` |
+| `sentiment.scored.{symbol}` | `domains.analytics.infrastructure.event_subscriber` | `domains.analytics.api.events_router` | `SentimentScoredV1` |
+| `sentiment.aggregate_updated.{symbol}` | `domains.analytics.infrastructure.event_subscriber` | `domains.analytics.api.events_router` | `AggregateUpdatedV1` |

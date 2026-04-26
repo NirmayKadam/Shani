@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from shared.constants import SentimentLabel, RedisKeys, TTL
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class SentimentAnalyzer:
@@ -69,7 +69,7 @@ class SentimentAnalyzer:
                 "confidence": round(result["confidence"], 4),
             })
 
-        Logger.info("Scored %d headlines with FinBERT", len(scored))
+        logger.info("Scored %d headlines with FinBERT", len(scored))
         return scored
 
     @staticmethod

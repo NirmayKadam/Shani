@@ -12,7 +12,7 @@ For early migration phases, operational complexity should remain low while bound
 
 Use a **single-container runtime** during the migration transition period:
 
-- One deployable container hosts `ingestion`, `nlp_logic`, and `frontend_api` modules.
+- One deployable container hosts `ingestion`, `analytics`, and `app` modules.
 - Modules remain logically separated in code and runtime wiring.
 - Internal communication can use in-process adapters that preserve event contracts.
 

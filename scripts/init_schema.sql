@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS SentimentScores (
     ScoreId         UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
     Symbol          VARCHAR(20)     NOT NULL,
     SentimentLabel  VARCHAR(10)     NOT NULL,  -- BULLISH | BEARISH | NEUTRAL
-    SentimentScore  DECIMAL(5,4)    NOT NULL,
+    sentiment_score DOUBLE PRECISION NOT NULL,
     Confidence      DECIMAL(5,4)    NOT NULL,
     SourceType      VARCHAR(10)     NOT NULL,  -- NEWS | REDDIT | TELEGRAM
     SourceUrl       TEXT,

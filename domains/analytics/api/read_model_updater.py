@@ -6,17 +6,17 @@ import os
 from shared.constants import Channels, RedisKeys, StreamGroups, Streams, TTL
 from shared.infrastructure.event_bus.contracts import AggregateUpdatedEvent
 from shared.infrastructure.event_bus.streams import DurableEventStream, StreamMessage
-from shared.infrastructure.redis_client import GetRedisClient
+from shared.infrastructure.redis_client import get_redis_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-Logger = logging.getLogger("read_model_updater")
+logger = logging.getLogger("read_model_updater")
 _CONSUMER_NAME = os.getenv("READ_MODEL_CONSUMER_NAME", "read-model-updater-1")
 _RETRY_IDLE_MS = int(os.getenv("READ_MODEL_RETRY_IDLE_MS", "30000"))
 
 
 async def main() -> None:
-    Logger.info("Starting NLP -> API read-model updater...")
-    redis = await GetRedisClient()
+    logger.info("Starting NLP -> API read-model updater...")
+    redis = await get_redis_client()
     stream_bus = DurableEventStream(redis)
 
     await stream_bus.ensure_group(Streams.AGGREGATE_UPDATED, StreamGroups.NLP_TO_API)
@@ -59,7 +59,7 @@ async def _process_message(redis, stream_bus: DurableEventStream, message: Strea
         await redis.publish(Channels.AGGREGATE_UPDATED.format(symbol=symbol), body)
 
         await stream_bus.ack(message.stream, StreamGroups.NLP_TO_API, message.message_id)
-        Logger.info("[%s] Updated aggregate read model (%s)", symbol, timeframe)
+        logger.info("[%s] Updated aggregate read model (%s)", symbol, timeframe)
     except Exception as exc:
         await stream_bus.retry_or_dead_letter(
             stream=message.stream,

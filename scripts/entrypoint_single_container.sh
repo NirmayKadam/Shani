@@ -45,6 +45,7 @@ start_process "ingestion-worker" celery -A shared.infrastructure.CeleryApp worke
 start_process "beat-scheduler" celery -A shared.infrastructure.CeleryApp beat --loglevel=info
 start_process "nlp-subscriber" python -m domains.analytics.application.services.nlp.SentimentOrchestrator
 start_process "read-model-updater" python -m domains.analytics.api.read_model_updater
+start_process "options-subscriber" python -m domains.analytics.infrastructure.options_subscriber
 
 
 set +e

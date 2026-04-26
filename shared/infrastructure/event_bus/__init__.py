@@ -5,7 +5,7 @@ from typing import Awaitable, Callable, Optional
 
 import redis.asyncio as aioredis
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class EventBus:
@@ -21,10 +21,10 @@ class EventBus:
         try:
             message = json.dumps(payload, default=str)
             count = await self._Redis.publish(channel, message)
-            Logger.debug("Published to %s (%d subscribers)", channel, count)
+            logger.debug("Published to %s (%d subscribers)", channel, count)
             return count
         except Exception as exc:
-            Logger.error("Failed to publish to %s: %s", channel, exc)
+            logger.error("Failed to publish to %s: %s", channel, exc)
             return 0
 
     async def subscribe(
@@ -35,20 +35,20 @@ class EventBus:
         if pattern not in self._Handlers:
             self._Handlers[pattern] = []
         self._Handlers[pattern].append(handler)
-        Logger.info("Registered handler for pattern: %s", pattern)
+        logger.info("Registered handler for pattern: %s", pattern)
 
     async def listen(self) -> None:
         if not self._Handlers:
-            Logger.warning("EventBus.listen() called with no handlers registered")
+            logger.warning("EventBus.listen() called with no handlers registered")
             return
 
         self._PubSub = self._Redis.pubsub()
         for pattern in self._Handlers:
             await self._PubSub.psubscribe(pattern)
-            Logger.info("EventBus subscribed to pattern: %s", pattern)
+            logger.info("EventBus subscribed to pattern: %s", pattern)
 
         self._Listening = True
-        Logger.info("EventBus listening started")
+        logger.info("EventBus listening started")
 
         try:
             async for message in self._PubSub.listen():
@@ -66,7 +66,7 @@ class EventBus:
                 try:
                     payload = json.loads(raw_data)
                 except (json.JSONDecodeError, TypeError):
-                    Logger.warning("Non-JSON message on %s: %s", channel, raw_data[:100])
+                    logger.warning("Non-JSON message on %s: %s", channel, raw_data[:100])
                     continue
 
                 matched_pattern = message.get("pattern", "")
@@ -77,7 +77,7 @@ class EventBus:
                     try:
                         await handler(channel, payload)
                     except Exception as exc:
-                        Logger.error(
+                        logger.error(
                             "Handler error for %s on channel %s: %s",
                             handler.__name__,
                             channel,
@@ -85,15 +85,15 @@ class EventBus:
                             exc_info=True,
                         )
         except asyncio.CancelledError:
-            Logger.info("EventBus listen cancelled")
+            logger.info("EventBus listen cancelled")
         except Exception as exc:
-            Logger.error("EventBus listen error: %s", exc, exc_info=True)
+            logger.error("EventBus listen error: %s", exc, exc_info=True)
         finally:
             self._Listening = False
             if self._PubSub:
                 await self._PubSub.punsubscribe()
                 await self._PubSub.aclose()
-                Logger.info("EventBus listener stopped")
+                logger.info("EventBus listener stopped")
 
     async def stop(self) -> None:
         self._Listening = False
@@ -101,4 +101,4 @@ class EventBus:
             await self._PubSub.punsubscribe()
             await self._PubSub.aclose()
             self._PubSub = None
-        Logger.info("EventBus stopped")
+        logger.info("EventBus stopped")

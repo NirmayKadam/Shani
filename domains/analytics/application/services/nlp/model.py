@@ -3,7 +3,7 @@ import torch.nn as nn
 
 class QuantCNN1D(nn.Module):
     """
-    1D CNN architecture matched exactly to `TrainCNNPredictor.py`.
+    1D CNN architecture matched exactly to `train_cnn_predictor.py`.
     Used exclusively for inference in the live FastAPI endpoint.
     """
     def __init__(self, num_features):

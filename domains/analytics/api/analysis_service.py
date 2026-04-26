@@ -16,7 +16,7 @@ from domains.analytics.api.schemas import (
 )
 from shared.constants import RedisKeys, Timeframe
 
-Logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class AnalysisService:
@@ -71,15 +71,15 @@ class AnalysisService:
 
     async def _read_market_data(self, symbol: str) -> Optional[MarketDataResponse]:
         try:
-            from shared.infrastructure.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import get_redis_client
 
-            redis = await GetRedisClient()
+            redis = await get_redis_client()
             cached = await redis.get(RedisKeys.MARKET_PRICE.format(symbol=symbol))
             if cached:
                 payload = json.loads(cached)
                 return MarketDataResponse(**payload)
         except Exception as exc:
-            Logger.warning("[%s] Failed reading market price cache: %s", symbol, exc)
+            logger.warning("[%s] Failed reading market price cache: %s", symbol, exc)
 
         # Postgres read-model fallback (latest EQ tick)
         try:
@@ -112,15 +112,15 @@ class AnalysisService:
                     last_updated=row["timestamp"].isoformat(),
                 )
         except Exception as exc:
-            Logger.warning("[%s] Failed reading market price from Postgres read model: %s", symbol, exc)
+            logger.warning("[%s] Failed reading market price from Postgres read model: %s", symbol, exc)
 
         return None
 
     async def _read_headlines(self, symbol: str) -> list[HeadlineItem]:
         try:
-            from shared.infrastructure.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import get_redis_client
 
-            redis = await GetRedisClient()
+            redis = await get_redis_client()
             cached_items = await redis.zrevrange(RedisKeys.NEWS_HEADLINES.format(symbol=symbol), 0, 19)
             if not cached_items:
                 return []
@@ -140,14 +140,14 @@ class AnalysisService:
                 )
             return items
         except Exception as exc:
-            Logger.warning("[%s] Failed reading scored headlines cache: %s", symbol, exc)
+            logger.warning("[%s] Failed reading scored headlines cache: %s", symbol, exc)
             return []
 
     async def _read_sentiment(self, symbol: str) -> Optional[SentimentResponse]:
         try:
-            from shared.infrastructure.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import get_redis_client
 
-            redis = await GetRedisClient()
+            redis = await get_redis_client()
 
             tf_payloads: dict[str, dict] = {}
             for tf in Timeframe:
@@ -176,15 +176,15 @@ class AnalysisService:
                 monthly=_to_model(tf_payloads.get("monthly", {})),
             )
         except Exception as exc:
-            Logger.warning("[%s] Failed reading sentiment aggregates cache: %s", symbol, exc)
+            logger.warning("[%s] Failed reading sentiment aggregates cache: %s", symbol, exc)
             return None
 
     async def _read_options(self, symbol: str) -> Optional[OptionsSummaryResponse]:
         try:
             from domains.analytics.api.read_models import OptionChainSummaryReadModel, compute_pcr
-            from shared.infrastructure.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import get_redis_client
 
-            redis = await GetRedisClient()
+            redis = await get_redis_client()
             cached = await redis.get(RedisKeys.MARKET_OPTIONS.format(symbol=symbol))
             if not cached:
                 return OptionsSummaryResponse(available=False)
@@ -203,14 +203,14 @@ class AnalysisService:
                 last_updated=option_chain.get("fetched_at", ""),
             )
         except Exception as exc:
-            Logger.warning("[%s] Failed reading options snapshot cache: %s", symbol, exc)
+            logger.warning("[%s] Failed reading options snapshot cache: %s", symbol, exc)
             return OptionsSummaryResponse(available=False)
 
     async def _read_technical_forecast(self, symbol: str) -> Optional[TechnicalForecastResponse]:
         try:
-            from shared.infrastructure.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import get_redis_client
 
-            redis = await GetRedisClient()
+            redis = await get_redis_client()
             cached = await redis.get(RedisKeys.ML_PREDICTION.format(symbol=symbol))
             
             payload = None
@@ -218,9 +218,9 @@ class AnalysisService:
                 payload = json.loads(cached)
             else:
                 # Real-time fallback if cache empty
-                Logger.info("[%s] ML Cache empty, triggering real-time CNN inference", symbol)
-                from domains.analytics.application.services.ml_forecasting.CNNPredictor import CNNPredictor
-                predictor = CNNPredictor()
+                logger.info("[%s] ML Cache empty, triggering real-time CNN inference", symbol)
+                from domains.analytics.application.services.ml_forecasting.cnn_predictor import cnn_predictor
+                predictor = cnn_predictor()
                 # Run in executor to avoid blocking event loop
                 loop = asyncio.get_event_loop()
                 payload = await loop.run_in_executor(None, predictor.predict, symbol)
@@ -238,7 +238,7 @@ class AnalysisService:
                 confluence_status=payload.get("confluence_status", "NEUTRAL"),
             )
         except Exception as exc:
-            Logger.warning("[%s] Failed reading technical forecast: %s", symbol, exc)
+            logger.warning("[%s] Failed reading technical forecast: %s", symbol, exc)
             return None
 
     async def _trigger_background_refresh(self, symbol: str) -> None:
@@ -247,15 +247,15 @@ class AnalysisService:
             from shared.constants import Channels, RedisKeys, StreamGroups, Streams, TTL
             from shared.infrastructure.event_bus.contracts import AggregateUpdatedEvent, AnalysisRefreshRequestedV1
             from shared.infrastructure.event_bus.streams import DurableEventStream, StreamMessage
-            from shared.infrastructure.redis_client import GetRedisClient
+            from shared.infrastructure.redis_client import get_redis_client
 
-            redis = await GetRedisClient()
+            redis = await get_redis_client()
             stream_bus = DurableEventStream(redis)
             event = AnalysisRefreshRequestedV1(symbol=symbol, reason="stale_or_partial_read_model")
             await stream_bus.publish(Streams.ANALYSIS_REFRESH_REQUESTED, event.to_dict())
-            Logger.info("[%s] Published analysis refresh request event", symbol)
+            logger.info("[%s] Published analysis refresh request event", symbol)
         except Exception as exc:
-            Logger.warning("[%s] Failed to publish background refresh request: %s", symbol, exc)
+            logger.warning("[%s] Failed to publish background refresh request: %s", symbol, exc)
 
     @staticmethod
     def _log_background_task_error(task: asyncio.Task) -> None:
@@ -263,7 +263,7 @@ class AnalysisService:
             return
         exc = task.exception()
         if exc:
-            Logger.warning("Background refresh task failed: %s", exc)
+            logger.warning("Background refresh task failed: %s", exc)
 
     def _build_freshness(
         self,
