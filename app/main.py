@@ -1,5 +1,6 @@
 import logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from domains.analytics.api.sentiment_router import router as sentiment_router
 from domains.analytics.api.signals_router import router as signals_router
 from domains.analytics.api.events_router import router as events_router
@@ -15,6 +16,14 @@ from domains.analytics.infrastructure.adapters.outbound.webhook_adapter import w
 logging.basicConfig(level=logging.INFO)
 
 App = FastAPI(title="AlphaStreams DDD Engine")
+
+App.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 App.include_router(sentiment_router, prefix="/v1")
 App.include_router(signals_router, prefix="/v1")
