@@ -4,7 +4,10 @@ services:
   app:
     build: .
     image: nexusquant-app
-    ports: ['8000:8000']
+    ports: 
+      - '8000:8000'
+      - '5433:5432'
+      - '6379:6379'
     env_file: .env
     restart: unless-stopped
     volumes: 

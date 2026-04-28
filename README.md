@@ -164,6 +164,33 @@ sequenceDiagram
 * Startup runbook: [`docs/runbooks/startup.md`](docs/runbooks/startup.md)
 * Failure & recovery runbook: [`docs/runbooks/failure-recovery.md`](docs/runbooks/failure-recovery.md)
 
+## 🗄️ Database & Stream Visualization
+
+### TimescaleDB (PostgreSQL)
+Use **DBeaver** or **pgAdmin**:
+- **Host**: `127.0.0.1`
+- **Port**: `5433`
+- **Database**: `NexusQuantDB`
+- **Username**: `postgres`
+- **Password**: `postgres`
+
+> [!IMPORTANT]
+> Use port **5433** to avoid conflicts with any local PostgreSQL service running on your host machine.
+
+### Verification
+Run this in a SQL console to verify you are connected to the correct instance (should say `Debian`):
+```sql
+SELECT version();
+```
+
+### Redis & Streams
+Use **Redis Insight**:
+- **Host**: `127.0.0.1`
+- **Port**: `6379`
+- **Password**: (None)
+
+Redis Insight allows you to visualize **Redis Streams** (e.g., `stream:headlines.fetched`) in real-time.
+
 ## 🚀 Getting Started
 
 This system is completely dockerized. All configurations are driven via the `.env` file.
