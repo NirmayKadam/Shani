@@ -26,9 +26,9 @@ async def refresh_nse_cookies():
     try:
         response = await client.get(NSE_BASE_URL)
         response.raise_for_status()
-        print("✅ NSE Cookies refreshed successfully.")
+        print("NSE Cookies refreshed successfully.")
     except Exception as e:
-        print(f"❌ Failed to fetch cookies: {e}")
+        print(f"Failed to fetch cookies: {e}")
 
 @nse_options_router.on_event("startup")
 async def startup_event():

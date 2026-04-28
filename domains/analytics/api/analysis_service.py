@@ -151,20 +151,31 @@ class AnalysisService:
 
             tf_payloads: dict[str, dict] = {}
             for tf in Timeframe:
-                raw = await redis.get(RedisKeys.SENTIMENT_AGG.format(symbol=symbol, tf=tf.value))
+                key = RedisKeys.SENTIMENT_AGG.format(symbol=symbol, tf=tf.value)
+                raw = await redis.get(key)
                 if raw:
-                    tf_payloads[tf.value] = json.loads(raw)
+                    try:
+                        tf_payloads[tf.value] = json.loads(raw)
+                    except json.JSONDecodeError as e:
+                        logger.warning("[%s] Malformed sentiment JSON for %s: %s", symbol, tf.value, e)
+                else:
+                    logger.info("[%s] No sentiment aggregate found in Redis for key: %s", symbol, key)
 
             if not tf_payloads:
                 return None
 
             def _to_model(payload: dict) -> SentimentTimeframeData:
+                # Defensive float conversion to handle explicit nulls or missing keys
+                def _get_float(k: str) -> float:
+                    val = payload.get(k)
+                    return float(val) if val is not None else 0.0
+
                 return SentimentTimeframeData(
                     label=payload.get("label", "NEUTRAL"),
-                    avg_score=float(payload.get("avg_score", 0.0)),
-                    bullish_pct=float(payload.get("bullish_pct", 0.0)),
-                    bearish_pct=float(payload.get("bearish_pct", 0.0)),
-                    neutral_pct=float(payload.get("neutral_pct", 0.0)),
+                    avg_score=_get_float("avg_score"),
+                    bullish_pct=_get_float("bullish_pct"),
+                    bearish_pct=_get_float("bearish_pct"),
+                    neutral_pct=_get_float("neutral_pct"),
                     count=int(payload.get("count", 0)),
                     trend=payload.get("trend", "STABLE"),
                 )
@@ -176,7 +187,7 @@ class AnalysisService:
                 monthly=_to_model(tf_payloads.get("monthly", {})),
             )
         except Exception as exc:
-            logger.warning("[%s] Failed reading sentiment aggregates cache: %s", symbol, exc)
+            logger.error("[%s] Failed reading sentiment aggregates: %s", symbol, exc, exc_info=True)
             return None
 
     async def _read_options(self, symbol: str) -> Optional[OptionsSummaryResponse]:
@@ -211,14 +222,15 @@ class AnalysisService:
             from shared.infrastructure.redis_client import get_redis_client
 
             redis = await get_redis_client()
-            cached = await redis.get(RedisKeys.ML_PREDICTION.format(symbol=symbol))
+            key = RedisKeys.ML_PREDICTION.format(symbol=symbol)
+            cached = await redis.get(key)
             
             payload = None
             if cached:
                 payload = json.loads(cached)
             else:
                 # Real-time fallback if cache empty
-                logger.info("[%s] ML Cache empty, triggering real-time CNN inference", symbol)
+                logger.info("[%s] ML Cache empty (key: %s), triggering real-time CNN inference", symbol, key)
                 from domains.analytics.application.services.ml_forecasting.cnn_predictor import cnn_predictor
                 predictor = cnn_predictor()
                 # Run in executor to avoid blocking event loop
@@ -227,8 +239,9 @@ class AnalysisService:
                 
                 if payload and "error" not in payload:
                     # Optional: cache it for 1 hour to avoid repeated heavy inference
-                    await redis.set(RedisKeys.ML_PREDICTION.format(symbol=symbol), json.dumps(payload), ex=3600)
+                    await redis.set(key, json.dumps(payload), ex=3600)
                 else:
+                    logger.warning("[%s] ML Fallback failed: %s", symbol, payload.get("error") if payload else "No payload")
                     return None
 
             return TechnicalForecastResponse(
@@ -238,7 +251,7 @@ class AnalysisService:
                 confluence_status=payload.get("confluence_status", "NEUTRAL"),
             )
         except Exception as exc:
-            logger.warning("[%s] Failed reading technical forecast: %s", symbol, exc)
+            logger.error("[%s] Technical forecast error: %s", symbol, exc, exc_info=True)
             return None
 
     async def _trigger_background_refresh(self, symbol: str) -> None:

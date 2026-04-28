@@ -205,33 +205,48 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
     # Format for TimeframeComputer
     headline_list = []
     for r in rows:
+        # Robustness: handles NULL scores to avoid float(None) TypeError
+        score = r["sentiment_score"]
+        if score is None:
+            continue
+            
         headline_list.append({
             "sentiment_label": r["sentiment_label"],
-            "sentiment_score": float(r["sentiment_score"]),
+            "sentiment_score": float(score),
             "published_at": r["published_at"].isoformat()
         })
 
-    # CPU-bound window filtering and aggregation should not block the event loop.
-    tf_data = await asyncio.to_thread(deps.timeframe_computer.compute_all, headline_list)
+    if not headline_list:
+        return {}
 
-    # Publish each aggregate
-    for tf, agg in tf_data.items():
-        agg_event = AggregateUpdatedEvent(
-            symbol=symbol,
-            timeframe=tf,
-            label=agg.get("label", "NEUTRAL"),
-            avg_score=float(agg.get("avg_score", 0.0)),
-            bullish_pct=float(agg.get("bullish_pct", 0.0)),
-            bearish_pct=float(agg.get("bearish_pct", 0.0)),
-            neutral_pct=float(agg.get("neutral_pct", 0.0)),
-            count=int(agg.get("count", 0)),
-            trend=agg.get("trend", "STABLE"),
-        ).to_dict()
-        # Durable publish; downstream read-model updater owns persistence + websocket fan-out.
-        await deps.stream_bus.publish(Streams.AGGREGATE_UPDATED, agg_event)
+    try:
+        # CPU-bound window filtering and aggregation should not block the event loop.
+        tf_data = await asyncio.to_thread(deps.timeframe_computer.compute_all, headline_list)
 
-    logger.info("[%s] Recomputed multi-timeframe aggregates (scored items: %d)", symbol, len(headline_list))
-    return tf_data
+        # Publish each aggregate
+        for tf, agg in tf_data.items():
+            if not agg:
+                continue
+                
+            agg_event = AggregateUpdatedEvent(
+                symbol=symbol,
+                timeframe=tf,
+                label=agg.get("label", "NEUTRAL"),
+                avg_score=float(agg.get("avg_score", 0.0)),
+                bullish_pct=float(agg.get("bullish_pct", 0.0)),
+                bearish_pct=float(agg.get("bearish_pct", 0.0)),
+                neutral_pct=float(agg.get("neutral_pct", 0.0)),
+                count=int(agg.get("count", 0)),
+                trend=agg.get("trend", "STABLE"),
+            ).to_dict()
+            # Durable publish; downstream read-model updater owns persistence + websocket fan-out.
+            await deps.stream_bus.publish(Streams.AGGREGATE_UPDATED, agg_event)
+
+        logger.info("[%s] Recomputed multi-timeframe aggregates (scored items: %d)", symbol, len(headline_list))
+        return tf_data
+    except Exception as exc:
+        logger.error("[%s] Error in timeframe computation: %s", symbol, exc, exc_info=True)
+        return {}
 
 
 async def compute_and_cache_ml_prediction(
@@ -286,19 +301,25 @@ async def main():
         db_pool=db_pool,
         stream_bus=DurableEventStream(redis),
     )
+    # Ensure standard ingestion groups
     await deps.stream_bus.ensure_group(Streams.HEADLINE_FETCHED, StreamGroups.INGESTION_TO_NLP)
     await deps.stream_bus.ensure_group(Streams.PRICE_TRIGGER, StreamGroups.INGESTION_TO_NLP)
+    
+    # Ensure separate group for refresh requests so both Ingestion and NLP see them
+    REFRESH_GROUP = "cg:refresh_to_sentiment"
+    await deps.stream_bus.ensure_group(Streams.ANALYSIS_REFRESH_REQUESTED, REFRESH_GROUP)
 
     try:
-        await _consume_ingestion_streams(deps)
+        await _consume_ingestion_streams(deps, REFRESH_GROUP)
     except KeyboardInterrupt:
         logger.info("Subscriber interrupted.")
     finally:
         finbert_engine.shutdown()
 
 
-async def _consume_ingestion_streams(deps: SubscriberDependencies) -> None:
+async def _consume_ingestion_streams(deps: SubscriberDependencies, refresh_group: str) -> None:
     while True:
+        # 1. Read from standard ingestion group
         messages = await deps.stream_bus.read_group(
             group=StreamGroups.INGESTION_TO_NLP,
             consumer=_CONSUMER_NAME,
@@ -306,6 +327,17 @@ async def _consume_ingestion_streams(deps: SubscriberDependencies) -> None:
             count=20,
             block_ms=3000,
         )
+
+        # 2. Read from refresh group
+        refresh_messages = await deps.stream_bus.read_group(
+            group=refresh_group,
+            consumer=_CONSUMER_NAME,
+            streams=[Streams.ANALYSIS_REFRESH_REQUESTED],
+            count=10,
+            block_ms=1000,
+        )
+
+        messages = (messages or []) + (refresh_messages or [])
 
         if not messages:
             stale_headlines = await deps.stream_bus.claim_stale(
@@ -322,13 +354,22 @@ async def _consume_ingestion_streams(deps: SubscriberDependencies) -> None:
                 min_idle_ms=_RETRY_IDLE_MS,
                 count=10,
             )
-            messages = stale_headlines + stale_triggers
+            stale_refresh = await deps.stream_bus.claim_stale(
+                stream=Streams.ANALYSIS_REFRESH_REQUESTED,
+                group=refresh_group,
+                consumer=_CONSUMER_NAME,
+                min_idle_ms=_RETRY_IDLE_MS,
+                count=5,
+            )
+            messages = stale_headlines + stale_triggers + stale_refresh
 
         for message in messages:
-            await _process_stream_message(deps, message)
+            # Determine group for ack
+            group = refresh_group if message.stream == Streams.ANALYSIS_REFRESH_REQUESTED else StreamGroups.INGESTION_TO_NLP
+            await _process_stream_message(deps, message, group)
 
 
-async def _process_stream_message(deps: SubscriberDependencies, message: StreamMessage) -> None:
+async def _process_stream_message(deps: SubscriberDependencies, message: StreamMessage, group: str) -> None:
     try:
         if message.stream == Streams.HEADLINE_FETCHED:
             symbol = str(message.payload.get("symbol", "")).upper()
@@ -344,15 +385,22 @@ async def _process_stream_message(deps: SubscriberDependencies, message: StreamM
                 message.payload,
                 deps,
             )
+        elif message.stream == Streams.ANALYSIS_REFRESH_REQUESTED:
+            symbol = str(message.payload.get("symbol", "")).upper()
+            if symbol:
+                logger.info("[%s] Refresh requested: recomputing aggregates from Postgres", symbol)
+                tf_data = await recompute_and_publish_aggregates(symbol, deps)
+                await compute_and_cache_ml_prediction(symbol=symbol, deps=deps, tf_data=tf_data)
         else:
             logger.warning("Unknown stream=%s message_id=%s", message.stream, message.message_id)
 
-        await deps.stream_bus.ack(message.stream, StreamGroups.INGESTION_TO_NLP, message.message_id)
+        await deps.stream_bus.ack(message.stream, group, message.message_id)
     except Exception as exc:
+        dlq = Streams.NLP_TO_API_DLQ if message.stream == Streams.ANALYSIS_REFRESH_REQUESTED else Streams.INGESTION_TO_NLP_DLQ
         await deps.stream_bus.retry_or_dead_letter(
             stream=message.stream,
-            dlq_stream=Streams.INGESTION_TO_NLP_DLQ,
-            group=StreamGroups.INGESTION_TO_NLP,
+            dlq_stream=dlq,
+            group=group,
             message=message,
             error=exc,
         )

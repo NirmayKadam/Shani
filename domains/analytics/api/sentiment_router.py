@@ -71,7 +71,9 @@ async def AnalyzeSymbol(symbol: str):
 
     try:
         service = _get_service()
-        return await service.analyze(symbol_clean)
+        # Use symbol_upper (canonical) for generic analysis read models.
+        # Downstream predictors will handle yfinance specific cleaning if needed.
+        return await service.analyze(symbol_upper)
     except Exception as exc:
         logger.error("[%s] Analysis failed: %s", symbol_upper, exc, exc_info=True)
         raise HTTPException(

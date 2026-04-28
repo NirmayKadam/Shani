@@ -8,65 +8,46 @@ from typing import Dict, Any
 
 # Replicated architecture from ModelTraining.txt (matching the saved weight keys)
 class ResBlock1D(nn.Module):
-    def __init__(self, ch, k=3):
+    def __init__(self, ch):
         super().__init__()
-        p = k // 2
-        self.net = nn.Sequential(
-            nn.BatchNorm1d(ch), nn.GELU(),
-            nn.Conv1d(ch, ch, k, padding=p),
-            nn.BatchNorm1d(ch), nn.GELU(),
-            nn.Conv1d(ch, ch, k, padding=p),
-        )
+        self.net = nn.Sequential(nn.BatchNorm1d(ch), nn.GELU(), nn.Conv1d(ch, ch, 3, padding=1), nn.BatchNorm1d(ch), nn.GELU(), nn.Conv1d(ch, ch, 3, padding=1))
     def forward(self, x): return x + self.net(x)
 
 class TimeframeBranch(nn.Module):
     def __init__(self, n_feat, cnn_hidden=64, lstm_hidden=64, out_dim=96):
         super().__init__()
         c3, c5 = cnn_hidden // 3, cnn_hidden // 3
-        c7 = cnn_hidden - c3 - c5  
-
-        self.conv3 = nn.Conv1d(n_feat, c3, kernel_size=3, padding=1)
-        self.conv5 = nn.Conv1d(n_feat, c5, kernel_size=5, padding=2)
-        self.conv7 = nn.Conv1d(n_feat, c7, kernel_size=7, padding=3)
-        self.bn_entry = nn.BatchNorm1d(cnn_hidden)
-        self.res1 = ResBlock1D(cnn_hidden, k=3)
-
-        self.lstm = nn.LSTM(
-            input_size=cnn_hidden, 
-            hidden_size=lstm_hidden, 
-            num_layers=1, 
-            batch_first=True
-        )
+        c7 = cnn_hidden - c3 - c5
+        self.conv3, self.conv5, self.conv7 = nn.Conv1d(n_feat, c3, 3, padding=1), nn.Conv1d(n_feat, c5, 5, padding=2), nn.Conv1d(n_feat, c7, 7, padding=3)
+        self.bn = nn.BatchNorm1d(cnn_hidden)
+        self.res1 = ResBlock1D(cnn_hidden)
+        self.lstm = nn.LSTM(input_size=cnn_hidden, hidden_size=lstm_hidden, num_layers=1, batch_first=True)
         self.dropout = nn.Dropout(0.4)
         self.proj = nn.Linear(lstm_hidden, out_dim)
 
     def forward(self, x):
         x = x.transpose(1, 2)
-        c_out = torch.cat([self.conv3(x), self.conv5(x), self.conv7(x)], dim=1)
-        c_out = torch.relu(self.bn_entry(c_out))
-        c_out = self.res1(c_out)
-        l_in = c_out.transpose(1, 2)
-        lstm_out, _ = self.lstm(l_in)
-        final_state = lstm_out[:, -1, :]
-        final_state = self.dropout(final_state)
-        return self.proj(final_state)
+        c_out = torch.relu(self.bn(torch.cat([self.conv3(x), self.conv5(x), self.conv7(x)], 1)))
+        c_out = self.res1(c_out).transpose(1, 2)
+        lstm_out, _ = self.lstm(c_out)
+        final = self.dropout(lstm_out[:, -1, :])
+        return self.proj(final)
 
 class MultiTimeframeCNN(nn.Module):
     def __init__(self, n_feat, branch_out=96):
         super().__init__()
-        self.daily = TimeframeBranch(n_feat, out_dim=branch_out)
-        self.weekly = TimeframeBranch(n_feat, out_dim=branch_out)
-        self.monthly = TimeframeBranch(n_feat, out_dim=branch_out)
+        self.d = TimeframeBranch(n_feat, out_dim=branch_out)
+        self.w = TimeframeBranch(n_feat, out_dim=branch_out)
+        self.m = TimeframeBranch(n_feat, out_dim=branch_out)
         self.head = nn.Sequential(
             nn.Linear(branch_out*3, 128), nn.GELU(), nn.Dropout(0.6), 
             nn.Linear(128, 32), nn.GELU(), nn.Dropout(0.4),
             nn.Linear(32, 3)
         )
-    def forward(self, xd, xw, xm): 
-        return self.head(torch.cat([self.daily(xd), self.weekly(xw), self.monthly(xm)], 1))
+    def forward(self, xd, xw, xm): return self.head(torch.cat([self.d(xd), self.w(xw), self.m(xm)], 1))
 
 class cnn_predictor:
-    def __init__(self, model_path: str = "models/MLForecast/MTF_CNN_LSTM_VOL.pt"):
+    def __init__(self, model_path: str = "models/MTF_CNN_LSTM_VOL.pt"):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = model_path
         self.feature_cols = [
@@ -157,7 +138,16 @@ class cnn_predictor:
     def predict(self, symbol: str) -> Dict[str, Any]:
         try:
             from shared.utils.symbol_validator import SymbolValidator
-            yf_sym = SymbolValidator.get_clean_symbol(symbol)
+            clean_sym = SymbolValidator.get_clean_symbol(symbol)
+            
+            # Map canonical symbols to yfinance-specific tickers
+            yf_mapping = {
+                "NIFTY": "^NSEI",
+                "BANKNIFTY": "^NSEBANK",
+                "FINNIFTY": "^CNXFIN"
+            }
+            yf_sym = yf_mapping.get(clean_sym, clean_sym)
+            
             tkr = yf.Ticker(yf_sym)
             
             df_d = tkr.history(period="2y", interval="1d")

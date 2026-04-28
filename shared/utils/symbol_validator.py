@@ -73,12 +73,12 @@ class SymbolValidator:
             
         symbol_upper = symbol.strip().upper()
         
-        # Already has correct suffix or is an index
+        # 0. Already has correct suffix or is an index
         from shared.constants import INDEX_SYMBOLS
         if symbol_upper.endswith(".NS") or symbol_upper.endswith(".BO") or symbol_upper in INDEX_SYMBOLS or "^" in symbol_upper:
             return symbol_upper
             
-        # Try to resolve bare symbol to Indian market
+        # 1. Try to resolve bare symbol to Indian market
         if symbol_upper.isalnum():
             # Try NSE
             try:
