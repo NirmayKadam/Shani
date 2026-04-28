@@ -297,7 +297,9 @@ class OptionChainFetcher:
 
         # Detect if it's an NSE symbol. NSE symbols are typically letters-only
         # or known indices. International ones often have suffixes or different formats.
-        is_nse = symbol.upper() in INDEX_SYMBOLS or (symbol.isalpha() and not symbol.endswith(".NS")) or symbol.upper().endswith(".NS")
+        from shared.utils.symbol_validator import SymbolValidator
+        clean_sym = SymbolValidator.get_clean_symbol(symbol.upper())
+        is_nse = clean_sym in INDEX_SYMBOLS or clean_sym.endswith(".NS") or clean_sym.endswith(".BO")
 
         if not is_nse:
              logger.info("[%s] Non-NSE symbol detected, using yfinance for options", symbol)

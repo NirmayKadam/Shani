@@ -56,7 +56,9 @@ def poll_news(symbol: str = None):
 
     for sym in symbols:
         try:
-            asyncio.run(svc.ingest_news(sym))
+            from shared.utils.symbol_validator import SymbolValidator
+            clean_sym = SymbolValidator.get_clean_symbol(sym)
+            asyncio.run(svc.ingest_news(clean_sym))
         except Exception as e:
             logger.error("[%s] poll_news failed: %s", sym, e)
 
@@ -77,7 +79,9 @@ def poll_prices(symbol: str = None):
 
     for sym in symbols:
         try:
-            asyncio.run(svc.ingest_market_data(sym))
+            from shared.utils.symbol_validator import SymbolValidator
+            clean_sym = SymbolValidator.get_clean_symbol(sym)
+            asyncio.run(svc.ingest_market_data(clean_sym))
         except Exception as e:
             logger.error("[%s] poll_prices failed: %s", sym, e)
 
@@ -98,6 +102,8 @@ def poll_options(symbol: str = None):
 
     for sym in symbols:
         try:
-            asyncio.run(svc.ingest_options(sym))
+            from shared.utils.symbol_validator import SymbolValidator
+            clean_sym = SymbolValidator.get_clean_symbol(sym)
+            asyncio.run(svc.ingest_options(clean_sym))
         except Exception as e:
             logger.error("[%s] poll_options failed: %s", sym, e)
