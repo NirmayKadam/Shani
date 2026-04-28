@@ -12,7 +12,10 @@ Database Tables: None
 """
 
 import logging
-from typing import Optional
+from typing import Optional, List
+
+from domains.ingestion.application.ports.interface.outbound.i_news_source import i_news_source
+from domains.ingestion.application.dto.raw_article_dto import raw_article_dto
 
 import aiohttp
 

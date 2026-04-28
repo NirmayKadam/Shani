@@ -15,7 +15,10 @@ import os
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, List
+
+from domains.ingestion.application.ports.interface.outbound.i_market_data_source import i_market_data_source
+from domains.ingestion.application.dto.raw_tick_dto import raw_tick_dto
 
 import aiohttp
 import yfinance as yf
