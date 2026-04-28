@@ -1,3 +1,16 @@
+"""
+File Overview: Celery tasks for polling news, prices, and options data.
+
+All Functions/Classes:
+- get_service: Lazy factory for ingestion service. Take environment config and send service instance.
+- poll_news: Celery task. Take symbol list and send to ingestion service news fetcher.
+- poll_prices: Celery task. Take symbol list and send to ingestion service price fetcher.
+- poll_options: Celery task. Take symbol list and send to ingestion service options fetcher.
+
+Endpoints/APIs: None (Celery Workers)
+
+Database Tables: Redis (Cache, Streams)
+"""
 import os
 import logging
 

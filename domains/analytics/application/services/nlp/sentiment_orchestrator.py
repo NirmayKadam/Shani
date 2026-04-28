@@ -1,4 +1,21 @@
+"""
+File Overview: Event-driven worker managing the end-to-end sentiment lifecycle: scoring, synthetic signal injection, and multi-timeframe aggregation.
+
+All Functions/Classes:
+- SubscriberDependencies (dataclass): Container for shared state and services.
+- handle_headline: Handler for news ingestion events. Data: Headlines.fetched -> Scored/Persisted results.
+- handle_price_trigger: Injects synthetic sentiment based on price volatility. Data: PriceTrigger -> Persisted synthetic signal.
+- recompute_and_publish_aggregates: Rebuilds multi-timeframe stats from history. Data: Postgres history -> AggregateUpdated events.
+- main: Application entry point for the worker loop. Data: Redis Streams -> Service Handlers.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- SentimentScores (Postgres), Redis (Streams, KV Cache, Pub/Sub).
+"""
 # app/domain/sentiment/event_subscriber.py — Real-time event listener
+
 #
 # Replaces Celery for the Sentiment domain. Listens directly to Redis Pub/Sub,
 # scores headlines with FinBERT, persists to Postgres, computes multi-timeframe

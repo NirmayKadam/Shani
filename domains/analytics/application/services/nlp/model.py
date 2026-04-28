@@ -1,4 +1,17 @@
+"""
+File Overview: PyTorch implementation of the QuantCNN1D model architecture used for live market volatility and directional forecasting.
+
+Classes/Functions:
+- QuantCNN1D (Class): 1D Convolutional Neural Network.
+    - __init__: Defines the network topology. Takes `num_features` (input dimensions), configures two `Conv1d` layers (32 and 64 filters), `AdaptiveAvgPool1d`, and two `Linear` layers. Stores layers in `self`.
+    - forward: Defines the data flow. Receives input tensor `x` (Shape: Batch, Seq, Features), transposes for 1D convolution, passes through activation and pooling layers, flattens, and applies `fc2` to produce 2 output logits (Bearish, Bullish).
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 import torch
+
 import torch.nn as nn
 
 class QuantCNN1D(nn.Module):

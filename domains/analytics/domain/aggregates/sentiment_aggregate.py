@@ -1,4 +1,19 @@
+"""
+File Overview: Aggregate for managing sentiment scores and triggering crossover signals.
+
+All Functions/Classes:
+- sentiment_aggregate (class): Main aggregate for sentiment trending. Data: scores -> signal events.
+- add_score: Buffers scores and evaluates SMA. Data: sentiment_score -> signal_fired event.
+- compute_sma_and_check: Calculates rolling average. Data: buffer -> signal trigger.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 from typing import List, Optional
+
 from domains.analytics.domain.entities.sentiment_score import sentiment_score
 from domains.analytics.domain.events.signal_fired import signal_fired
 

@@ -1,4 +1,18 @@
+"""
+File Overview: FastAPI router for retrieving ML volatility predictions from the CNN model.
+
+All Functions/Classes:
+- _get_predictor: Helper to lazy-initialize the global cnn_predictor instance. Take predictor class and send instance.
+- get_predictions: GET endpoint for ML forecasts. Take symbol from path and send prediction results from CNN model.
+
+Endpoints/APIs:
+- GET /predictions/{symbol}.
+
+Database Tables:
+- None.
+"""
 import logging
+
 from fastapi import APIRouter, HTTPException
 from domains.analytics.application.services.ml_forecasting.cnn_predictor import cnn_predictor
 

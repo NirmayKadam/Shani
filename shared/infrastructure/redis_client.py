@@ -1,4 +1,18 @@
-# shared/infrastructure/redis_client.py — Redis clients (Async & Sync)
+"""
+File Overview: Shared Redis client management for both asynchronous and synchronous contexts.
+
+All Functions/Classes:
+- get_redis_client: Singleton getter for async aioredis client. Data: App Config -> Async Redis.
+- CloseRedisClient: Gracefully shuts down the async client. Data: Active Client -> Closed.
+- get_redis_sync: Returns a synchronous Redis client. Data: App Config -> Sync Redis.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
+
 
 import logging
 from typing import Optional

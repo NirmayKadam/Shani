@@ -1,4 +1,17 @@
-# app/shared/database.py — Async PostgreSQL connection pool
+"""
+File Overview: Shared async PostgreSQL connection pool management using asyncpg.
+
+All Functions/Classes:
+- GetDatabasePool: Singleton getter for the connection pool. Data: App Config -> PostgreSQL Pool.
+- CloseDatabasePool: Gracefully shuts down the connection pool. Data: Active Pool -> Closed Pool.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- Reads from database configuration (NexusQuantDB).
+"""
+
 
 import logging
 import asyncpg

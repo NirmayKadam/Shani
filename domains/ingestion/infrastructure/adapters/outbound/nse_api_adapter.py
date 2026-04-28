@@ -1,12 +1,15 @@
-from domains.ingestion.application.ports.interface.outbound.i_market_data_source import i_market_data_source
-from domains.ingestion.application.dto.raw_tick_dto import raw_tick_dto
-from typing import List
+"""
+File Overview: Outbound adapter for NSE India and yfinance. Handles market price and option chain retrieval.
 
-# domains/ingestion/infrastructure/adapters/outbound/nse_api_adapter.py — Market price + NSE option chain fetcher
-#
-# Two independent fetchers:
-#   1. MarketPriceFetcher — uses yfinance for OHLCV snapshots (works when market is closed)
-#   2. OptionChainFetcher — fetches full option chain from NSE India API (all expiries)
+All Functions/Classes:
+- MarketPriceFetcher: Price snapshot engine via yfinance. Take symbol and send OHLCV data.
+- OptionChainFetcher: Derivatives data engine via NSE V3 API. Take symbol and send structured chain with spot price.
+- nse_api_adapter: Port implementation for market data. Take symbol and send raw_tick_dto list via option chain fetcher.
+
+Endpoints/APIs: NSE India API, yfinance API
+
+Database Tables: None
+"""
 
 import os
 import logging

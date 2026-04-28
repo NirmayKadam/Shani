@@ -1,3 +1,14 @@
+"""
+File Overview: Value object representing a derivatives expiry date.
+
+All Functions/Classes:
+- Expiry: Data structure for expiry dates. Take date and send time-to-maturity logic.
+- days_to_expiry: Calculate time delta. Take current date and send day count.
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 from dataclasses import dataclass
 from datetime import date
 

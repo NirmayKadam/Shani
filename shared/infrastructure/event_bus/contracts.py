@@ -1,4 +1,18 @@
+"""
+File Overview: Versioned domain event schemas and dataclasses for cross-domain communication.
+
+All Functions/Classes:
+- VersionedEvent (base class): Shared schema fields.
+- HeadlineFetchedV1, PriceUpdatedV1, OptionsUpdatedV1, PriceTriggerV1, SentimentScoredV1, AggregateUpdatedV1, AnalysisRefreshRequestedV1: Specific event payload schemas. Data: Domain Events -> Serialized JSON.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 from dataclasses import asdict, dataclass, field
+
 from datetime import datetime, timezone
 from typing import Any, Literal
 

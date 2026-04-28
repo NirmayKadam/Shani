@@ -1,4 +1,18 @@
+"""
+File Overview: Background worker that consumes AGGREGATE_UPDATED events from Redis Streams and synchronizes the Read-Model API cache and WebSocket Pub/Sub.
+
+All Functions/Classes:
+- main: Infinite listener loop for NLP aggregates. Take events from Redis Stream and send to _process_message.
+- _process_message: Core logic for updating read-model cache. Take StreamMessage and send updates to Redis KV and Pub/Sub.
+
+Endpoints/APIs:
+- None (Background process).
+
+Database Tables:
+- Redis (Streams, KV Cache, Pub/Sub).
+"""
 import asyncio
+
 import json
 import logging
 import os

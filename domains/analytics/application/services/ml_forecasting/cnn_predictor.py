@@ -1,4 +1,22 @@
+"""
+File Overview: Multi-Timeframe CNN-LSTM predictor for market volatility and trend forecasting. Loads a pre-trained PyTorch model and engineers technical features from yfinance data.
+
+All Functions/Classes:
+- MultiTimeframeCNN (class): PyTorch neural network architecture combining daily, weekly, and monthly temporal features.
+- cnn_predictor (class): Orchestrator for loading the model, engineering features, and performing inference. Data: yfinance (Market/Macro) -> Trend Prediction.
+- get_macro_features: Fetches VIX, TNX, and DXY indices. Data: yfinance -> Macro Feature Dataframe.
+- engineer_features: Calculates RSI, MACD, Stochastics, and EMA distances. Data: OHLCV -> Technical Indicators.
+- predict: Main entry point for inference. Data: Symbol -> Strategy/Prediction/Confidence JSON.
+
+Endpoints/APIs:
+- External: yfinance API (NSE indices and macro data).
+
+Database Tables:
+- None.
+"""
 import os
+
+
 import torch
 import torch.nn as nn
 import numpy as np

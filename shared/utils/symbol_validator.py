@@ -1,4 +1,17 @@
+"""
+File Overview: Utility for validating and formatting Indian stock market ticker symbols (NSE/BSE).
+
+All Functions/Classes:
+- SymbolValidator (class): Provides static methods to validate symbols and clean them with Indian suffixes (.NS/.BO). Data: Symbol String -> Boolean/Cleaned Symbol.
+
+Endpoints/APIs:
+- External: yfinance API for ticker verification.
+
+Database Tables:
+- None.
+"""
 import logging
+
 import yfinance as yf
 from functools import lru_cache
 

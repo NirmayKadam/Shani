@@ -1,7 +1,18 @@
-# app/config.py — Application configuration
-#
-# Single source of truth for all environment-driven settings.
-# Uses Pydantic v2 Settings with .env file support.
+"""
+File Overview: Centralized application configuration using Pydantic Settings. Manages environment variables and .env file loading.
+
+All Functions/Classes:
+- Settings (class): Data model for all app settings. Data: .env/Environment variables -> Configuration fields.
+- get_default_symbols_as_list: Parses symbols string. Data: DefaultSymbols string -> List of symbols.
+- get_settings: Returns cached settings instance. Data: Configuration -> Settings singleton.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
+
 
 from functools import lru_cache
 from pydantic import Field

@@ -1,3 +1,13 @@
+"""
+File Overview: Value object representing a financial instrument ticker symbol.
+
+All Functions/Classes:
+- Symbol: Validated instrument identifier. Take string symbol and send validated uppercase state.
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 from dataclasses import dataclass
 
 @dataclass(frozen=True)

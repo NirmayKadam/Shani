@@ -1,4 +1,20 @@
+"""
+File Overview: FastAPI router for the /v1/analyze/{symbol} endpoint, providing a cache-first analysis view.
+
+All Functions/Classes:
+- _generated_at: Internal helper for UTC timestamps. Take current system time and send ISO string.
+- _error_envelope: Standardized error dictionary builder. Take error/code/details and send error dict.
+- _get_service: Lazy-initialization singleton for AnalysisService. Take class definition and send instance.
+- AnalyzeSymbol: Primary GET endpoint for full-page analytics. Take symbol from path and send AnalysisResponse from AnalysisService.
+
+Endpoints/APIs:
+- GET /analyze/{symbol}.
+
+Database Tables:
+- None.
+"""
 # domains/analytics/api/sentiment_router.py — GET /v1/analyze/{symbol} endpoint
+
 
 import logging
 from datetime import datetime, timezone

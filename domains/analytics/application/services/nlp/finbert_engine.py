@@ -1,4 +1,20 @@
+"""
+File Overview: Singleton engine for loading and running the FinBERT NLP model. Optimized for high-throughput batch inference using a thread pool.
+
+All Functions/Classes:
+- FinBertEngine (class): Thread-safe model manager and inference orchestrator. Data: Text strings -> Sentiment probabilities.
+- get_instance: Singleton accessor. Data: Config path -> Engine instance.
+- score_batch: Async batch scoring entry point. Data: List of strings -> List of result dicts.
+- _run_inference: CPU-bound worker for model forward pass. Data: Tensors -> Softmax probabilities.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 # app/domain/sentiment/finbert_engine.py — FinBERT NLP model singleton
+
 #
 # Loads the ProsusAI/finbert model once and provides async batch scoring.
 # Thread-safe: inference runs in a thread pool so the event loop stays responsive.

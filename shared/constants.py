@@ -1,7 +1,21 @@
-# app/shared/constants.py — Shared enums, channel names, and configuration constants
-#
-# All Redis Pub/Sub channel names and shared enums live here.
-# Domains import ONLY from this file for channel names — never hardcode strings.
+"""
+File Overview: Shared enums, channel names, and configuration constants for Redis Pub/Sub and Market Data.
+
+All Functions/Classes:
+- Channels (class): Redis Pub/Sub channel templates.
+- Streams (class): Redis Stream names for durable events.
+- StreamGroups (class): Consumer-group names for stream processing.
+- SentimentLabel, MarketStatus, Timeframe, PriceTriggerType, OptionType (Enums): Domain status and category codes.
+- RedisKeys (class): Redis key templates for cached data.
+- TTL (class): Expiration times for cached items.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
+
 
 from enum import Enum
 

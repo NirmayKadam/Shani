@@ -1,4 +1,18 @@
+"""
+File Overview: Data models and calculation logic for analytics read-model snapshots.
+
+All Functions/Classes:
+- OptionChainSummaryReadModel: Pydantic schema for option chain snapshots. Take JSON data and send to validated object.
+- compute_pcr: Logic to calculate Put-Call Ratio. Take option chain dict and send PCR summary stats.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 from pydantic import BaseModel, Field
+
 
 
 class OptionChainSummaryReadModel(BaseModel):

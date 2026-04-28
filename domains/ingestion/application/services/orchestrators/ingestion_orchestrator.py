@@ -1,7 +1,14 @@
-# domains/ingestion/application/orchestrators/ingestion_orchestrator.py
-#
-# Long-running async process that listens to ANALYSIS_REFRESH_REQUESTED
-# stream events and dispatches Celery ingestion tasks in response.
+"""
+File Overview: Async worker listening for on-demand refresh requests to trigger background ingestion.
+
+All Functions/Classes:
+- main: Infinite listener loop. Take events from ANALYSIS_REFRESH_REQUESTED stream and send to _handle_refresh.
+- _handle_refresh: Refresh logic with cooldowns. Take refresh event and send Celery tasks for news/price/options/ML.
+
+Endpoints/APIs: None (Background process)
+
+Database Tables: Redis (Streams, Cooldown KV)
+"""
 
 import asyncio
 import logging

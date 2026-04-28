@@ -1,4 +1,15 @@
+"""
+File Overview: Domain entity representing a calculated ML prediction.
+
+All Functions/Classes:
+- Prediction: Data structure for inference outputs. Take probabilities/metadata and send entity state.
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 from dataclasses import dataclass
+
 from datetime import datetime
 
 @dataclass

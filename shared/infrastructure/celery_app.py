@@ -1,4 +1,17 @@
+"""
+File Overview: Celery application configuration for background tasks and periodic polling.
+
+All Functions/Classes:
+- celery_app (instance): Configures task routes, broker/backend, and periodic beat schedule. Data: Redis -> Task Queues.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 import os
+
 from celery import Celery
 
 celery_app = Celery(

@@ -1,4 +1,17 @@
+"""
+File Overview: Aggregate for managing options chain data and detecting anomalies.
+
+All Functions/Classes:
+- options_chain_aggregate: Main aggregate class. Take ticks and send anomaly events.
+- add_tick_batch: Process batch of order flow data. Take raw_tick_dto list and send anomalies.
+- detect_anomalies: Core logic for outlier detection. Take internal ticks and send list of anomaly events.
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 from typing import List, Optional
+
 from domains.ingestion.application.dto.raw_tick_dto import raw_tick_dto
 from domains.analytics.domain.events.anomaly_detected import anomaly_detected
 

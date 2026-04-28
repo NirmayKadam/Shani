@@ -1,4 +1,18 @@
+"""
+File Overview: Celery tasks for running multi-timeframe CNN inference and Redis cache synchronization.
+
+All Functions/Classes:
+- run_stock_prediction: Shared task for CNN inference. Data: Symbol -> Prediction results.
+- update_redis: Helper to persist results. Data: Result dict -> Redis KV store.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- Redis (Cache).
+"""
 import logging
+
 from celery import shared_task
 from domains.analytics.application.services.ml_forecasting.cnn_predictor import cnn_predictor
 import json

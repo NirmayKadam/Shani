@@ -1,4 +1,17 @@
+"""
+File Overview: Base class for domain events, providing shared metadata like IDs and timestamps.
+
+All Functions/Classes:
+- base_domain_event (class): Dataclass for event metadata. Data: Payload -> Versioned Event instance.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 import uuid
+
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Dict, Any

@@ -1,4 +1,24 @@
+"""
+File Overview: Entry point for the FastAPI application. Sets up middleware, outbound adapters, and includes domain routers.
+
+All Functions/Classes:
+- startup_event: Initializes Redis, Timescale, and Webhook adapters. Data: Environment variables -> Adapter instances.
+- root: Simple health check endpoint. Data: None -> Status dictionary.
+
+Endpoints/APIs:
+- /: root
+- /v1/sentiment: sentiment_router
+- /v1/signals: signals_router
+- /v1/events: events_router
+- /v1/derivatives: derivatives_router
+- /v1/predictions: predictions_router
+- /v1/ingestion/nse: nse_options_router
+
+Database Tables:
+- None directly. Initializes connections for Redis and TimescaleDB.
+"""
 import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from domains.analytics.api.sentiment_router import router as sentiment_router

@@ -1,3 +1,13 @@
+"""
+File Overview: Domain entity representing a raw market tick (price/volume snapshot).
+
+All Functions/Classes:
+- raw_tick: Data structure for raw market snapshots. Take API data and send to event bus.
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 from dataclasses import dataclass
 from datetime import datetime
 

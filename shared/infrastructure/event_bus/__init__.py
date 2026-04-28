@@ -1,4 +1,17 @@
+"""
+File Overview: Redis Pub/Sub event bus implementation for decoupled bounded-context integration.
+
+All Functions/Classes:
+- EventBus (class): Manages async publishing, subscription, and listening for Redis messages. Data: Redis Pub/Sub -> Local Handlers.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 import asyncio
+
 import json
 import logging
 from typing import Awaitable, Callable, Optional

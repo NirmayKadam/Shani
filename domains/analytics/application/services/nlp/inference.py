@@ -1,4 +1,18 @@
+"""
+File Overview: Real-time inference engine for the QuantCNN1D model. Combines historical market statistics with live FinBERT sentiment to evaluate signal confluence.
+
+All Functions/Classes:
+- InferenceEngine: Singleton lifecycle manager for the torch model. Take symbol/sentiment and send prediction signals.
+- get_instance: Ensure single model instance in memory. Take call and send singleton.
+- _engineer_features: Feature engineering for technical indicators. Take OHLCV history/sentiment and send 10-feature vector.
+- predict: Orchestrator for inference. Take symbol/sentiment and send confluence-validated forecast.
+
+Endpoints/APIs: None
+
+Database Tables: None (Fetches from YFinance)
+"""
 import os
+
 import logging
 import torch
 import numpy as np

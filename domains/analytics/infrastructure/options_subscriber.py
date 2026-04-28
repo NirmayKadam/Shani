@@ -1,4 +1,20 @@
+"""
+File Overview: PDE Solver worker consuming options data from Redis Streams. Calculates fair prices using Crank-Nicolson.
+
+All Functions/Classes:
+- OptionsPricingSubscriber (class): Real-time derivatives pricing engine. Data: raw ticks -> priced chains.
+- start_consuming: Async listen loop. Data: Redis stream data -> process_event.
+- process_event: Core orchestrator. Data: raw payload -> Redis Streams/PubSub.
+- main: Entry point coroutine. Data: Environment config -> Engine bootstrap.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- Redis (Streams, PubSub).
+"""
 import json
+
 import asyncio
 import os
 from redis.asyncio import Redis

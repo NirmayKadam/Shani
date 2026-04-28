@@ -1,3 +1,13 @@
+"""
+File Overview: Domain entity representing a raw news article in the ingestion context.
+
+All Functions/Classes:
+- raw_article: Data structure for un-scored news. Take raw feed data and send to domain events.
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 from dataclasses import dataclass
 from datetime import datetime
 

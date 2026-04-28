@@ -1,3 +1,15 @@
+"""
+File Overview: Outbound adapter for publishing domain events to Redis Streams. Used by Celery workers.
+
+All Functions/Classes:
+- redis_event_bus_adapter: Sync event publisher for Celery tasks. Take payload and send to Redis Streams.
+- publish: Map topic and dispatch event. Take topic/payload and send to mapped Stream.
+- publish_to_stream: Generic stream publisher. Take stream/payload and send to Redis via XADD.
+
+Endpoints/APIs: None
+
+Database Tables: Redis (Streams: HEADLINE_FETCHED, PRICE_TRIGGER)
+"""
 import json
 import logging
 import redis

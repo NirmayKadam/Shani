@@ -1,3 +1,15 @@
+"""
+File Overview: Outbound adapter for content deduplication using Redis. Ensures articles are processed only once.
+
+All Functions/Classes:
+- redis_dedup_adapter: Implementation of deduplication store. Take article IDs and send exists/set commands to Redis.
+- is_seen: Check for existing entry. Take article_id and send boolean.
+- mark_seen: Store seen ID with TTL. Take article_id and send to Redis.
+
+Endpoints/APIs: None
+
+Database Tables: Redis (Deduplication KV)
+"""
 import redis
 from domains.ingestion.application.ports.interface.outbound.i_dedup_store import i_dedup_store
 

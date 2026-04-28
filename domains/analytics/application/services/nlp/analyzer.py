@@ -1,9 +1,21 @@
-# app/domain/sentiment/analyzer.py — Core sentiment analysis logic
-#
-# Scores headlines with FinBERT and computes aggregate sentiment.
-# Also computes PCR from option chain data.
+"""
+File Overview: Core sentiment analysis engine that enriches headlines with FinBERT scores and calculates aggregate metrics.
 
+All Functions/Classes:
+- SentimentAnalyzer (class): Stateless logic for batch scoring and statistical summaries. Data: Raw Headlines -> Scored JSON.
+- score_headlines: Performs NLP inference on batches. Data: Headlines list -> Scored list.
+- compute_aggregate: Calculates mean and distribution stats. Data: Scored items -> Summary dict.
+- compute_pcr: Calculates Put-Call Ratio from option data. Data: Option Chain -> PCR metrics.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 import json
+
+
 import logging
 from typing import Optional
 

@@ -1,3 +1,16 @@
+"""
+File Overview: Application service orchestrating news, price, and options ingestion logic.
+
+All Functions/Classes:
+- ingestion_service: Core ingestion manager. Take data from external fetchers and send to Redis snapshots or event bus.
+- ingest_news: Fetch and deduplicate headlines. Take symbol from command and send to ingestion.news durable stream.
+- ingest_market_data: Fetch spot prices. Take symbol from command and send to MARKET_PRICE Redis cache.
+- ingest_options: Fetch option chains. Take symbol from command and send to MARKET_OPTIONS Redis cache.
+
+Endpoints/APIs: None (Orchestrated by Tasks)
+
+Database Tables: Redis (Deduplication, KV Cache, Streams)
+"""
 import json
 import logging
 from datetime import datetime, timezone

@@ -1,3 +1,16 @@
+"""
+File Overview: Inbound wrapper API for fetching live NSE option chains. 
+Used by background ingestion workers to bypass WAF.
+
+All Functions/Classes:
+- nse_options_router: FastAPI router for NSE proxy.
+- refresh_nse_cookies: Session manager. Take NSE homepage and send updated cookie jar.
+- get_option_chain: Live fetcher. Take symbol/index-flag and send raw NSE records.
+
+Endpoints/APIs: GET /options/{symbol}
+
+Database Tables: None (Direct NSE API proxy)
+"""
 from fastapi import APIRouter, HTTPException
 import httpx
 from typing import Dict, Any

@@ -1,4 +1,27 @@
+"""
+File Overview: Read-model service for the /v1/analyze endpoint. Retrieves cached snapshots from Redis (or Postgres fallback for price) and triggers background refreshes.
+
+All Functions/Classes:
+- AnalysisService: Orchestrates data retrieval for the analytical dashboard. Take data from Redis/Postgres and send to AnalysisResponse DTO.
+- analyze: Main orchestrator. Take symbol from Router and send AnalysisResponse.
+- _read_market_data: Take symbol and return MarketDataResponse. Take data from Redis (MARKET_PRICE) or Postgres (TickData) and send to application.
+- _read_headlines: Take symbol and return list of HeadlineItem. Take data from Redis (NEWS_HEADLINES) and send to application.
+- _read_sentiment: Take symbol and return SentimentResponse. Take data from Redis (SENTIMENT_AGG) and send to application.
+- _read_options: Take symbol and return OptionsSummaryResponse. Take data from Redis (MARKET_OPTIONS) and send to application.
+- _read_technical_forecast: Take symbol and return TechnicalForecastResponse. Take data from Redis (ML_PREDICTION) or CNN Predictor and send to application.
+- _trigger_background_refresh: Take symbol and publish refresh event. Take symbol from analyze() and send to Redis Stream (ANALYSIS_REFRESH_REQUESTED).
+- _log_background_task_error: Static helper to log exceptions from fire-and-forget asyncio tasks. Take exception from Task and send to logger.
+- _build_freshness: Internal logic to determine data freshness. Take component timestamps and send to FreshnessMetadata.
+- _parse_iso: Static utility to normalize ISO datetime strings. Take string from data sources and send to datetime object.
+
+Endpoints/APIs:
+- Consumed by /v1/analyze (Internal calling by AnalysisRouter).
+
+Database Tables:
+- TickData (Postgres), Redis (Snapshots/Cache).
+"""
 import json
+
 import logging
 import asyncio
 from datetime import datetime, timezone

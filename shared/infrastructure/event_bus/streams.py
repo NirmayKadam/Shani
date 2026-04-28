@@ -1,4 +1,18 @@
+"""
+File Overview: Redis Streams helper for durable event processing, supporting consumer groups, retries, and dead-letter queues.
+
+All Functions/Classes:
+- StreamMessage (dataclass): Encapsulates stream message data and retry metadata.
+- DurableEventStream (class): Logic for reliable event publishing and consumption via Redis Streams. Data: Redis Streams -> Application Handlers.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 import asyncio
+
 import json
 import logging
 from dataclasses import dataclass

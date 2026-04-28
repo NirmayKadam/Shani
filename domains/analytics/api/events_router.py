@@ -1,4 +1,28 @@
+"""
+File Overview: Real-time WebSocket aggregator for pushing market data, headlines, and sentiment updates to clients via shared Redis Pub/Sub subscription.
+
+All Functions/Classes:
+- ConnectionManager: Orchestrates active WebSocket connections and task lifecycle. Take data from Redis Pub/Sub and send to WebSocket clients.
+- connect: Register new WebSocket for a symbol. Take symbol/WS and send accepted connection status.
+- disconnect: Clean up connections and stop idle background tasks. Take symbol/WS and send termination signals.
+- mark_client_alive: Update last activity timestamp for a client. Take symbol/WS and send updated timestamp to ConnectionManager.
+- broadcast: Queue JSON messages to all connected clients for a symbol. Take symbol/message and send to client queues.
+- _ensure_background_tasks_locked: Lazily start global Redis listener and cleanup loop. Take lock control and send task initialization.
+- _stop_background_tasks_if_idle_locked: Terminate background workers if no clients remain. Take lock control and send cancellation signals.
+- _sender_loop: Per-client worker for popping messages and sending JSON. Take data from Queue and send to WebSocket.
+- _cleanup_loop: Background task to disconnect idle clients. Take connection map and send disconnect commands.
+- WebSocketEndpoint: FastAPI WebSocket entry point. Take symbol from path and send stream of real-time data.
+- _derive_type_and_symbol: Parse Redis channel patterns. Take channel string and send (msg_type, symbol) tuple.
+- _redis_global_listener: Shared listener for all symbol patterns. Take data from Redis Pub/Sub and send to ConnectionManager.broadcast.
+
+Endpoints/APIs:
+- WS /ws/{symbol}.
+
+Database Tables:
+- Redis (Pub/Sub).
+"""
 # domains/analytics/api/events_router.py — WebSocket /ws/{symbol} for real-time push
+
 #
 # When a client connects, subscribes to all relevant Redis Pub/Sub channels
 # for that symbol and forwards events as JSON messages in real-time.

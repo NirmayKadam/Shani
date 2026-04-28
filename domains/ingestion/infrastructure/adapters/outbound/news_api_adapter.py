@@ -1,11 +1,15 @@
-from domains.ingestion.application.ports.interface.outbound.i_news_source import i_news_source
-from domains.ingestion.application.dto.raw_article_dto import raw_article_dto
-from typing import List
+"""
+File Overview: Outbound adapter for NewsAPI. Provides lightweight async headline fetching and mapping.
 
-# domains/ingestion/infrastructure/adapters/outbound/news_api_adapter.py — Lightweight NewsAPI client
-#
-# Pure fetch logic — no DB, no Redis, no dedup.
-# Returns a list of headline dicts ready for FinBERT scoring.
+All Functions/Classes:
+- NewsFetcher: Core async HTTP client for NewsAPI. Take search queries and send raw article lists.
+- fetch: Execute multi-query fallback logic. Take symbol and send list of headline dictionaries.
+- news_api_adapter: Port implementation for news source. Take symbol and send raw_article_dto list.
+
+Endpoints/APIs: NewsAPI (v2/everything)
+
+Database Tables: None
+"""
 
 import logging
 from typing import Optional

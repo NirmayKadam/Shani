@@ -1,4 +1,26 @@
+"""
+File Overview: Pydantic response models and schemas for the analytics API.
+
+All Functions/Classes:
+- ResponseMetadata: Base schema for all API responses. Take status/source and send to validated JSON response.
+- MarketDataResponse: Stores price and volume metrics. Take raw data and send to validated object.
+- HeadlineItem: Stores single news items with sentiment scoring. Take raw headline data and send to validated object.
+- SentimentTimeframeData: Stores aggregated sentiment metrics for a specific timeframe. Take aggregation data and send to validated object.
+- SentimentResponse: Compiles multi-timeframe sentiment data. Take intraday/daily/weekly/monthly payloads and send to validated object.
+- OptionsSummaryResponse: Stores PCR and option volume/OI stats. Take calculation results and send to validated object.
+- TechnicalForecastResponse: Stores ML inference results. Take prediction metrics and send to validated object.
+- AnalysisResponse: Final unified response schema. Take all analytical components and send to client.
+- SymbolsResponse: Returns recommended symbols. Take list from settings and send to client.
+- ErrorEnvelope: Standardized error response. Take error details and send to validated error object.
+
+Endpoints/APIs:
+- Definition layer for all /v1/ analytics endpoints.
+
+Database Tables:
+- None.
+"""
 from typing import Optional
+
 
 from pydantic import BaseModel, Field
 

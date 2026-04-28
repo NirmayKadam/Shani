@@ -1,4 +1,21 @@
+"""
+File Overview: Logical engine for period-based sentiment aggregation (Intraday, Daily, Weekly, Monthly) and trend directionality analysis.
+
+All Functions/Classes:
+- TimeframeComputer (class): Logic for windowed analysis and trend calculation. Data: Scored Headlines -> Multi-timeframe aggregates.
+- compute_all: Main entry point for full timeframe suite. Data: Headlines list -> Nested aggregate dict.
+- _filter_by_time: Filters items by recent cutoff. Data: Headlines -> Filtered list.
+- _compute_aggregate: Calculates mean and distribution. Data: Filtered list -> Summary dict.
+- _compute_trend: Determines directional momentum. Data: Current vs Previous avg scores -> Trend label.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 # app/domain/sentiment/timeframes.py — Multi-timeframe sentiment aggregation
+
 #
 # Computes sentiment aggregates across 4 time windows:
 #   Intraday (6h), Daily (24h), Weekly (7d), Monthly (30d)

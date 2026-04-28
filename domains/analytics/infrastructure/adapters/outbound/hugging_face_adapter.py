@@ -1,4 +1,18 @@
+"""
+File Overview: Outbound adapter for Hugging Face NLP models (FinBERT). Implements high-performance batch scoring.
+
+All Functions/Classes:
+- FinBertEngine (class): Singleton model manager. Data: text batches -> sentiment results.
+- hugging_face_adapter (class): Implementation of model port. Data: text batches -> sentiment scores.
+
+Endpoints/APIs:
+- None.
+
+Database Tables:
+- None.
+"""
 # app/domain/sentiment/finbert_engine.py — FinBERT NLP model singleton
+
 #
 # Loads the ProsusAI/finbert model once and provides async batch scoring.
 # Thread-safe: inference runs in a thread pool so the event loop stays responsive.

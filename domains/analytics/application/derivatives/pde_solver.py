@@ -1,4 +1,16 @@
+"""
+File Overview: Implementation of the Crank-Nicolson Partial Differential Equation (PDE) solver for option pricing.
+
+Key Functions/Classes:
+- CrankNicolsonPDE: Main class for solving the PDE grid.
+- solve: Executes the backward time loop to compute the option price.
+
+Endpoints/APIs: None
+
+Database Tables: None
+"""
 import numpy as np
+
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
 

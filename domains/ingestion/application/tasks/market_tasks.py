@@ -1,3 +1,14 @@
+"""
+File Overview: Celery tasks for advanced market data fetching and stream publishing.
+
+All Functions/Classes:
+- _fetch_and_publish_options_async: Core logic for chain retrieval and publishing. Take symbol and send raw chain data to Redis Stream.
+- fetch_and_publish_options: Celery task wrapper. Take symbol and send to async fetcher.
+
+Endpoints/APIs: GET /v1/ingestion/options/{symbol} (Internal)
+
+Database Tables: Redis (Streams: stream:options.raw_fetched)
+"""
 import json
 import logging
 import asyncio
