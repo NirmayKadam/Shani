@@ -37,18 +37,9 @@ class NewsFetcher:
 
     def __init__(self, api_key: str) -> None:
         self._ApiKey = api_key
-        self._Session: Optional[aiohttp.ClientSession] = None
-
-    async def _ensure_session(self) -> aiohttp.ClientSession:
-        if self._Session is None or self._Session.closed:
-            self._Session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30)
-            )
-        return self._Session
 
     async def close(self) -> None:
-        if self._Session and not self._Session.closed:
-            await self._Session.close()
+        pass
 
     async def fetch(self, symbol: str, max_results: int = _MAX_HEADLINES) -> list[dict]:
         """
@@ -58,8 +49,6 @@ class NewsFetcher:
         if not self._ApiKey:
             logger.warning("NEWS_API_KEY not set — returning empty headlines for %s", symbol)
             return []
-
-        session = await self._ensure_session()
 
         # Strip common vendor suffixes for cleaner NewsAPI query
         search_symbol = symbol.upper()
@@ -81,33 +70,34 @@ class NewsFetcher:
         data = {"articles": []}
         final_query = ""
 
-        for q in queries:
-            params = {
-                "q": q,
-                "apiKey": self._ApiKey,
-                "language": "en",
-                "sortBy": "publishedAt",
-                "pageSize": min(max_results, 100),
-            }
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+            for q in queries:
+                params = {
+                    "q": q,
+                    "apiKey": self._ApiKey,
+                    "language": "en",
+                    "sortBy": "publishedAt",
+                    "pageSize": min(max_results, 100),
+                }
 
-            try:
-                async with session.get(_NEWS_API_BASE, params=params) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        logger.error("[%s] NewsAPI returned %d for query '%s': %s", 
-                                     symbol, resp.status, q, body[:200])
-                        continue
+                try:
+                    async with session.get(_NEWS_API_BASE, params=params) as resp:
+                        if resp.status != 200:
+                            body = await resp.text()
+                            logger.error("[%s] NewsAPI returned %d for query '%s': %s", 
+                                         symbol, resp.status, q, body[:200])
+                            continue
 
-                    data = await resp.json()
-                    if data.get("totalResults", 0) > 0:
-                        final_query = q
-                        break
-                    else:
-                        logger.info("[%s] No results for query: '%s'", symbol, q)
+                        data = await resp.json()
+                        if data.get("totalResults", 0) > 0:
+                            final_query = q
+                            break
+                        else:
+                            logger.info("[%s] No results for query: '%s'", symbol, q)
 
-            except (aiohttp.ClientError, Exception) as exc:
-                logger.error("[%s] NewsAPI request error for query '%s': %s", symbol, q, exc)
-                continue
+                except (aiohttp.ClientError, Exception) as exc:
+                    logger.error("[%s] NewsAPI request error for query '%s': %s", symbol, q, exc)
+                    continue
 
         headlines: list[dict] = []
         for item in data.get("articles", []):

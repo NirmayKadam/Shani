@@ -41,8 +41,12 @@ def run_stock_prediction(symbol: str):
             await redis.set(key, json.dumps(result), ex=86400) # 24h TTL
             logger.info("[%s] Redis updated with prediction: %s", symbol, result["prediction"])
 
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+            
+        if loop and loop.is_running():
             asyncio.create_task(update_redis())
         else:
             asyncio.run(update_redis())

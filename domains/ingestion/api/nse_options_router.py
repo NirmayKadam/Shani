@@ -32,10 +32,13 @@ HEADERS = {
 }
 
 # Global client to maintain connection pools and cookies across requests
-client = httpx.AsyncClient(headers=HEADERS, timeout=10.0)
+client = None
 
 async def refresh_nse_cookies():
     """Hits the NSE homepage purely to generate fresh session cookies."""
+    global client
+    if client is None:
+        client = httpx.AsyncClient(headers=HEADERS, timeout=10.0)
     try:
         response = await client.get(NSE_BASE_URL)
         response.raise_for_status()
@@ -46,6 +49,8 @@ async def refresh_nse_cookies():
 @nse_options_router.on_event("startup")
 async def startup_event():
     # Initialize cookies when the FastAPI server starts
+    global client
+    client = httpx.AsyncClient(headers=HEADERS, timeout=10.0)
     await refresh_nse_cookies()
 
 @nse_options_router.get("/options/{symbol}", response_model=Dict[str, Any])
@@ -58,6 +63,10 @@ async def get_option_chain(symbol: str, is_index: bool = True):
     url = INDICES_API_URL + safe_symbol if is_index else EQUITIES_API_URL + safe_symbol
     
     try:
+        global client
+        if client is None:
+            client = httpx.AsyncClient(headers=HEADERS, timeout=10.0)
+            
         response = await client.get(url)
         
         # If we get unauthorized, our cookies likely expired. Refresh and retry.
