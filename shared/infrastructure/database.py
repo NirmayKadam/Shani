@@ -2,63 +2,65 @@
 File Overview: Shared async PostgreSQL connection pool management using asyncpg.
 
 All Functions/Classes:
-- GetDatabasePool: Singleton getter for the connection pool. Data: App Config -> PostgreSQL Pool.
-- CloseDatabasePool: Gracefully shuts down the connection pool. Data: Active Pool -> Closed Pool.
+- get_database_pool: Singleton getter for connection pool. Data: App Config -> PostgreSQL Pool.
+- close_database_pool: Gracefully shuts down connection pool. Data: Active Pool -> Closed Pool.
 
-Endpoints/APIs:
-- None.
+Endpoints/APIs: None
 
 Database Tables:
 - Reads from database configuration (NexusQuantDB).
 """
-
-
 import logging
 import asyncpg
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_Pool: Optional[asyncpg.Pool] = None
+_pool: Optional[asyncpg.Pool] = None
 
 
-async def GetDatabasePool() -> asyncpg.Pool:
+async def get_database_pool() -> asyncpg.Pool:
     """
     Returns the shared asyncpg connection pool.
     Creates it on first call, reuses it forever.
     """
-    global _Pool
+    global _pool
 
-    if _Pool is not None:
-        return _Pool
+    if _pool is not None:
+        return _pool
 
     from app.config import get_settings
-    Cfg = get_settings()
+    cfg = get_settings()
 
     try:
-        _Pool = await asyncpg.create_pool(
-            dsn=Cfg.DatabaseUrl,
+        _pool = await asyncpg.create_pool(
+            dsn=cfg.DatabaseUrl,
             min_size=2,
             max_size=10,
             command_timeout=60
         )
         logger.info("PostgreSQL connection pool created")
-    except Exception as Error:
-        logger.error(f"PostgreSQL connection failed: {Error}")
+    except Exception as error:
+        logger.error("PostgreSQL connection failed: %s", error)
         raise
 
-    return _Pool
+    return _pool
 
 
-async def CloseDatabasePool() -> None:
-    """Graceful shutdown — call from FastAPI shutdown event."""
-    global _Pool
+async def close_database_pool() -> None:
+    """Graceful shutdown — call from FastAPI lifespan shutdown."""
+    global _pool
 
-    if _Pool is not None:
+    if _pool is not None:
         try:
-            await _Pool.close()
+            await _pool.close()
             logger.info("PostgreSQL connection pool closed")
-        except Exception as Error:
-            logger.error(f"Error closing database pool: {Error}")
+        except Exception as error:
+            logger.error("Error closing database pool: %s", error)
         finally:
-            _Pool = None
+            _pool = None
+
+
+# Backward-compatible aliases
+GetDatabasePool = get_database_pool
+CloseDatabasePool = close_database_pool

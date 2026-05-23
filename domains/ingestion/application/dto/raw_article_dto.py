@@ -9,9 +9,9 @@ Endpoints/APIs: None
 Database Tables: None
 """
 from datetime import datetime
-from shared.application.dto.base_dto import base_dto
+from shared.application.dto.base_dto import BaseDTO
 
-class raw_article_dto(base_dto):
+class RawArticleDTO(BaseDTO):
     symbol: str
     headline: str
     body: str

@@ -1,4 +1,3 @@
--- TimescaleDB hypertable for tick data
 CREATE TABLE IF NOT EXISTS TickData (
     Timestamp       TIMESTAMPTZ     NOT NULL,
     Symbol          VARCHAR(20)     NOT NULL,
@@ -8,7 +7,9 @@ CREATE TABLE IF NOT EXISTS TickData (
     OpenInterest    BIGINT          DEFAULT 0,
     Volume          BIGINT,
     ExpiryDate      DATE,
-    StrikePrice     DECIMAL(10,2)
+    StrikePrice     DECIMAL(10,2),
+    ImpliedVolatility DECIMAL(10,4),
+    UnderlyingPrice DECIMAL(12,2)
 );
 
 -- Idempotent hypertable creation
@@ -18,6 +19,9 @@ BEGIN
         PERFORM create_hypertable('tickdata', 'timestamp');
     END IF;
 END $$;
+
+-- Retention Policy (7 days)
+SELECT add_retention_policy('tickdata', INTERVAL '7 days', if_not_exists => true);
 
 -- Processed sentiment scores
 CREATE TABLE IF NOT EXISTS SentimentScores (

@@ -48,11 +48,13 @@ class Streams:
     # NLP -> API/read model consumers (critical)
     SENTIMENT_SCORED      = "stream:sentiment.scored"
     AGGREGATE_UPDATED     = "stream:sentiment.aggregate_updated"
+    ANALYSIS_COMPLETED          = "stream:analysis.completed"
     ANALYSIS_REFRESH_REQUESTED = "stream:analysis.refresh_requested"
 
     # Dead-letter topics
     INGESTION_TO_NLP_DLQ  = "stream:dlq:ingestion_to_nlp"
     NLP_TO_API_DLQ        = "stream:dlq:nlp_to_api"
+    REFRESH_REQUEST_DLQ   = "stream:dlq:refresh_request"
 
 
 class StreamGroups:
@@ -60,6 +62,8 @@ class StreamGroups:
 
     INGESTION_TO_NLP = "cg:ingestion_to_nlp"
     NLP_TO_API = "cg:nlp_to_api"
+    REFRESH_TO_INGESTION = "cg:refresh_to_ingestion"
+    REFRESH_TO_SENTIMENT = "cg:refresh_to_sentiment"
 
 
 # ── Enums ──────────────────────────────────────────────────────

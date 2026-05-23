@@ -1,36 +1,43 @@
 import asyncio
 import os
 import logging
-from domains.analytics.application.services.nlp.sentiment_orchestrator import recompute_and_publish_aggregates, SubscriberDependencies
-from domains.analytics.application.services.nlp.analyzer import SentimentAnalyzer
-from domains.analytics.application.services.nlp.finbert_engine import FinBertEngine
-from domains.analytics.application.services.nlp.timeframes import TimeframeComputer
-from shared.infrastructure.database import GetDatabasePool
-from shared.infrastructure.redis_client import get_redis_client
-from shared.infrastructure.event_bus.streams import DurableEventStream
+from domains.analytics.application.services.nlp.sentiment_orchestrator_service import (
+    recompute_and_publish_aggregates, 
+    SubscriberDependencies
+)
+from domains.analytics.application.services.nlp.fin_bert_scorer_service import FinBertScorerService
+from domains.analytics.application.services.nlp.timeframes_service import TimeframeComputerService
+from domains.analytics.application.services.ml_forecasting.daily_predictor_service import DailyPredictorService
+from domains.analytics.application.services.nlp.signal_composer_service import SignalComposerService
+from domains.analytics.infrastructure.adapters.outbound.redis_adapter import RedisAdapter
+from domains.analytics.infrastructure.adapters.outbound.timescale_adapter import TimescaleAdapter
 from app.config import get_settings
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("test_recompute")
 
 async def test():
     cfg = get_settings()
-    redis = await get_redis_client()
-    db_pool = await GetDatabasePool()
-    finbert_engine = FinBertEngine.get_instance(cache_path=cfg.ModelCacheDir)
-    analyzer = SentimentAnalyzer(finbert_engine)
+    redis_adapter = RedisAdapter()
+    store_adapter = TimescaleAdapter()
     
     deps = SubscriberDependencies(
-        analyzer=analyzer,
-        timeframe_computer=TimeframeComputer(),
-        inference_engine=None,
-        redis=redis,
-        db_pool=db_pool,
-        stream_bus=DurableEventStream(redis),
+        scorer=FinBertScorerService(),
+        timeframe_computer=TimeframeComputerService(),
+        predictor=DailyPredictorService(),
+        composer=SignalComposerService(),
+        cache=redis_adapter,
+        store=store_adapter,
+        publisher=redis_adapter
     )
     
-    print("Testing recompute for NIFTY...")
-    res = await recompute_and_publish_aggregates("NIFTY", deps)
-    print(f"Result: {res}")
+    symbol = "NIFTY"
+    print(f"Testing recompute for {symbol}...")
+    try:
+        res = await recompute_and_publish_aggregates(symbol, deps)
+        print(f"Result: {res}")
+    except Exception as e:
+        logger.error("Test failed: %s", e, exc_info=True)
 
 if __name__ == "__main__":
     asyncio.run(test())

@@ -9,9 +9,9 @@ Endpoints/APIs: None
 Database Tables: None
 """
 from datetime import datetime
-from shared.application.dto.base_dto import base_dto
+from shared.application.dto.base_dto import BaseDTO
 
-class raw_tick_dto(base_dto):
+class RawTickDTO(BaseDTO):
     symbol: str
     expiry: str
     strike: float
@@ -19,4 +19,6 @@ class raw_tick_dto(base_dto):
     oi: int
     volume: int
     ltp: float
+    iv: float = 0.0
+    underlying_price: float = 0.0
     timestamp: datetime

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any
 
 @dataclass
-class base_domain_event:
+class BaseDomainEvent:
     event_type: str = field(init=False)
     payload: Dict[str, Any]
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))

@@ -20,9 +20,27 @@ logger = logging.getLogger(__name__)
 class SymbolValidator:
     """
     Utility to validate if a ticker symbol exists and is supported.
-    Strictsly limits validation to the Indian stock market (NSE/BSE).
-    Uses yfinance for verification and handles result caching.
+    Strictly limits validation to the Indian stock market (NSE/BSE).
+    Uses local mapping for speed, yfinance for fallback verification.
     """
+
+    _LOCAL_NSE_MAP = {
+        "NIFTY": "NIFTY",
+        "BANKNIFTY": "BANKNIFTY",
+        "FINNIFTY": "FINNIFTY",
+        "RELIANCE": "RELIANCE.NS",
+        "TCS": "TCS.NS",
+        "INFY": "INFY.NS",
+        "HDFCBANK": "HDFCBANK.NS",
+        "ICICIBANK": "ICICIBANK.NS",
+        "BHARTIARTL": "BHARTIARTL.NS",
+        "SBIN": "SBIN.NS",
+        "LICI": "LICI.NS",
+        "ITC": "ITC.NS",
+        "HINDUNILVR": "HINDUNILVR.NS",
+        "LT": "LT.NS",
+        "BAJFINANCE": "BAJFINANCE.NS"
+    }
 
     @staticmethod
     @lru_cache(maxsize=1000)
@@ -39,7 +57,10 @@ class SymbolValidator:
         # 0. Allow known indices
         from shared.constants import INDEX_SYMBOLS
         if symbol_upper in INDEX_SYMBOLS or "^" in symbol_upper:
-            # Allow NIFTY, BANKNIFTY etc or explicit yfinance indices like ^NSEI
+            return True
+
+        # 0.5 Check local map
+        if symbol_upper in SymbolValidator._LOCAL_NSE_MAP:
             return True
 
         # 1. Check if it's already an Indian market symbol
@@ -91,7 +112,11 @@ class SymbolValidator:
         if symbol_upper.endswith(".NS") or symbol_upper.endswith(".BO") or symbol_upper in INDEX_SYMBOLS or "^" in symbol_upper:
             return symbol_upper
             
-        # 1. Try to resolve bare symbol to Indian market
+        # 0.5 Check local map (Fastest)
+        if symbol_upper in SymbolValidator._LOCAL_NSE_MAP:
+            return SymbolValidator._LOCAL_NSE_MAP[symbol_upper]
+            
+        # 1. Try to resolve bare symbol to Indian market (Slow fallback)
         if symbol_upper.isalnum():
             # Try NSE
             try:
@@ -99,7 +124,7 @@ class SymbolValidator:
                 hist = ticker.history(period="1d")
                 if not hist.empty:
                     return f"{symbol_upper}.NS"
-            except:
+            except Exception:
                 pass
                 
             # Try BSE
@@ -108,7 +133,7 @@ class SymbolValidator:
                 hist = ticker.history(period="1d")
                 if not hist.empty:
                     return f"{symbol_upper}.BO"
-            except:
+            except Exception:
                 pass
             
         return symbol_upper

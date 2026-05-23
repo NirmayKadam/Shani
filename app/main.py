@@ -1,43 +1,67 @@
 """
-File Overview: Entry point for the FastAPI application. Sets up middleware, outbound adapters, and includes domain routers.
+File Overview: Entry point for FastAPI application. Sets up middleware, lifespan hooks,
+and includes domain routers following hexagonal architecture.
 
 All Functions/Classes:
-- startup_event: Initializes Redis, Timescale, and Webhook adapters. Data: Environment variables -> Adapter instances.
-- root: Simple health check endpoint. Data: None -> Status dictionary.
+- lifespan: Manages app lifecycle. Data: startup -> warm Redis/DB connections, shutdown -> close pools.
+- root: Health check endpoint. Data: None -> status dict.
 
 Endpoints/APIs:
-- /: root
-- /v1/sentiment: sentiment_router
+- /: root (health check)
+- /v1/analyze/{symbol}: analysis_router (sentiment_router)
 - /v1/signals: signals_router
-- /v1/events: events_router
+- /ws/{symbol}: events_router (WebSocket)
 - /v1/derivatives: derivatives_router
 - /v1/predictions: predictions_router
+- /v1/symbols: symbols_router
 - /v1/ingestion/nse: nse_options_router
 
 Database Tables:
 - None directly. Initializes connections for Redis and TimescaleDB.
 """
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from domains.analytics.api.sentiment_router import router as sentiment_router
-from domains.analytics.api.signals_router import router as signals_router
-from domains.analytics.api.events_router import router as events_router
-from domains.analytics.api.derivatives_router import router as derivatives_router
-from domains.analytics.api.predictions_router import router as predictions_router
-from domains.ingestion.api.nse_options_router import nse_options_router
 
-# Adapters
-from domains.analytics.infrastructure.adapters.outbound.redis_adapter import redis_adapter
-from domains.analytics.infrastructure.adapters.outbound.timescale_adapter import timescale_adapter
-from domains.analytics.infrastructure.adapters.outbound.webhook_adapter import webhook_adapter
+# Domain routers
+from domains.analytics.api.analysis_router_api import router as analysis_router
+from domains.analytics.api.signals_router_api import router as signals_router
+from domains.analytics.api.events_router_api import router as events_router
+from domains.analytics.api.derivatives_router_api import router as derivatives_router
+from domains.analytics.api.predictions_router_api import router as predictions_router
+from domains.analytics.api.symbols_router_api import router as symbols_router
+from domains.ingestion.api.nse_options_router_api import nse_options_router_api
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-App = FastAPI(title="AlphaStreams DDD Engine")
 
-App.add_middleware(
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Application lifecycle: warm connections on startup, close on shutdown."""
+    from shared.infrastructure.redis_client import get_redis_client, close_redis_client
+    from shared.infrastructure.database import close_database_pool
+
+    # Startup: warm Redis connection pool
+    try:
+        await get_redis_client()
+        logger.info("Redis connection warmed during startup")
+    except Exception as exc:
+        logger.warning("Redis warmup failed (will retry on first use): %s", exc)
+
+    yield
+
+    # Shutdown: close connection pools
+    await close_redis_client()
+    await close_database_pool()
+    logger.info("All connection pools closed")
+
+
+app = FastAPI(title="AlphaStreams DDD Engine", lifespan=lifespan)
+
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -45,25 +69,15 @@ App.add_middleware(
     allow_headers=["*"],
 )
 
-App.include_router(sentiment_router, prefix="/v1")
-App.include_router(signals_router, prefix="/v1")
-App.include_router(events_router, prefix="/v1")
-App.include_router(derivatives_router, prefix="/v1")
-App.include_router(predictions_router, prefix="/v1")
-App.include_router(nse_options_router, prefix="/v1/ingestion")
-
-@App.on_event("startup")
-async def startup_event():
-    import os
-    from domains.analytics.infrastructure.adapters.outbound.redis_adapter import redis_adapter
-    from domains.analytics.infrastructure.adapters.outbound.timescale_adapter import timescale_adapter
-    from domains.analytics.infrastructure.adapters.outbound.webhook_adapter import webhook_adapter
-
-    caching = redis_adapter(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
-    db = timescale_adapter(os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/NexusQuantDB"))
-    webhook = webhook_adapter(os.getenv("WEBHOOK_URL", ""))
+app.include_router(analysis_router, prefix="/v1")
+app.include_router(signals_router, prefix="/v1")
+app.include_router(events_router, prefix="/v1")
+app.include_router(derivatives_router, prefix="/v1")
+app.include_router(predictions_router, prefix="/v1")
+app.include_router(symbols_router, prefix="/v1")
+app.include_router(nse_options_router_api, prefix="/v1/ingestion")
 
 
-@App.get("/")
+@app.get("/")
 def root():
     return {"status": "ok"}

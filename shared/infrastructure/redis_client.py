@@ -3,17 +3,13 @@ File Overview: Shared Redis client management for both asynchronous and synchron
 
 All Functions/Classes:
 - get_redis_client: Singleton getter for async aioredis client. Data: App Config -> Async Redis.
-- CloseRedisClient: Gracefully shuts down the async client. Data: Active Client -> Closed.
-- get_redis_sync: Returns a synchronous Redis client. Data: App Config -> Sync Redis.
+- close_redis_client: Gracefully shuts down async client. Data: Active Client -> Closed.
+- get_redis_client_sync: Returns synchronous Redis client. Data: App Config -> Sync Redis.
 
-Endpoints/APIs:
-- None.
+Endpoints/APIs: None
 
-Database Tables:
-- None.
+Database Tables: None
 """
-
-
 import logging
 from typing import Optional
 
@@ -22,7 +18,7 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 # ── Module-level singleton ──────────────────────────────────────
-_RedisClient: Optional[aioredis.Redis] = None
+_redis_client: Optional[aioredis.Redis] = None
 
 
 async def get_redis_client() -> aioredis.Redis:
@@ -30,52 +26,58 @@ async def get_redis_client() -> aioredis.Redis:
     Return the shared async Redis client.
     Creates the connection pool on first call; reuses it thereafter.
     """
-    global _RedisClient
+    global _redis_client
 
-    if _RedisClient is not None:
-        return _RedisClient
+    if _redis_client is not None:
+        return _redis_client
 
     from app.config import get_settings
-    Cfg = get_settings()
+    cfg = get_settings()
 
     try:
-        _RedisClient = aioredis.from_url(
-            Cfg.RedisUrl,
+        _redis_client = aioredis.from_url(
+            cfg.RedisUrl,
             decode_responses=True,
             max_connections=20,
         )
-        await _RedisClient.ping()
-        logger.info("Redis connected  (%s)", Cfg.RedisUrl)
-    except (aioredis.ConnectionError, aioredis.RedisError, OSError) as Exc:
-        logger.error("Redis connection failed: %s  — continuing without Redis", Exc)
-        if _RedisClient is None:
-            _RedisClient = aioredis.from_url(
-                Cfg.RedisUrl,
+        await _redis_client.ping()
+        logger.info("Redis connected  (%s)", cfg.RedisUrl)
+    except (aioredis.ConnectionError, aioredis.RedisError, OSError) as exc:
+        logger.error("Redis connection failed: %s  — continuing without Redis", exc)
+        # Still create client for lazy reconnect on next operation
+        if _redis_client is None:
+            _redis_client = aioredis.from_url(
+                cfg.RedisUrl,
                 decode_responses=True,
                 max_connections=20,
             )
 
-    return _RedisClient
+    return _redis_client
 
 
-async def CloseRedisClient() -> None:
-    """Graceful shutdown — call from FastAPI's shutdown event."""
-    global _RedisClient
+async def close_redis_client() -> None:
+    """Graceful shutdown — call from FastAPI lifespan shutdown."""
+    global _redis_client
 
-    if _RedisClient is not None:
+    if _redis_client is not None:
         try:
-            await _RedisClient.aclose()
+            await _redis_client.aclose()
             logger.info("Redis client closed")
-        except Exception as Exc:
-            logger.error("Error closing Redis client: %s", Exc)
+        except Exception as exc:
+            logger.error("Error closing Redis client: %s", exc)
         finally:
-            _RedisClient = None
+            _redis_client = None
 
-def get_redis_sync():
+
+# Backward-compatible alias
+CloseRedisClient = close_redis_client
+
+
+def get_redis_client_sync():
     """
     Returns a sync Redis client connection.
     """
     from app.config import get_settings
-    Cfg = get_settings()
+    cfg = get_settings()
     import redis
-    return redis.Redis.from_url(Cfg.RedisUrl, decode_responses=True)
+    return redis.Redis.from_url(cfg.RedisUrl, decode_responses=True)

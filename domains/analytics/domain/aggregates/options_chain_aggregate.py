@@ -12,21 +12,21 @@ Database Tables: None
 """
 from typing import List, Optional
 
-from domains.ingestion.application.dto.raw_tick_dto import raw_tick_dto
-from domains.analytics.domain.events.anomaly_detected import anomaly_detected
+from domains.ingestion.application.dto.raw_tick_dto import RawTickDTO
+from domains.analytics.domain.events.anomaly_detected_event import AnomalyDetectedEvent
 
-class options_chain_aggregate:
+class OptionsChainAggregate:
     OI_SURGE_THRESHOLD = 3.0
     VOL_SWEEP_THRESHOLD = 5.0
 
     def __init__(self):
-        self.ticks: List[raw_tick_dto] = []
+        self.ticks: List[RawTickDTO] = []
         
-    def add_tick_batch(self, ticks: List[raw_tick_dto]) -> List[anomaly_detected]:
+    def add_tick_batch(self, ticks: List[RawTickDTO]) -> List[AnomalyDetectedEvent]:
         self.ticks.extend(ticks)
         return self.detect_anomalies()
         
-    def detect_anomalies(self) -> List[anomaly_detected]:
+    def detect_anomalies(self) -> List[AnomalyDetectedEvent]:
         anomalies = []
         for tick in self.ticks:
             pass # TODO: EWM logic

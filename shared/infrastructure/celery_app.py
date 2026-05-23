@@ -22,6 +22,7 @@ celery_app = Celery(
         "domains.ingestion.application.tasks.ingestion_tasks",
         "domains.ingestion.application.tasks.market_tasks",
         "domains.analytics.application.tasks.ml_tasks",
+        "domains.analytics.application.tasks.alert_tasks",
     ],
 )
 
@@ -51,9 +52,7 @@ celery_app.conf.beat_schedule = {
         "schedule": float(os.getenv("PRICE_POLL_INTERVAL_SECONDS", "15")),
     },
     "poll_option_chains": {
-        "task": "ingestion.fetch_and_publish_options",
+        "task": "ingestion.poll_options",
         "schedule": float(os.getenv("OPTIONS_POLL_INTERVAL_SECONDS", "30")),
     },
 }
-
-celery_app = celery_app

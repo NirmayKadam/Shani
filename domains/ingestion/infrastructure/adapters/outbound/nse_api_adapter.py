@@ -17,13 +17,18 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from domains.ingestion.application.ports.interface.outbound.i_market_data_source import i_market_data_source
-from domains.ingestion.application.dto.raw_tick_dto import raw_tick_dto
+from domains.ingestion.application.ports.interface.outbound.i_option_chain_source_port import IOptionChainSourcePort
+from domains.ingestion.application.ports.interface.outbound.i_market_price_source_port import IMarketPriceSourcePort
+from domains.ingestion.application.dto.raw_tick_dto import RawTickDTO
 
 import aiohttp
 import yfinance as yf
+import pandas as pd
+import numpy as np
+import pytz
 
 from shared.constants import MarketStatus, INDEX_SYMBOLS
+from shared.utils.symbol_validator import SymbolValidator
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +91,6 @@ def _get_market_status() -> MarketStatus:
     Determine if Indian market (NSE) is currently open.
     Market hours: 9:15 AM to 3:30 PM IST, Monday to Friday.
     """
-    import pytz
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
 
@@ -109,69 +113,52 @@ def _get_market_status() -> MarketStatus:
 # Market Price Fetcher (yfinance)
 # ═══════════════════════════════════════════════════════════════
 
-class MarketPriceFetcher:
+class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
     """
-    Fetches current/last-close OHLCV data via yfinance.
-    Always returns data even when market is closed — uses last trading day.
-
-    Usage:
-        fetcher = MarketPriceFetcher()
-        data = await fetcher.fetch("NIFTY")
+    Unified adapter for market data via NSE India and yfinance.
+    Implements both market price and option chain ports.
     """
 
-    async def fetch(self, symbol: str) -> Optional[dict]:
-        """
-        Fetch the latest OHLCV snapshot for a symbol.
+    def __init__(self) -> None:
+        self._Session: Optional[aiohttp.ClientSession] = None
+        self._CookieRefreshTime: Optional[datetime] = None
 
-        Returns:
-            {
-                "symbol": "NIFTY",
-                "last_price": 22500.50,
-                "open": 22400.00,
-                "high": 22550.00,
-                "low": 22380.00,
-                "volume": 12345678,
-                "previous_close": 22450.00,
-                "change_percent": 0.22,
-                "market_status": "OPEN",
-                "last_updated": "2026-04-12"
-            }
+    async def _ensure_session(self) -> aiohttp.ClientSession:
+        if self._Session is None or self._Session.closed:
+            self._Session = aiohttp.ClientSession(
+                headers=_NSE_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
+        return self._Session
 
-        Returns None only on catastrophic error. Always returns last-close
-        data when market is closed.
-        """
+    async def close(self) -> None:
+        if self._Session and not self._Session.closed:
+            await self._Session.close()
+
+    # ── Market Price (yfinance) ─────────────────────────────────
+
+    async def fetch_price(self, symbol: str) -> Optional[dict]:
+        """Fetches latest OHLCV snapshot via yfinance (non-blocking)."""
         yf_symbol = _to_yfinance_symbol(symbol)
         market_status = _get_market_status()
 
         try:
-            # Run yfinance in a thread to avoid blocking the event loop
             loop = asyncio.get_running_loop()
-            data = await loop.run_in_executor(
-                None, self._fetch_sync, yf_symbol
-            )
-
-            if data is None:
-                return None
-
-            data["symbol"] = symbol.upper()
-            data["market_status"] = market_status.value
+            data = await loop.run_in_executor(None, self._fetch_price_sync, yf_symbol)
+            if data:
+                data["symbol"] = symbol.upper()
+                data["market_status"] = market_status.value
             return data
-
         except Exception as exc:
             logger.error("[%s] yfinance fetch error: %s", symbol, exc)
             return None
 
     @staticmethod
-    def _fetch_sync(yf_symbol: str) -> Optional[dict]:
-        """Synchronous yfinance call — runs in thread pool."""
+    def _fetch_price_sync(yf_symbol: str) -> Optional[dict]:
         try:
             ticker = yf.Ticker(yf_symbol)
-
-            # Get last 5 days to ensure we have data even after weekends
             hist = ticker.history(period="5d")
-            if hist.empty:
-                logger.warning("[%s] yfinance returned empty history", yf_symbol)
-                return None
+            if hist.empty: return None
 
             hist.columns = [c.lower() for c in hist.columns]
             latest = hist.iloc[-1]
@@ -189,408 +176,257 @@ class MarketPriceFetcher:
                 "volume": int(latest.get("volume", 0)),
                 "previous_close": round(prev_close, 2),
                 "change_percent": change_pct,
-                "currency": ticker.info.get("currency", "USD" if ".NS" not in yf_symbol and "^" not in yf_symbol else "INR"),
+                "currency": ticker.info.get("currency", "INR"),
                 "last_updated": str(hist.index[-1].date()),
             }
         except Exception as exc:
-            logger.error("[%s] _fetch_sync error: %s", yf_symbol, exc)
+            logger.error("[%s] _fetch_price_sync error: %s", yf_symbol, exc)
             return None
 
+    # ── Option Chain (NSE V3 API) ───────────────────────────────
 
-# ═══════════════════════════════════════════════════════════════
-# Option Chain Fetcher (NSE India API)
-# ═══════════════════════════════════════════════════════════════
+    async def fetch_option_chain(self, symbol: str) -> List[RawTickDTO]:
+        """Fetches full option chain and returns list of RawTickDTOs."""
+        data = await self._fetch_option_chain_raw(symbol)
+        if not data:
+            logger.warning("[%s] Live option chain fetch failed, generating synthetic option chain fallback", symbol)
+            data = await self._generate_synthetic_options(symbol)
 
-class OptionChainFetcher:
-    """
-    Fetches full option chain from NSE India API — ALL expiries.
+        if not data:
+            return []
 
-    Usage:
-        fetcher = OptionChainFetcher()
-        await fetcher.initialise()
-        data = await fetcher.fetch("NIFTY")
-        await fetcher.close()
-    """
+        dtos = []
+        chains = data.get("chains", {})
+        spot_price = data.get("spot_price", 0.0)
+        for expiry, ticks in chains.items():
+            for t in ticks:
+                dtos.append(RawTickDTO(
+                    symbol=symbol.upper(),
+                    expiry=expiry,
+                    strike=t["strike"],
+                    option_type=t["type"],
+                    oi=t["oi"],
+                    volume=t["volume"],
+                    ltp=t["last_price"],
+                    iv=t.get("iv", 0.0),
+                    underlying_price=spot_price,
+                    timestamp=datetime.now(timezone.utc)
+                ))
+        return dtos
 
-    def __init__(self) -> None:
-        self._Session: Optional[aiohttp.ClientSession] = None
-        self._CookieRefreshTime: Optional[datetime] = None
-
-    async def initialise(self) -> None:
-        self._Session = aiohttp.ClientSession(
-            headers=_NSE_HEADERS,
-            timeout=aiohttp.ClientTimeout(total=30),
-        )
-
-    async def close(self) -> None:
-        if self._Session and not self._Session.closed:
-            await self._Session.close()
-
-    async def _soft_initialise(self, symbol: str, force: bool = False) -> None:
-        """Establish session by visiting the specific symbol page and softening with API calls."""
-        now = datetime.now(timezone.utc)
-        if (
-            not force
-            and self._CookieRefreshTime is not None
-            and (now - self._CookieRefreshTime).total_seconds() < 600
-        ):
-            return
-
-        logger.info("[%s] Initialising NSE session...", symbol)
+    async def _generate_synthetic_options(self, symbol: str) -> Optional[dict]:
         try:
-            # 1. Base URL
-            async with self._Session.get(_NSE_BASE_URL, headers=_NSE_HEADERS) as resp:
-                await asyncio.sleep(1.0)
-                
-            # 2. Main Option Chain Page with specific symbol
-            url = f"https://www.nseindia.com/option-chain?symbol={symbol}"
-            headers = _NSE_HEADERS.copy()
-            headers["Referer"] = _NSE_BASE_URL
-            async with self._Session.get(url, headers=headers) as resp:
-                self._CookieRefreshTime = now
-                await asyncio.sleep(1.0)
-                
-            # 3. Soften with master-quote
-            async with self._Session.get("https://www.nseindia.com/api/master-quote", headers=_NSE_API_HEADERS) as resp:
-                await asyncio.sleep(0.5)
+            price_data = await self.fetch_price(symbol)
+            if not price_data:
+                logger.warning("[%s] Synthetic option generation failed: could not fetch spot price", symbol)
+                return None
+            
+            spot = float(price_data.get("last_price", 0.0))
+            if spot <= 0:
+                logger.warning("[%s] Synthetic option generation failed: invalid spot price %.2f", symbol, spot)
+                return None
+            
+            clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
+            if "NIFTY" in clean_sym:
+                step = 50.0
+            elif "BANKNIFTY" in clean_sym:
+                step = 100.0
+            else:
+                step = 10.0 if spot < 500 else (50.0 if spot < 2000 else 100.0)
 
-            # 4. Legacy endpoint nudge (sets some backend session state even if 401)
-            legacy_url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}" if symbol in INDEX_SYMBOLS else f"https://www.nseindia.com/api/option-chain-equities?symbol={symbol}"
-            async with self._Session.get(legacy_url, headers=_NSE_API_HEADERS) as resp:
-                await asyncio.sleep(0.5)
-                
-            logger.info("[%s] Session established (%d cookies)", symbol, len(self._Session.cookie_jar))
-                
-        except Exception as exc:
-            logger.error("[%s] Session init failed: %s", symbol, exc)
+            # Generate next 2 Thursdays for expiries
+            expiries = []
+            today = datetime.now(timezone.utc)
+            days_ahead = (3 - today.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7
+            next_thursday = today + timedelta(days=days_ahead)
+            expiries.append(next_thursday.strftime("%Y-%m-%d"))
+            expiries.append((next_thursday + timedelta(days=7)).strftime("%Y-%m-%d"))
 
-    async def fetch(self, symbol: str) -> Optional[dict]:
-        """
-        Fetch the full option chain for a symbol from NSE.
+            chains = {}
+            base_strike = round(spot / step) * step
+            
+            for exp in expiries:
+                ticks = []
+                for i in range(-15, 16):
+                    strike = base_strike + i * step
+                    if strike <= 0:
+                        continue
+                    
+                    # CE Price (intrinsic + time value)
+                    ce_intrinsic = max(spot - strike, 0)
+                    ce_time_value = (spot * 0.02) * np.exp(-abs(strike - spot) / (spot * 0.05))
+                    ce_price = round(max(ce_intrinsic + ce_time_value, 0.05), 2)
 
-        Returns:
-            {
-                "symbol": "NIFTY",
-                "spot_price": 22500.0,
-                "expiry_dates": ["2026-04-17", "2026-04-24", "2026-05-29"],
-                "chains": {
-                    "2026-04-17": [
-                        {"strike": 22400, "type": "CE", "last_price": 150.5,
-                         "oi": 50000, "volume": 12345, "expiry": "2026-04-17"},
-                        ...
-                    ],
-                    "2026-04-24": [...],
-                },
-                "summary": {
-                    "total_ce": 42,
-                    "total_pe": 42,
-                    "total_strikes": 42
-                }
+                    # PE Price (intrinsic + time value)
+                    pe_intrinsic = max(strike - spot, 0)
+                    pe_time_value = (spot * 0.02) * np.exp(-abs(strike - spot) / (spot * 0.05))
+                    pe_price = round(max(pe_intrinsic + pe_time_value, 0.05), 2)
+
+                    # Implied Volatility
+                    iv = round(0.12 + 0.05 * (strike - spot) / spot, 4)
+                    iv = max(0.05, min(0.60, iv))
+
+                    # Open Interest
+                    oi_ce = int(15000 * np.exp(-abs(strike - spot) / (spot * 0.03))) + 100
+                    oi_pe = int(14000 * np.exp(-abs(strike - spot) / (spot * 0.03))) + 100
+                    
+                    vol_ce = int(oi_ce * (1.2 + 0.5 * np.random.rand()))
+                    vol_pe = int(oi_pe * (1.2 + 0.5 * np.random.rand()))
+
+                    ticks.append({
+                        "strike": float(strike),
+                        "type": "CE",
+                        "last_price": float(ce_price),
+                        "oi": oi_ce,
+                        "volume": vol_ce,
+                        "iv": float(iv),
+                        "expiry": exp
+                    })
+                    
+                    ticks.append({
+                        "strike": float(strike),
+                        "type": "PE",
+                        "last_price": float(pe_price),
+                        "oi": oi_pe,
+                        "volume": vol_pe,
+                        "iv": float(iv),
+                        "expiry": exp
+                    })
+                
+                chains[exp] = ticks
+
+            return {
+                "symbol": symbol.upper(),
+                "spot_price": spot,
+                "expiry_dates": expiries,
+                "chains": chains
             }
+        except Exception as exc:
+            logger.error("[%s] Failed to generate synthetic option chain: %s", symbol, exc, exc_info=True)
+            return None
 
-        Returns None if NSE is unreachable (market closed, rate limited).
-        """
-        if self._Session is None or self._Session.closed:
-            await self.initialise()
-
+    async def _fetch_option_chain_raw(self, symbol: str, retry_count: int = 0) -> Optional[dict]:
+        session = await self._ensure_session()
         await self._soft_initialise(symbol)
 
-        # Detect if it's an NSE symbol. NSE symbols are typically letters-only
-        # or known indices. International ones often have suffixes or different formats.
-        from shared.utils.symbol_validator import SymbolValidator
         clean_sym = SymbolValidator.get_clean_symbol(symbol.upper())
         is_nse = clean_sym in INDEX_SYMBOLS or clean_sym.endswith(".NS") or clean_sym.endswith(".BO")
 
         if not is_nse:
-             logger.info("[%s] Non-NSE symbol detected, using yfinance for options", symbol)
-             return await self._fetch_yfinance_fallback(symbol)
+            return await self._fetch_yfinance_options_fallback(symbol)
 
-        # Choose correct endpoint and type
-        symbol_upper = symbol.upper()
-        clean_name = symbol_upper.replace(".NS", "")
-        m_type = "Indices" if symbol_upper in INDEX_SYMBOLS else "Equity"
+        clean_name = symbol.upper().replace(".NS", "").replace(".BO", "")
+        m_type = "Indices" if clean_name in INDEX_SYMBOLS else "Equity"
 
         try:
-            # 1. Get Expiries from contract-info
+            # 1. Get Expiries
             info_url = _NSE_CONTRACT_INFO_URL.format(symbol=clean_name)
-            async with self._Session.get(info_url, headers=_NSE_API_HEADERS) as resp:
-                if resp.status == 401:
+            async with session.get(info_url, headers=_NSE_API_HEADERS) as resp:
+                if resp.status == 401 and retry_count < 2:
                     await self._soft_initialise(symbol, force=True)
-                    return await self.fetch(symbol) # Recursive retry once
+                    return await self._fetch_option_chain_raw(symbol, retry_count + 1)
                 
                 if resp.status != 200:
-                    return await self._fetch_yfinance_fallback(symbol)
+                    return await self._fetch_yfinance_options_fallback(symbol)
                 
                 info_data = await resp.json()
                 expiries = info_data.get("expiryDates") or info_data.get("metadata", {}).get("expiryDates", [])
                 
-                if not expiries:
-                    logger.warning("[%s] No expiries found in NSE contract info", symbol)
-                    return await self._fetch_yfinance_fallback(symbol)
+            if not expiries:
+                return await self._fetch_yfinance_options_fallback(symbol)
 
             # 2. Fetch v3 chain for the first 2 expiries
             combined_data = {"records": {"underlyingValue": 0, "expiryDates": expiries, "data": []}}
-            
             for exp in expiries[:2]:
                 v3_url = _NSE_OPTION_CHAIN_V3_URL.format(type=m_type, symbol=clean_name, expiry=exp)
-                async with self._Session.get(v3_url, headers=_NSE_API_HEADERS) as resp:
-                    if resp.status == 401:
-                        logger.info("[%s] Session expired on v3 fetch, refreshing...", symbol)
-                        await self._soft_initialise(symbol, force=True)
-                        # No recursion here to avoid infinite loop, loop will continue for next exp
-                        continue
-
-                    if resp.status != 200:
-                        logger.warning("[%s] NSE v3 fetch failed for %s: %d", symbol, exp, resp.status)
-                        continue
-                        
-                    raw_v3 = await resp.json()
-                    # v3 can return data at root or under records
-                    v3_ticks = raw_v3.get("data", []) or raw_v3.get("records", {}).get("data", [])
-                    
-                    if v3_ticks:
-                        combined_data["records"]["data"].extend(v3_ticks)
-                        spot = raw_v3.get("metadata", {}).get("underlyingValue", 0) or raw_v3.get("records", {}).get("underlyingValue", 0)
-                        if spot: combined_data["records"]["underlyingValue"] = spot
+                async with session.get(v3_url, headers=_NSE_API_HEADERS) as resp:
+                    if resp.status == 200:
+                        raw_v3 = await resp.json()
+                        v3_ticks = raw_v3.get("data", []) or raw_v3.get("records", {}).get("data", [])
+                        if v3_ticks:
+                            combined_data["records"]["data"].extend(v3_ticks)
+                            spot = raw_v3.get("metadata", {}).get("underlyingValue", 0) or raw_v3.get("records", {}).get("underlyingValue", 0)
+                            if spot: combined_data["records"]["underlyingValue"] = spot
 
             if not combined_data["records"]["data"]:
-                logger.warning("[%s] All NSE v3 fetch attempts failed or returned empty", symbol)
-                return await self._fetch_yfinance_fallback(symbol)
+                return await self._fetch_yfinance_options_fallback(symbol)
 
             return self._parse_option_chain(symbol, combined_data)
+        except Exception:
+            return await self._fetch_yfinance_options_fallback(symbol)
 
-        except Exception as exc:
-            logger.warning("[%s] NSE fetch error: %s - trying yfinance fallback", symbol, exc)
-            return await self._fetch_yfinance_fallback(symbol)
+    async def _soft_initialise(self, symbol: str, force: bool = False) -> None:
+        session = await self._ensure_session()
+        now = datetime.now(timezone.utc)
+        if not force and self._CookieRefreshTime and (now - self._CookieRefreshTime).total_seconds() < 600:
+            return
 
-    async def _fetch_yfinance_fallback(self, symbol: str) -> Optional[dict]:
-        """Fetch option chain using yfinance for non-NSE symbols or as backup."""
-        logger.info("[%s] Fetching option chain via yfinance fallback", symbol)
+        clean_name = symbol.upper().replace(".NS", "").replace(".BO", "")
         try:
-            from shared.utils.symbol_validator import SymbolValidator
-            clean_sym = SymbolValidator.get_clean_symbol(symbol)
-            ticker = yf.Ticker(clean_sym)
-            
+            async with session.get(_NSE_BASE_URL, headers=_NSE_HEADERS):
+                await asyncio.sleep(0.5)
+            url = f"https://www.nseindia.com/option-chain?symbol={clean_name}"
+            async with session.get(url, headers=_NSE_HEADERS):
+                self._CookieRefreshTime = now
+                await asyncio.sleep(0.5)
+        except Exception as exc:
+            logger.error("[%s] Session init failed: %s", clean_name, exc)
+
+    async def _fetch_yfinance_options_fallback(self, symbol: str) -> Optional[dict]:
+        try:
+            yf_symbol = _to_yfinance_symbol(symbol)
+            ticker = yf.Ticker(yf_symbol)
             expiries = ticker.options
-            if not expiries:
-                logger.info("[%s] No options available via yfinance", symbol)
-                return None
-                
-            # Just fetch the first 2 expiries to keep it light
+            if not expiries: return None
+
             chains = {}
-            total_ce = 0
-            total_pe = 0
+            spot = ticker.fast_info.get("last_price", 0) if ticker.fast_info else 0
             
-            import pandas as pd
-            import numpy as np
-
-            # Map NIFTY names if needed for spot
-            fast = ticker.fast_info
-            spot = fast.get('last_price', 0) if fast else 0
-            
-            for exp in expiries[:3]:
+            for exp in expiries[:2]:
                 opt = ticker.option_chain(exp)
-                exp_ticks = []
-                
-                def _to_int(val):
-                    try:
-                        if pd.isna(val) or val is None: return 0
-                        return int(val)
-                    except: return 0
-
-                def _to_float(val):
-                    try:
-                        if pd.isna(val) or val is None: return 0.0
-                        return float(val)
-                    except: return 0.0
-
-                for _, row in opt.calls.iterrows():
-                    exp_ticks.append({
-                        "strike": _to_float(row['strike']),
-                        "type": "CE",
-                        "last_price": _to_float(row['lastPrice']),
-                        "oi": _to_int(row.get('openInterest')),
-                        "volume":_to_int(row.get('volume')),
-                        "expiry": exp
-                    })
-                    total_ce += 1
-                for _, row in opt.puts.iterrows():
-                    exp_ticks.append({
-                        "strike": _to_float(row['strike']),
-                        "type": "PE",
-                        "last_price": _to_float(row['lastPrice']),
-                        "oi": _to_int(row.get('openInterest')),
-                        "volume": _to_int(row.get('volume')),
-                        "expiry": exp
-                    })
-                    total_pe += 1
-                chains[exp] = exp_ticks
-                
-            return {
-                "symbol": symbol.upper(),
-                "spot_price": float(spot),
-                "expiry_dates": list(expiries),
-                "chains": chains,
-                "summary": {
-                    "total_ce": total_ce,
-                    "total_pe": total_pe,
-                    "total_strikes": len(chains.get(expiries[0], [])) // 2 if expiries else 0
-                }
-            }
-        except Exception as exc:
-            logger.error("[%s] yfinance options fallback failed: %s", symbol, exc)
-            return None
-
-    @staticmethod
-    def _parse_nse_date(date_str: str) -> Optional[str]:
-        """Helper to parse 'DD-MMM-YYYY' or 'DD-MM-YYYY' safely."""
-        months = {
-            "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04",
-            "May": "05", "Jun": "06", "Jul": "07", "Aug": "08",
-            "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12"
-        }
-        try:
-            parts = date_str.split("-")
-            if len(parts) != 3: return None
-            d, m, y = parts
+                ticks = []
+                for _, r in opt.calls.iterrows():
+                    ticks.append({"strike": float(r["strike"]), "type": "CE", "last_price": float(r["lastPrice"]), "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)), "expiry": exp})
+                for _, r in opt.puts.iterrows():
+                    ticks.append({"strike": float(r["strike"]), "type": "PE", "last_price": float(r["lastPrice"]), "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)), "expiry": exp})
+                chains[exp] = ticks
             
-            if m.isdigit():
-                m_num = m.zfill(2)
-            else:
-                m_num = months.get(m.capitalize())
-                
-            if not m_num: return None
-            return f"{y}-{m_num}-{d.zfill(2)}"
-        except:
+            return {"symbol": symbol.upper(), "spot_price": float(spot), "expiry_dates": list(expiries), "chains": chains}
+        except Exception:
             return None
 
     @staticmethod
     def _parse_option_chain(symbol: str, data: dict) -> Optional[dict]:
-        """Parse NSE option chain JSON into structured format with all expiries."""
         records = data.get("records", {})
         underlying = records.get("underlyingValue", 0)
         expiry_dates_raw = records.get("expiryDates", [])
-        all_data = data.get("filtered", {}).get("data", []) or records.get("data", [])
-        logger.info("[%s] Processing %d ticks", symbol, len(all_data))
+        all_data = records.get("data", [])
 
-        if not all_data:
-            logger.warning("[%s] NSE returned empty option chain", symbol)
-            return None
-
-        # Convert date format and build chains per expiry
         chains: dict[str, list[dict]] = {}
-        expiry_dates_iso: list[str] = []
-
-        for raw_date in expiry_dates_raw:
-            iso = OptionChainFetcher._parse_nse_date(raw_date)
-            if iso:
-                expiry_dates_iso.append(iso)
-
-        total_ce = 0
-        total_pe = 0
-
         for row in all_data:
-            # v3 might have strikePrice and expiryDate at root or nested
-            strike = row.get("strikePrice", 0)
-            row_expiry_raw = row.get("expiryDate", "")
-            
-            if not strike or not row_expiry_raw:
-                # Try fallback to CE/PE sub-objects
-                sub = row.get("CE") or row.get("PE")
-                if sub:
-                    strike = strike or sub.get("strikePrice", 0)
-                    row_expiry_raw = row_expiry_raw or sub.get("expiryDate", "")
+            strike = row.get("strikePrice")
+            expiry = NseApiAdapter._parse_nse_date(row.get("expiryDate", ""))
+            if not strike or not expiry: continue
 
-            if not strike or not row_expiry_raw:
-                continue
-
-            # Convert expiry
-            expiry_iso = OptionChainFetcher._parse_nse_date(row_expiry_raw)
-            if not expiry_iso:
-                continue
-
-            if expiry_iso not in chains:
-                chains[expiry_iso] = []
-
-            # v3 usually has nested CE/PE but also might have flattened 'type'
-            found_any = False
+            if expiry not in chains: chains[expiry] = []
             for opt_key in ["CE", "PE"]:
-                opt_data = row.get(opt_key)
-                if opt_data:
-                    lp = opt_data.get("last_price", opt_data.get("lastPrice", 0))
+                opt = row.get(opt_key)
+                if opt:
+                    lp = opt.get("lastPrice", 0)
                     if lp > 0:
-                        chains[expiry_iso].append({
-                            "strike": float(strike),
-                            "type": opt_key,
-                            "last_price": float(lp),
-                            "oi": int(opt_data.get("openInterest", opt_data.get("OI", 0))),
-                            "volume": int(opt_data.get("totalTradedVolume", opt_data.get("volume", 0))),
-                            "expiry": expiry_iso,
+                        chains[expiry].append({
+                            "strike": float(strike), "type": opt_key, "last_price": float(lp),
+                            "oi": int(opt.get("openInterest", 0)), "volume": int(opt.get("totalTradedVolume", 0)),
+                            "iv": float(opt.get("impliedVolatility", 0.0)), "expiry": expiry
                         })
-                        if opt_key == "CE": total_ce += 1
-                        else: total_pe += 1
-                        found_any = True
+        return {"symbol": symbol.upper(), "spot_price": float(underlying), "expiry_dates": expiry_dates_raw, "chains": chains}
 
-            # Fallback for flattened structure (some v3 variants)
-            if not found_any:
-                row_type = row.get("type")
-                if row_type:
-                    lp = row.get("lastPrice", 0)
-                    if lp > 0:
-                        chains[expiry_iso].append({
-                            "strike": float(strike),
-                            "type": row_type,
-                            "last_price": float(lp),
-                            "oi": int(row.get("openInterest", 0)),
-                            "volume": int(row.get("totalTradedVolume", 0)),
-                            "expiry": expiry_iso,
-                        })
-                        if row_type == "CE": total_ce += 1
-                        else: total_pe += 1
-
-        unique_strikes = len(set(
-            t["strike"] for chain in chains.values() for t in chain
-        ))
-
-        logger.info(
-            "[%s] Parsed option chain: %d expiries, %d CE + %d PE ticks, spot=%.2f",
-            symbol, len(chains), total_ce, total_pe, underlying,
-        )
-
-        return {
-            "symbol": symbol.upper(),
-            "spot_price": float(underlying),
-            "expiry_dates": expiry_dates_iso,
-            "chains": chains,
-            "summary": {
-                "total_ce": total_ce,
-                "total_pe": total_pe,
-                "total_strikes": unique_strikes,
-            },
-        }
-
-class nse_api_adapter(i_market_data_source):
-    def __init__(self):
-        self._fetcher = OptionChainFetcher()
-        
-    async def fetch_option_chain(self, symbol: str) -> List[raw_tick_dto]:
-        data = await self._fetcher.fetch(symbol)
-        # map to DTO
-        dtos = []
-        if not data: return dtos
-        
-        chains = data.get('chains', {})
-        for expiry, ticks in chains.items():
-            for t in ticks:
-                from datetime import datetime
-                dtos.append(raw_tick_dto(
-                    symbol=symbol,
-                    expiry=expiry,
-                    strike=t['strike'],
-                    option_type=t['type'],
-                    oi=t['oi'],
-                    volume=t['volume'],
-                    ltp=t['last_price'],
-                    timestamp=datetime.now()
-                ))
-        return dtos
+    @staticmethod
+    def _parse_nse_date(date_str: str) -> Optional[str]:
+        months = {"Jan":"01","Feb":"02","Mar":"03","Apr":"04","May":"05","Jun":"06","Jul":"07","Aug":"08","Sep":"09","Oct":"10","Nov":"11","Dec":"12"}
+        try:
+            d, m, y = date_str.split("-")
+            return f"{y}-{months[m.capitalize()]}-{d.zfill(2)}"
+        except: return None

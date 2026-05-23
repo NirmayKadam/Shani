@@ -1,7 +1,7 @@
 
 import asyncio
 import json
-from domains.analytics.api.analysis_service import AnalysisService
+from domains.analytics.application.services.analysis_service import AnalysisService
 
 async def test_service():
     symbol = "NIFTY"

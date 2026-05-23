@@ -80,6 +80,15 @@ class SentimentResponse(BaseModel):
 
 # ── Options Summary ────────────────────────────────────────────
 
+class OptionTick(BaseModel):
+    strike: float
+    type: str  # CE/PE
+    last_price: float
+    iv: float
+    oi: int
+    volume: int
+    expiry: str
+
 class OptionsSummaryResponse(BaseModel):
     pcr: float = 0.0
     ce_volume: int = 0
@@ -88,6 +97,7 @@ class OptionsSummaryResponse(BaseModel):
     pe_oi: int = 0
     total_strikes: int = 0
     expiry_dates: list[str] = Field(default_factory=list)
+    chain: list[OptionTick] = Field(default_factory=list)
     available: bool = False
     last_updated: str = ""
 

@@ -12,10 +12,11 @@ Database Tables: None
 """
 
 import logging
+from datetime import datetime
 from typing import Optional, List
 
-from domains.ingestion.application.ports.interface.outbound.i_news_source import i_news_source
-from domains.ingestion.application.dto.raw_article_dto import raw_article_dto
+from domains.ingestion.application.ports.interface.outbound.i_news_source_port import INewsSourcePort
+from domains.ingestion.application.dto.raw_article_dto import RawArticleDTO
 
 import aiohttp
 
@@ -126,25 +127,23 @@ class NewsFetcher:
         return headlines
 
 
-class news_api_adapter(i_news_source):
+class NewsApiAdapter(INewsSourcePort):
     def __init__(self, api_key: str):
         self._fetcher = NewsFetcher(api_key=api_key)
         
-    async def fetch_articles(self, symbol: str) -> List[raw_article_dto]:
+    async def fetch_articles(self, symbol: str) -> List[RawArticleDTO]:
         headlines = await self._fetcher.fetch(symbol)
         # map to DTO
         dtos = []
         for h in headlines:
-            from datetime import datetime
-            
             pub = h.get("published_at")
             if not pub:
                 pub = datetime.now()
             elif isinstance(pub, str):
                 try: pub = datetime.fromisoformat(pub.replace('Z', '+00:00'))
-                except: pub = datetime.now()
+                except Exception: pub = datetime.now()
                 
-            dtos.append(raw_article_dto(
+            dtos.append(RawArticleDTO(
                 symbol=symbol,
                 headline=h.get('headline', ''),
                 body=h.get('content', ''),

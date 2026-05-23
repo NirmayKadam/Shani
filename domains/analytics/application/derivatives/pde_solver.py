@@ -15,18 +15,20 @@ from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
 
 class CrankNicolsonPDE:
-    def __init__(self, S0: float, K: float, T: float, r: float, sigma: float, option_type: str = 'call'):
+    def __init__(self, S0: float, K: float, T: float, r: float, sigma: float, option_type: str = 'call', M: int = 200, N: int = 200):
         self.S0 = S0
         self.K = K
-        self.T = T
+        self.T = max(T, 1e-6)  # Guard against T=0
         self.r = r
         self.sigma = sigma
         self.option_type = option_type.lower()
         
         # Grid parameters (M: Price steps, N: Time steps)
-        self.M = 200
-        self.N = 200
-        self.S_max = 3 * S0
+        self.M = M
+        self.N = N
+        # S_max should be large enough to minimize boundary error. 
+        # Standard: 3-4x Strike or Strike + 3*sigma*sqrt(T)
+        self.S_max = max(3 * K, S0 * 2.5) 
         self.dS = self.S_max / self.M
         self.dt = self.T / self.N
         

@@ -159,9 +159,10 @@ class FinBertEngine:
             ]
 
 
-class hugging_face_adapter:
+class HuggingFaceAdapter:
     def __init__(self):
-        self._engine = FinBertEngine.get_instance()
+        from domains.analytics.application.services.nlp.finbert_engine_service import FinBertEngineService
+        self._engine = FinBertEngineService.get_instance()
         
     async def score_batch(self, texts: list[str]) -> list[dict]:
         return await self._engine.score_batch(texts)
