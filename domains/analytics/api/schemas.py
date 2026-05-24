@@ -111,19 +111,49 @@ class TechnicalForecastResponse(BaseModel):
     confluence_status: str
 
 
-# ── Full Analysis Response ─────────────────────────────────────
+# ── Signal Response ────────────────────────────────────────────
 
-class FreshnessMetadata(ResponseMetadata):
-    pass
+class SignalMetadata(BaseModel):
+    daily_count: int = 0
+    pred_confidence: float = 0.0
 
 
-class AnalysisResponse(ResponseMetadata):
+class SignalResponse(ResponseMetadata):
     symbol: str
-    market_data: Optional[MarketDataResponse] = None
-    headlines: list[HeadlineItem] = Field(default_factory=list)
-    sentiment: Optional[SentimentResponse] = None
-    options_summary: Optional[OptionsSummaryResponse] = None
-    technical_forecast: Optional[TechnicalForecastResponse] = None
+    composite_label: str
+    strength: float
+    sentiment_avg: float
+    prediction: str
+    composed_at: str
+    metadata: SignalMetadata = Field(default_factory=SignalMetadata)
+
+
+# ── Derivatives Response ────────────────────────────────────────
+
+class PricedStrike(BaseModel):
+    strike: float
+    fair_call: float
+    fair_put: float
+    call_iv: float
+    put_iv: float
+    bs_fair_call: Optional[float] = None
+    bs_fair_put: Optional[float] = None
+    live_call: Optional[float] = None
+    live_put: Optional[float] = None
+
+
+class DerivativesResponse(ResponseMetadata):
+    symbol: str
+    pcr: float = 0.0
+    ce_volume: int = 0
+    pe_volume: int = 0
+    ce_oi: int = 0
+    pe_oi: int = 0
+    total_strikes: int = 0
+    expiry_dates: list[str] = Field(default_factory=list)
+    fair_priced_chain: list[PricedStrike] = Field(default_factory=list)
+    available: bool = False
+    last_updated: str = ""
 
 
 # ── Symbols Response ───────────────────────────────────────────
@@ -139,3 +169,71 @@ class ErrorEnvelope(ResponseMetadata):
     error: str
     code: str
     details: dict | list[dict] | None = None
+
+
+# ── Option Pricer Schemas ────────────────────────────────────────
+
+class OptionChainSide(BaseModel):
+    oi: Optional[int] = 0
+    chng_in_oi: Optional[int] = 0
+    volume: Optional[int] = 0
+    iv: Optional[float] = 0.0
+    ltp: Optional[float] = 0.0
+    chng: Optional[float] = 0.0
+    bid_qty: Optional[int] = 0
+    bid: Optional[float] = 0.0
+    ask: Optional[float] = 0.0
+    ask_qty: Optional[int] = 0
+
+
+class OptionChainRow(BaseModel):
+    strike_price: float
+    call: OptionChainSide
+    put: OptionChainSide
+
+
+class PricerTickerDataResponse(ResponseMetadata):
+    symbol: str
+    stock_price: float
+    implied_volatility: float
+    historical_volatility: float
+    bid_price: float
+    ask_price: float
+    open_interest: int
+    volume: int
+    strike_price: float
+    expiry_days: int
+    risk_free_rate: float
+    dividend_yield: float
+    expiry_dates: list[str] = Field(default_factory=list)
+    option_chains: dict[str, list[OptionChainRow]] = Field(default_factory=dict)
+
+
+
+class BSMCalculateRequest(BaseModel):
+    S0: float = Field(..., description="Stock price")
+    K: float = Field(..., description="Strike price")
+    T_days: int = Field(..., description="Expiry in days")
+    r: float = Field(..., description="Risk-free interest rate (percentage, e.g. 5.25)")
+    sigma: float = Field(..., description="Volatility (percentage, e.g. 28.4)")
+    option_type: str = Field(..., description="'call' or 'put'")
+    q: float = Field(0.0, description="Dividend yield (percentage, e.g. 0.55)")
+    market_mid: Optional[float] = Field(None, description="Current market midpoint price of option")
+
+
+class BSMCalculateResponse(BaseModel):
+    S0: float
+    K: float
+    T_years: float
+    r: float
+    sigma: float
+    option_type: str
+    q: float
+    d1: float
+    d2: float
+    Nd1: float
+    Nd2: float
+    fair_value: float
+    market_mid: Optional[float] = None
+    edge: Optional[float] = None
+

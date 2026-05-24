@@ -9,7 +9,7 @@ async def test_derivatives_pipeline_e2e():
     Automated end-to-end test for the Derivatives Analytics pipeline.
     """
     print("\n[1/3] Triggering ingestion...")
-    svc = get_service()
+    svc = await get_service()
     Symbols = ["NIFTY", "RELIANCE"]
     
     for Sym in Symbols:

@@ -42,6 +42,10 @@ async def _fetch_and_publish_options_async(symbol: str):
             logger.warning("[%s] No option chain data", symbol)
             return
 
+        # Fetch dividend yield dynamically from the yfinance adapter
+        price_info = await adapter.fetch_price(symbol)
+        dividend_yield = price_info.get("dividend_yield", 0.0) if price_info else 0.0
+
         S0 = dtos[0].underlying_price
         timestamp = datetime.now()
 
@@ -76,7 +80,8 @@ async def _fetch_and_publish_options_async(symbol: str):
                 strikes_payload.append({
                     "strike": dto.strike,
                     "type": dto.option_type,
-                    "iv": dto.iv
+                    "iv": dto.iv,
+                    "ltp": dto.ltp
                 })
 
         # 1. Bulk Insert into TimescaleDB
@@ -95,6 +100,7 @@ async def _fetch_and_publish_options_async(symbol: str):
         payload = {
             "spot_price": S0,
             "risk_free_rate": 0.065,
+            "dividend_yield": dividend_yield,
             "time_to_maturity": T,
             "strikes_data": strikes_payload
         }

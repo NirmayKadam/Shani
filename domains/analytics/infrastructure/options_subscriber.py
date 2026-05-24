@@ -17,9 +17,12 @@ import json
 import asyncio
 import logging
 import os
+from datetime import datetime, timezone
 
 from redis.asyncio import Redis
 from domains.analytics.application.derivatives.pde_solver import CrankNicolsonPDE
+from domains.analytics.application.derivatives.black_scholes import BlackScholesMerton
+from shared.constants import RedisKeys, TTL
 
 logger = logging.getLogger("options_pricing_subscriber")
 
@@ -46,43 +49,72 @@ class OptionsPricingSubscriber:
                     last_id = message_id
 
     async def process_event(self, payload: dict):
-        symbol = payload[b"symbol"].decode("utf-8")
+        symbol = payload[b"symbol"].decode("utf-8").upper()
         data = json.loads(payload[b"data"].decode("utf-8"))
 
         S0 = data["spot_price"]
         r = data["risk_free_rate"]
         T = data["time_to_maturity"]
+        dividend_yield = data.get("dividend_yield", 0.0)
 
         # Group strikes by price to solve CE/PE together
         strikes_map = {}
         for s in data.get("strikes_data", []):
-            st = s["strike"]
-            if st not in strikes_map:
-                strikes_map[st] = {}
-            strikes_map[st][s["type"]] = s["iv"]
+            strike = s["strike"]
+            if strike not in strikes_map:
+                strikes_map[strike] = {}
+            strikes_map[strike][s["type"]] = {
+                "iv": s.get("iv", 0.20),
+                "ltp": s.get("ltp", 0.0)
+            }
 
         priced_chain = []
 
-        for strike, ivs in strikes_map.items():
+        for strike, type_data in strikes_map.items():
             # Use specific IV if available, else fallback to 20%
-            call_iv = ivs.get("CE", 0.20)
-            put_iv = ivs.get("PE", 0.20)
+            call_iv = type_data.get("CE", {}).get("iv", 0.20)
+            put_iv = type_data.get("PE", {}).get("iv", 0.20)
 
-            # Call Price
+            # Extract live prices (ltp) if available
+            live_call = type_data.get("CE", {}).get("ltp", 0.0)
+            live_put = type_data.get("PE", {}).get("ltp", 0.0)
+
+            # Call Price (Crank-Nicolson PDE)
             call_solver = CrankNicolsonPDE(S0, strike, T, r, call_iv, 'call')
             call_price = call_solver.solve()
 
-            # Put Price
+            # Put Price (Crank-Nicolson PDE)
             put_solver = CrankNicolsonPDE(S0, strike, T, r, put_iv, 'put')
             put_price = put_solver.solve()
+
+            # Call Price (Black-Scholes-Merton Analytical)
+            bs_call_solver = BlackScholesMerton(S0, strike, T, r, call_iv, 'call', q=dividend_yield)
+            bs_call_price = bs_call_solver.solve()
+
+            # Put Price (Black-Scholes-Merton Analytical)
+            bs_put_solver = BlackScholesMerton(S0, strike, T, r, put_iv, 'put', q=dividend_yield)
+            bs_put_price = bs_put_solver.solve()
 
             priced_chain.append({
                 "strike": strike,
                 "fair_call": round(call_price, 2),
                 "fair_put": round(put_price, 2),
                 "call_iv": call_iv,
-                "put_iv": put_iv
+                "put_iv": put_iv,
+                "bs_fair_call": round(bs_call_price, 2),
+                "bs_fair_put": round(bs_put_price, 2),
+                "live_call": round(live_call, 2) if live_call is not None else 0.0,
+                "live_put": round(live_put, 2) if live_put is not None else 0.0
             })
+
+        # Cache in Redis for high performance read-model API querying
+        cache_key = RedisKeys.MARKET_OPTIONS_PRICED.format(symbol=symbol)
+        cache_payload = {
+            "symbol": symbol,
+            "chain": priced_chain,
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
+        await self.redis.set(cache_key, json.dumps(cache_payload), ex=TTL.MARKET_OPTIONS_PRICED)
 
         # Publish Durable Event (for read-model updates)
         event_data = json.dumps({"symbol": symbol, "chain": priced_chain})

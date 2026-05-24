@@ -8,7 +8,6 @@ All Functions/Classes:
 
 Endpoints/APIs:
 - /: root (health check)
-- /v1/analyze/{symbol}: analysis_router (sentiment_router)
 - /v1/signals: signals_router
 - /ws/{symbol}: events_router (WebSocket)
 - /v1/derivatives: derivatives_router
@@ -26,12 +25,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Domain routers
-from domains.analytics.api.analysis_router_api import router as analysis_router
 from domains.analytics.api.signals_router_api import router as signals_router
 from domains.analytics.api.events_router_api import router as events_router
 from domains.analytics.api.derivatives_router_api import router as derivatives_router
 from domains.analytics.api.predictions_router_api import router as predictions_router
 from domains.analytics.api.symbols_router_api import router as symbols_router
+from domains.analytics.api.pricer_router_api import router as pricer_router
 from domains.ingestion.api.nse_options_router_api import nse_options_router_api
 
 logging.basicConfig(level=logging.INFO)
@@ -69,15 +68,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(analysis_router, prefix="/v1")
 app.include_router(signals_router, prefix="/v1")
 app.include_router(events_router, prefix="/v1")
 app.include_router(derivatives_router, prefix="/v1")
 app.include_router(predictions_router, prefix="/v1")
 app.include_router(symbols_router, prefix="/v1")
+app.include_router(pricer_router, prefix="/v1")
 app.include_router(nse_options_router_api, prefix="/v1/ingestion")
 
 
-@app.get("/")
-def root():
+@app.get("/health")
+def health():
     return {"status": "ok"}

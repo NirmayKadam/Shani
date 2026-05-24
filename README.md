@@ -57,7 +57,6 @@ graph LR
 
         subgraph App_Context [App / API]
             FastAPI[FastAPI Router]
-            AnalysisService[Analysis Service]
             WSServer[WebSocket Hub]
         end
     end
@@ -74,7 +73,6 @@ graph LR
     RedisStreams -- "Consume/Score" --> Analytics_Context
     Analytics_Context -- "Persist" --> TimescaleDB
     Analytics_Context -- "Publish Aggregates" --> RedisStreams
-    App_Context -- "Query" --> TimescaleDB
     App_Context -- "Live Mirror" --> RedisPubSub
     RedisPubSub --> WSServer
 ```
@@ -96,18 +94,18 @@ The codebase is aligned to a **Modular Monolith** with explicit context boundari
 * **Primary module:** `domains/analytics/infrastructure/event_subscriber.py`
 
 #### `app`
-- Exposes cache-first query endpoints and webhooks.
-- Orchestrates async refresh flows.
-- **Primary modules:** `domains/analytics/api/` (Sentiment, Predictions, Events).
+- Exposes cache-first domain-aligned query endpoints and webhooks.
+- **Primary modules:** `domains/analytics/api/` (Signals, Derivatives, Predictions, Events).
 
 ### Runtime Processes (Single-Container)
 
 The `app` container starts these child processes via `scripts/entrypoint_single_container.sh`:
 
-1.  **FastAPI** (`uvicorn Main:App`)
+1.  **FastAPI** (`uvicorn app.main:app`)
 2.  **Celery ingestion worker** (`-Q ingestion`)
 3.  **Celery beat scheduler**
-4.  **NLP stream subscriber** (`python -m domains.analytics.application.nlp.sentiment_orchestrator`)
+4.  **NLP stream subscriber** (`python domains/analytics/application/services/nlp/sentiment_orchestrator_service.py`)
+5.  **Read Model Updater** (`python domains/analytics/application/services/read_model_updater_service.py`)
 
 ---
 
@@ -161,8 +159,7 @@ sequenceDiagram
 
 ## 🧯 Operational runbooks
 
-* Startup runbook: [`docs/runbooks/startup.md`](docs/runbooks/startup.md)
-* Failure & recovery runbook: [`docs/runbooks/failure-recovery.md`](docs/runbooks/failure-recovery.md)
+The system is fully automated. Background worker startup, scheduling, and stream routing are managed by `supervisord` configured in `supervisord.conf`. Refer to supervisord logs for failure diagnostics and runbook processes.
 
 ## 🗄️ Database & Stream Visualization
 
@@ -226,15 +223,24 @@ This system is completely dockerized. All configurations are driven via the `.en
 
 The Celery scheduler and Sentiment subscribers run autonomously in the background! As data flows in, you can query the API.
 
-### 1. Unified Analysis Report (REST)
+### 1. Fused Composite Signals (REST)
 
-Returns the live options chain surface, current price, latest headlines, and the multi-timeframe FinBERT aggregations for any symbol.
+Returns the real-time market sentiment fused with ML predictions for the Indian market indices.
 
 ```bash
-curl http://localhost:8000/v1/analyze/NIFTY
+curl http://localhost:8000/v1/signals/NIFTY
 ```
 
-### 2. Market Volatility Prediction
+### 2. Options Derivatives Pricing (REST)
+
+Returns Crank-Nicolson PDE priced options chain (fair pricing surface), PCR, volumes, and open interest.
+
+```bash
+curl http://localhost:8000/v1/derivatives/NIFTY
+```
+
+### 3. Market Volatility Prediction
+
 Predicts the 5-day forward volatility shift using the MTF-CNN-LSTM model.
 
 ```bash
@@ -246,10 +252,12 @@ curl http://localhost:8000/v1/predictions/NIFTY
 - `NEUTRAL`: Stable market conditions.
 - `VOL_EXPAND`: Significant increase/breakout expected.
 
-### 3. Live WebSocket Streaming (Push)
+### 4. Live WebSocket Streaming (Push)
+
 Using a websocket client (e.g. VS Code Bruno or Postman), connect to:
 `ws://localhost:8000/v1/ws/NIFTY`
-Events (including ML predictions) will spontaneously push to you whenever new data enters the architecture!
+
+Events will spontaneously push to you whenever new data enters the architecture!
 
 > [!NOTE]
 > **Indian Market Hours**: The system is optimized for NSE/BSE trading (9:15 AM – 3:30 PM IST). Outside hours, it serves the last-known "CLOSED" state while continuing to poll 24/7 news APIs.
@@ -258,27 +266,26 @@ Events (including ML predictions) will spontaneously push to you whenever new da
 
 ## 🔄 Workflow (Request-Response Path)
 
-### `GET /v1/analyze/{symbol}`
+### `GET /v1/signals/{symbol}`
 
 1. API validates symbol against configured watchlist.
-2. Analysis service reads market/headline/sentiment/options/forecast from Redis-first read models.
-3. If data is stale or partial, API still returns quickly and publishes an async refresh request (`stream:analysis.refresh_requested`).
-4. Ingestion + NLP flows continue asynchronously and update caches/read-models consumed by API and websocket clients.
+2. Reads composite signal from Redis cache.
+3. If data is missing (cache-miss), publishes an async refresh request (`stream:analysis.refresh_requested`) to trigger background update and returns initial metadata.
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant API as FastAPI /analyze
+    participant API as FastAPI /signals
     participant RM as Read Model (Redis)
     participant S as Stream
     participant I as Ingestion
 
-    U->>API: GET /v1/analyze/{symbol}
-    API->>RM: Fetch cached analysis
+    U->>API: GET /v1/signals/{symbol}
+    API->>RM: Fetch cached signal
     API-->>U: Return cached data (fast)
 
     rect rgb(200, 220, 255)
-        Note right of API: If stale or partial
+        Note right of API: If stale or missing
         API->>S: stream:analysis.refresh_requested
         S->>I: Trigger background refresh
     end
@@ -288,10 +295,9 @@ sequenceDiagram
 
 ## 🏁 Suggested Onboarding Order
 
-1. Read `README.md` for architecture + startup.
-2. Read `docs/adr/ADR-001-bounded-contexts.md` and `docs/adr/ADR-002-event-transport.md`.
-3. Read `shared/infrastructure/event_bus/contracts.py` and `shared/infrastructure/event_bus/streams.py`.
-4. Read ingestion tasks and analytics subscriber modules.
-5. Read app API service/router modules.
-6. Use runbooks in `docs/runbooks/` for ops workflows.
+1. Read `README.md` for architecture, runtime details, and startup.
+2. Read `shared/infrastructure/event_bus/contracts.py` and `shared/infrastructure/event_bus/streams.py` to understand event structures.
+3. Read `domains/ingestion/application/tasks/ingestion_tasks.py` to see news and market price fetchers.
+4. Read `domains/analytics/application/services/nlp/sentiment_orchestrator_service.py` and `domains/analytics/infrastructure/options_subscriber.py` to trace the real-time scoring, signal composition, and options fair pricing solver workflows.
+5. Read `domains/analytics/api/` router modules for details on signals, derivatives, and predictions presentation logic.
 

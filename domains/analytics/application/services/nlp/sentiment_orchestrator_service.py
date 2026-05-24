@@ -165,6 +165,10 @@ async def _recompute_all(symbol: str, deps: SubscriberDependencies) -> None:
     # 3. Signal Fusion
     composite_signal = deps.composer.compose_signal(symbol, tf_data, prediction)
     
+    # Cache composite signal for API read model
+    signal_key = RedisKeys.SENTIMENT_SIGNAL.format(symbol=symbol)
+    await deps.cache.set(signal_key, json.dumps(composite_signal), TTL.SENTIMENT_SIGNAL)
+    
     # Publish final signal
     await deps.publisher.publish(Streams.ANALYSIS_COMPLETED, composite_signal)
     logger.info("[%s] Analysis cycle complete: %s (Strength: %.2f)", 

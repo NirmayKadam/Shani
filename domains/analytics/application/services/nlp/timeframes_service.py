@@ -95,9 +95,9 @@ class TimeframeComputerService:
                 pub_dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
                 if pub_dt >= cutoff:
                     result.append(h)
-            except (ValueError, TypeError):
-                # If we can't parse the date, include it anyway (conservative)
-                result.append(h)
+            except (ValueError, TypeError) as exc:
+                logger.warning("Failed to parse published_at date '%s': %s", pub_str, exc)
+                continue
         return result
 
     @staticmethod
@@ -114,7 +114,8 @@ class TimeframeComputerService:
                 pub_dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
                 if start <= pub_dt < end:
                     result.append(h)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
+                logger.warning("Failed to parse published_at date '%s': %s", pub_str, exc)
                 continue
         return result
 

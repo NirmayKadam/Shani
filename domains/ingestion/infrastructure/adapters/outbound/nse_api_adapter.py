@@ -168,6 +168,9 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             prev_close = float(prev["close"])
             change_pct = round(((last_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
 
+            # Extract dividend yield (usually as float ratio e.g. 0.015 for 1.5%)
+            div_yield = ticker.info.get("dividendYield") or ticker.info.get("trailingAnnualDividendYield") or 0.0
+
             return {
                 "last_price": round(last_price, 2),
                 "open": round(float(latest["open"]), 2),
@@ -177,6 +180,7 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 "previous_close": round(prev_close, 2),
                 "change_percent": change_pct,
                 "currency": ticker.info.get("currency", "INR"),
+                "dividend_yield": float(div_yield),
                 "last_updated": str(hist.index[-1].date()),
             }
         except Exception as exc:

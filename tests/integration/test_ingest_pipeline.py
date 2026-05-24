@@ -6,7 +6,7 @@ async def test_news_ingestion_pipeline():
     """
     Automated test for triggering news ingestion.
     """
-    svc = get_service()
+    svc = await get_service()
     Symbols = ["NIFTY", "RELIANCE"]
     
     print("\n[+] Triggering news ingestion...")

@@ -108,6 +108,7 @@ class RedisKeys:
     # Ingestion domain owns:
     MARKET_PRICE       = "market:price:{symbol}"            # Today's OHLCV snapshot
     MARKET_OPTIONS     = "market:options:{symbol}"           # Latest option chain
+    MARKET_OPTIONS_PRICED = "market:options:priced:{symbol}" # Fair priced option chain
     NEWS_HEADLINES     = "headlines:scored:{symbol}"          # Sorted set of scored headlines
     NEWS_DEDUP         = "news:seen:{url_hash}"              # Deduplication key
 
@@ -115,6 +116,7 @@ class RedisKeys:
     SENTIMENT_LATEST   = "sentiment:latest:{symbol}"         # Latest individual score
     SENTIMENT_EMA      = "sentiment:ema:{symbol}"            # EMA value
     SENTIMENT_AGG      = "sentiment:aggregate:{symbol}:{tf}" # Aggregate per timeframe
+    SENTIMENT_SIGNAL   = "sentiment:signal:{symbol}"         # Composite sentiment and ML prediction signal
 
     # ML domain owns:
     ML_PREDICTION      = "ml:prediction:{symbol}"            # CNN forecast
@@ -125,10 +127,12 @@ class RedisKeys:
 class TTL:
     MARKET_PRICE     = 86400    # 24h — refreshed every poll cycle
     MARKET_OPTIONS   = 600      # 10 min during market hours
+    MARKET_OPTIONS_PRICED = 86400 # 24h
     HEADLINES        = 86400    # 24h — sorted set trimmed by count
     SENTIMENT_LATEST = 300      # 5 min
     SENTIMENT_EMA    = 86400    # 24h
     SENTIMENT_AGG    = 300      # 5 min — recomputed frequently
+    SENTIMENT_SIGNAL = 86400    # 24h
     NEWS_DEDUP       = 86400    # 24h
     ML_PREDICTION    = 86400    # 24h
 

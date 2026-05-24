@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS TickData (
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'tickdata') THEN
-        PERFORM create_hypertable('tickdata', 'timestamp');
+        PERFORM create_hypertable('tickdata', 'timestamp', chunk_time_interval => INTERVAL '1 day');
     END IF;
 END $$;
 
@@ -63,3 +63,15 @@ CREATE TABLE IF NOT EXISTS AlertRules (
     IsActive        BOOLEAN         DEFAULT TRUE,
     CreatedAt       TIMESTAMPTZ     DEFAULT NOW()
 );
+
+-- Domain events log
+CREATE TABLE IF NOT EXISTS DomainEvents (
+    EventId         UUID            PRIMARY KEY,
+    EventType       VARCHAR(100)    NOT NULL,
+    Payload         JSONB           NOT NULL,
+    OccurredAt      TIMESTAMPTZ     NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_domain_events_occurred_at ON DomainEvents (OccurredAt DESC);
+CREATE INDEX IF NOT EXISTS idx_domain_events_payload_symbol ON DomainEvents ((Payload->>'symbol'));
+
