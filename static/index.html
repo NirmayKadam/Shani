@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option Chain (Equity Derivatives) - NSE India Clone</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <!-- Top Brand Tab Bar -->
+    <div class="nse-top-navbar">
+        <div class="nse-container">
+            <div class="nse-tabs">
+                <button class="nse-tab active">Equity Stock</button>
+                <button class="nse-tab">Currency</button>
+                <button class="nse-tab">Interest Rates</button>
+                <button class="nse-tab">Commodities</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="nse-container main-content">
+        <!-- Header -->
+        <div class="nse-header">
+            <h1 class="nse-title">Option Chain (Equity Derivatives)</h1>
+            <div class="nse-header-links">
+                <a href="#" class="nse-link orange-text">Futures contracts</a>
+            </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="nse-filters-box">
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label for="symbol-search-input">Search Instrument (Indices/Stocks):</label>
+                    <div class="autocomplete-wrapper">
+                        <input type="text" id="symbol-search-input" placeholder="Type NIFTY, RELIANCE, TCS..." value="NIFTY" autocomplete="off">
+                        <div id="search-suggestions" class="suggestions-dropdown hidden"></div>
+                    </div>
+                </div>
+                <div class="filter-group">
+                    <label>Expiry Date</label>
+                    <select id="expiry-select">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Strike Price</label>
+                    <select id="strike-select">
+                        <option value="ALL">Select</option>
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info and Actions Bar -->
+        <div class="nse-info-bar">
+            <div class="nse-underlying-info">
+                Underlying Index: <span id="underlying-symbol" class="bold-text">NIFTY</span> 
+                <span id="underlying-price" class="bold-text price-text">--</span> 
+                <span class="gray-text">As on</span> 
+                <span id="underlying-time" class="bold-text">--</span>
+                <button id="reload-btn" class="nse-reload-icon" title="Reload Data">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                        <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="nse-action-links">
+                <a href="#" class="nse-action-link">Terms of Use</a>
+                <span class="divider">|</span>
+                <a href="#" class="nse-action-link">Best View</a>
+                <span class="divider">|</span>
+                <button id="download-csv-btn" class="nse-csv-btn">
+                    <svg viewBox="0 0 24 24" width="14" height="14">
+                        <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                    </svg>
+                    Download (.csv)
+                </button>
+            </div>
+        </div>
+
+        <!-- BSM Control Panel -->
+        <div class="bsm-control-panel">
+            <div class="panel-header">
+                <h3>Black-Scholes-Merton (BSM) Control Panel</h3>
+                <button id="reset-market-btn" class="btn-secondary">Reset to Market Values</button>
+            </div>
+            <div class="panel-body">
+                <div class="inputs-grid">
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-spot">Spot Price (<span id="spot-currency">INR</span>)</label>
+                            <input type="number" id="bsm-spot" step="0.01" value="0.00">
+                        </div>
+                        <input type="range" id="bsm-spot-slider" min="0" max="0" step="0.01">
+                        <div class="range-labels">
+                            <span id="spot-min-lbl">--</span>
+                            <span id="spot-max-lbl">--</span>
+                        </div>
+                    </div>
+
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-vol">Volatility (σ %)</label>
+                            <input type="number" id="bsm-vol" step="0.1" value="0.0">
+                        </div>
+                        <input type="range" id="bsm-vol-slider" min="1" max="100" step="0.1" value="15">
+                        <div class="range-labels">
+                            <span>1.0%</span>
+                            <span>100.0%</span>
+                        </div>
+                    </div>
+
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-days">Days to Expiry</label>
+                            <input type="number" id="bsm-days" step="1" value="30">
+                        </div>
+                        <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30">
+                        <div class="range-labels">
+                            <span>1 Day</span>
+                            <span>365 Days</span>
+                        </div>
+                    </div>
+
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-rate">Risk-Free Rate (%)</label>
+                            <input type="number" id="bsm-rate" step="0.01" value="6.50">
+                        </div>
+                        <input type="range" id="bsm-rate-slider" min="0" max="15" step="0.05" value="6.5">
+                        <div class="range-labels">
+                            <span>0.0%</span>
+                            <span>15.0%</span>
+                        </div>
+                    </div>
+
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-div">Dividend Yield (%)</label>
+                            <input type="number" id="bsm-div" step="0.01" value="0.00">
+                        </div>
+                        <input type="range" id="bsm-div-slider" min="0" max="10" step="0.05" value="0">
+                        <div class="range-labels">
+                            <span>0.0%</span>
+                            <span>10.0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ATM Outputs Summary -->
+                <div class="atm-summary-box">
+                    <div class="atm-title">At-The-Money (ATM) BSM Analytics</div>
+                    <div class="atm-metrics-grid">
+                        <div class="atm-metric-column">
+                            <div class="column-title calls-label">ATM Call Option</div>
+                            <div class="metric-row">
+                                <span class="lbl">BSM Price:</span>
+                                <span id="atm-call-price" class="val font-mono bold">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Delta (Δ):</span>
+                                <span id="atm-call-delta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Theta (θ/day):</span>
+                                <span id="atm-call-theta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Rho (ρ):</span>
+                                <span id="atm-call-rho" class="val font-mono">--</span>
+                            </div>
+                        </div>
+
+                        <div class="atm-metric-column center-column">
+                            <div class="column-title">Common Greeks</div>
+                            <div class="metric-row center-row">
+                                <span class="lbl">ATM Strike:</span>
+                                <span id="atm-strike-val" class="val font-mono bold highlight-text">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Gamma (Γ):</span>
+                                <span id="atm-gamma" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Vega (ν):</span>
+                                <span id="atm-vega" class="val font-mono">--</span>
+                            </div>
+                        </div>
+
+                        <div class="atm-metric-column">
+                            <div class="column-title puts-label">ATM Put Option</div>
+                            <div class="metric-row">
+                                <span class="lbl">BSM Price:</span>
+                                <span id="atm-put-price" class="val font-mono bold">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Delta (Δ):</span>
+                                <span id="atm-put-delta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Theta (θ/day):</span>
+                                <span id="atm-put-theta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Rho (ρ):</span>
+                                <span id="atm-put-rho" class="val font-mono">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Option Chain Container -->
+        <div class="nse-table-outer-wrapper">
+            <div class="nse-table-wrapper" id="chain-table-container">
+                <table class="nse-option-chain-table" id="option-chain-table">
+                    <thead>
+                        <!-- Calls / Strikes / Puts Super Header -->
+                        <tr class="super-header">
+                            <th colspan="11" class="calls-super">CALLS</th>
+                            <th class="strike-super">STRIKE</th>
+                            <th colspan="11" class="puts-super">PUTS</th>
+                        </tr>
+                        <!-- Sub Columns Header -->
+                        <tr class="sub-header">
+                            <th title="Chart Link"></th>
+                            <th title="Open Interest">OI</th>
+                            <th title="Change in Open Interest">CHNG IN OI</th>
+                            <th title="Volume">VOLUME</th>
+                            <th title="Implied Volatility">IV</th>
+                            <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
+                            <th title="Last Traded Price">LTP</th>
+                            <th title="Net Change">CHNG</th>
+                            <th title="Bid Quantity">BID QTY</th>
+                            <th title="Bid Price">BID</th>
+                            <th title="Ask Price">ASK</th>
+                            <th title="Ask Quantity">ASK QTY</th>
+                            
+                            <th title="Strike Price" class="strike-col">STRIKE</th>
+                            
+                            <th title="Bid Quantity">BID QTY</th>
+                            <th title="Bid Price">BID</th>
+                            <th title="Ask Price">ASK</th>
+                            <th title="Ask Quantity">ASK QTY</th>
+                            <th title="Net Change">CHNG</th>
+                            <th title="Last Traded Price">LTP</th>
+                            <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
+                            <th title="Implied Volatility">IV</th>
+                            <th title="Volume">VOLUME</th>
+                            <th title="Change in Open Interest">CHNG IN OI</th>
+                            <th title="Open Interest">OI</th>
+                            <th title="Chart Link"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="option-chain-tbody">
+                        <!-- Placed dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Greeks Inspection Modal -->
+    <div id="greeks-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Option Strike Analysis</h2>
+                <span class="close-btn" id="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="modal-strikes-header">
+                    Strike Price: <span id="modal-strike-price" class="bold-text">--</span>
+                </div>
+                <div class="modal-tables-grid">
+                    <table class="modal-data-table">
+                        <thead>
+                            <tr class="calls-super"><th colspan="2">CALL OPTION</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Market Price (LTP)</td><td id="modal-c-ltp" class="font-mono">--</td></tr>
+                            <tr class="highlight-row"><td>BSM Theoretical Price</td><td id="modal-c-bs-val" class="font-mono bold">--</td></tr>
+                            <tr><td>Theoretical Edge</td><td id="modal-c-edge" class="font-mono">--</td></tr>
+                            <tr><td>Delta (Δ)</td><td id="modal-c-delta" class="font-mono">--</td></tr>
+                            <tr><td>Gamma (Γ)</td><td id="modal-c-gamma" class="font-mono">--</td></tr>
+                            <tr><td>Vega (ν)</td><td id="modal-c-vega" class="font-mono">--</td></tr>
+                            <tr><td>Theta (θ/day)</td><td id="modal-c-theta" class="font-mono">--</td></tr>
+                            <tr><td>Rho (ρ)</td><td id="modal-c-rho" class="font-mono">--</td></tr>
+                        </tbody>
+                    </table>
+
+                    <table class="modal-data-table">
+                        <thead>
+                            <tr class="puts-super"><th colspan="2">PUT OPTION</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Market Price (LTP)</td><td id="modal-p-ltp" class="font-mono">--</td></tr>
+                            <tr class="highlight-row"><td>BSM Theoretical Price</td><td id="modal-p-bs-val" class="font-mono bold">--</td></tr>
+                            <tr><td>Theoretical Edge</td><td id="modal-p-edge" class="font-mono">--</td></tr>
+                            <tr><td>Delta (Δ)</td><td id="modal-p-delta" class="font-mono">--</td></tr>
+                            <tr><td>Gamma (Γ)</td><td id="modal-p-gamma" class="font-mono">--</td></tr>
+                            <tr><td>Vega (ν)</td><td id="modal-p-vega" class="font-mono">--</td></tr>
+                            <tr><td>Theta (θ/day)</td><td id="modal-p-theta" class="font-mono">--</td></tr>
+                            <tr><td>Rho (ρ)</td><td id="modal-p-rho" class="font-mono">--</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="modal-inputs-box">
+                    <h4>Active Model Parameters</h4>
+                    <div class="modal-inputs-flex">
+                        <div>Spot Price: <span id="modal-in-spot" class="font-mono bold">--</span></div>
+                        <div>Volatility: <span id="modal-in-vol" class="font-mono bold">--</span></div>
+                        <div>Days to Expiry: <span id="modal-in-days" class="font-mono bold">--</span></div>
+                        <div>Risk-Free Rate: <span id="modal-in-rate" class="font-mono bold">--</span></div>
+                        <div>Dividend Yield: <span id="modal-in-div" class="font-mono bold">--</span></div>
+                    </div>
+                    <div class="modal-param-notes">
+                        d₁ = <span id="modal-d1" class="font-mono">--</span> | 
+                        d₂ = <span id="modal-d2" class="font-mono">--</span> | 
+                        N(d₁) = <span id="modal-nd1" class="font-mono">--</span> | 
+                        N(d₂) = <span id="modal-nd2" class="font-mono">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Script -->
+    <script src="/app.js"></script>
+</body>
+</html>

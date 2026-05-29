@@ -68,6 +68,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.staticfiles import StaticFiles
+
 app.include_router(signals_router, prefix="/v1")
 app.include_router(events_router, prefix="/v1")
 app.include_router(derivatives_router, prefix="/v1")
@@ -80,3 +82,6 @@ app.include_router(nse_options_router_api, prefix="/v1/ingestion")
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+app.mount("/", StaticFiles(directory="static", html=True), name="static")

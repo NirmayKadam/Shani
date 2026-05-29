@@ -58,16 +58,12 @@ class NewsFetcher:
                 search_symbol = search_symbol[: -len(suffix)]
                 break
 
-        # Define query variations from specific to broad
+        # Define query variations: combined targeted query first, then broad fallback
         queries = [
-            f"{search_symbol} stock India",
-            f"{search_symbol} stock",
+            f'("{search_symbol}" AND (stock OR India OR market OR shares))',
             search_symbol
         ]
 
-        # Special handling for well-known Indian stocks to avoid noise if needed
-        # but here we prioritize finding *anything* for specific symbols like CASTROLIND
-        
         data = {"articles": []}
         final_query = ""
 

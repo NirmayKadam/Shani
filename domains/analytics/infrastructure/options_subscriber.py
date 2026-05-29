@@ -27,6 +27,37 @@ from shared.constants import RedisKeys, TTL
 logger = logging.getLogger("options_pricing_subscriber")
 
 
+def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv: float, put_iv: float, dividend_yield: float, live_call: float, live_put: float) -> dict:
+    """Helper to solve single strike CE/PE pricing synchronously in worker thread."""
+    # Call Price (Crank-Nicolson PDE)
+    call_solver = CrankNicolsonPDE(S0, strike, T, r, call_iv, 'call')
+    call_price = call_solver.solve()
+
+    # Put Price (Crank-Nicolson PDE)
+    put_solver = CrankNicolsonPDE(S0, strike, T, r, put_iv, 'put')
+    put_price = put_solver.solve()
+
+    # Call Price (Black-Scholes-Merton Analytical)
+    bs_call_solver = BlackScholesMerton(S0, strike, T, r, call_iv, 'call', q=dividend_yield)
+    bs_call_price = bs_call_solver.solve()
+
+    # Put Price (Black-Scholes-Merton Analytical)
+    bs_put_solver = BlackScholesMerton(S0, strike, T, r, put_iv, 'put', q=dividend_yield)
+    bs_put_price = bs_put_solver.solve()
+
+    return {
+        "strike": strike,
+        "fair_call": round(call_price, 2),
+        "fair_put": round(put_price, 2),
+        "call_iv": call_iv,
+        "put_iv": put_iv,
+        "bs_fair_call": round(bs_call_price, 2),
+        "bs_fair_put": round(bs_put_price, 2),
+        "live_call": round(live_call, 2) if live_call is not None else 0.0,
+        "live_put": round(live_put, 2) if live_put is not None else 0.0
+    }
+
+
 class OptionsPricingSubscriber:
     def __init__(self, redis_client: Redis):
         self.redis = redis_client
@@ -68,44 +99,21 @@ class OptionsPricingSubscriber:
                 "ltp": s.get("ltp", 0.0)
             }
 
-        priced_chain = []
-
+        tasks = []
         for strike, type_data in strikes_map.items():
-            # Use specific IV if available, else fallback to 20%
             call_iv = type_data.get("CE", {}).get("iv", 0.20)
             put_iv = type_data.get("PE", {}).get("iv", 0.20)
-
-            # Extract live prices (ltp) if available
             live_call = type_data.get("CE", {}).get("ltp", 0.0)
             live_put = type_data.get("PE", {}).get("ltp", 0.0)
 
-            # Call Price (Crank-Nicolson PDE)
-            call_solver = CrankNicolsonPDE(S0, strike, T, r, call_iv, 'call')
-            call_price = call_solver.solve()
+            tasks.append(
+                asyncio.to_thread(
+                    _solve_strike_sync,
+                    S0, strike, T, r, call_iv, put_iv, dividend_yield, live_call, live_put
+                )
+            )
 
-            # Put Price (Crank-Nicolson PDE)
-            put_solver = CrankNicolsonPDE(S0, strike, T, r, put_iv, 'put')
-            put_price = put_solver.solve()
-
-            # Call Price (Black-Scholes-Merton Analytical)
-            bs_call_solver = BlackScholesMerton(S0, strike, T, r, call_iv, 'call', q=dividend_yield)
-            bs_call_price = bs_call_solver.solve()
-
-            # Put Price (Black-Scholes-Merton Analytical)
-            bs_put_solver = BlackScholesMerton(S0, strike, T, r, put_iv, 'put', q=dividend_yield)
-            bs_put_price = bs_put_solver.solve()
-
-            priced_chain.append({
-                "strike": strike,
-                "fair_call": round(call_price, 2),
-                "fair_put": round(put_price, 2),
-                "call_iv": call_iv,
-                "put_iv": put_iv,
-                "bs_fair_call": round(bs_call_price, 2),
-                "bs_fair_put": round(bs_put_price, 2),
-                "live_call": round(live_call, 2) if live_call is not None else 0.0,
-                "live_put": round(live_put, 2) if live_put is not None else 0.0
-            })
+        priced_chain = await asyncio.gather(*tasks)
 
         # Cache in Redis for high performance read-model API querying
         cache_key = RedisKeys.MARKET_OPTIONS_PRICED.format(symbol=symbol)

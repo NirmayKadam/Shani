@@ -163,6 +163,18 @@ class SymbolsResponse(ResponseMetadata):
     count: int
 
 
+class SymbolSearchItem(BaseModel):
+    symbol: str
+    name: str
+    type: str
+
+
+class SymbolSearchResponse(ResponseMetadata):
+    results: list[SymbolSearchItem] = Field(default_factory=list)
+    count: int
+
+
+
 # ── Error Envelope ──────────────────────────────────────────────
 
 class ErrorEnvelope(ResponseMetadata):

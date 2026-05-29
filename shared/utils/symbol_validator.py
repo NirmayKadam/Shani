@@ -63,6 +63,14 @@ class SymbolValidator:
         if symbol_upper in SymbolValidator._LOCAL_NSE_MAP:
             return True
 
+        # 0.6 Check dynamic instruments catalog
+        try:
+            from domains.analytics.api.instruments_loader import instruments_catalog
+            if instruments_catalog.is_valid_symbol(symbol_upper):
+                return True
+        except Exception:
+            pass
+
         # 1. Check if it's already an Indian market symbol
         if symbol_upper.endswith(".NS") or symbol_upper.endswith(".BO"):
             try:
@@ -115,6 +123,17 @@ class SymbolValidator:
         # 0.5 Check local map (Fastest)
         if symbol_upper in SymbolValidator._LOCAL_NSE_MAP:
             return SymbolValidator._LOCAL_NSE_MAP[symbol_upper]
+
+        # 0.6 Check dynamic instruments catalog
+        try:
+            from domains.analytics.api.instruments_loader import instruments_catalog
+            if instruments_catalog.is_valid_symbol(symbol_upper):
+                from shared.constants import INDEX_SYMBOLS
+                if symbol_upper not in INDEX_SYMBOLS:
+                    return f"{symbol_upper}.NS"
+                return symbol_upper
+        except Exception:
+            pass
             
         # 1. Try to resolve bare symbol to Indian market (Slow fallback)
         if symbol_upper.isalnum():

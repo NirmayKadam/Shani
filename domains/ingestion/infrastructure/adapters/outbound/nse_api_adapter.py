@@ -81,9 +81,8 @@ def _to_yfinance_symbol(symbol: str) -> str:
     if "^" in upper or "." in upper:
         return upper
         
-    # Heuristic: If it's alphanumeric and we don't know it, 
-    # we'll try to see if it's valid as is first (in the fetcher)
-    return upper
+    # Standard Indian stock symbols on yfinance need .NS suffix
+    return f"{upper}.NS"
 
 
 def _get_market_status() -> MarketStatus:
@@ -124,6 +123,16 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         self._CookieRefreshTime: Optional[datetime] = None
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
+        current_loop = asyncio.get_running_loop()
+        if self._Session is not None and not self._Session.closed:
+            # Recreate session if bound to a different event loop (e.g. inside different Celery tasks)
+            if getattr(self._Session, "_loop", None) is not current_loop:
+                try:
+                    await self._Session.close()
+                except Exception:
+                    pass
+                self._Session = None
+
         if self._Session is None or self._Session.closed:
             self._Session = aiohttp.ClientSession(
                 headers=_NSE_HEADERS,
@@ -193,8 +202,16 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         """Fetches full option chain and returns list of RawTickDTOs."""
         data = await self._fetch_option_chain_raw(symbol)
         if not data:
-            logger.warning("[%s] Live option chain fetch failed, generating synthetic option chain fallback", symbol)
-            data = await self._generate_synthetic_options(symbol)
+            # Check if this is a primary fallback symbol (Index or standard watchlist)
+            clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
+            is_fallback = clean_sym in SymbolValidator._LOCAL_NSE_MAP or clean_sym in INDEX_SYMBOLS
+            
+            if is_fallback:
+                logger.warning("[%s] Live option chain fetch failed, generating synthetic option chain fallback", symbol)
+                data = await self._generate_synthetic_options(symbol)
+            else:
+                logger.warning("[%s] Options are not available for this symbol and not in fallbacks", symbol)
+                return []
 
         if not data:
             return []
@@ -411,7 +428,7 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         chains: dict[str, list[dict]] = {}
         for row in all_data:
             strike = row.get("strikePrice")
-            expiry = NseApiAdapter._parse_nse_date(row.get("expiryDate", ""))
+            expiry = NseApiAdapter._parse_nse_date(row.get("expiryDate") or row.get("expiryDates", ""))
             if not strike or not expiry: continue
 
             if expiry not in chains: chains[expiry] = []

@@ -266,10 +266,14 @@ async def get_ticker_parameters(symbol: str):
             detail=f"Symbol '{symbol_upper}' is invalid or not supported."
         )
 
-    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+    import asyncio
+    symbol_clean = await asyncio.get_running_loop().run_in_executor(
+        None, SymbolValidator.get_clean_symbol, symbol_upper
+    )
     
     raw_cached = None
     price_cached = None
+    redis = None
     try:
         redis = await get_redis_client()
         # Attempt to load options cache
@@ -282,6 +286,105 @@ async def get_ticker_parameters(symbol: str):
     except Exception as exc:
         logger.warning("[%s] Failed connecting to Redis, falling back to mocks: %s", symbol_clean, exc)
 
+    if not raw_cached:
+        # Try live fetch
+        from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import NseApiAdapter
+        adapter = NseApiAdapter()
+        dtos = []
+        live_price_data = None
+        try:
+            dtos = await adapter.fetch_option_chain(symbol_clean)
+            live_price_data = await adapter.fetch_price(symbol_clean)
+        except Exception as fetch_exc:
+            logger.error("[%s] Dynamic live fetch failed: %s", symbol_clean, fetch_exc)
+        finally:
+            await adapter.close()
+
+        if dtos:
+            spot_price = dtos[0].underlying_price
+            if spot_price <= 0 and live_price_data:
+                spot_price = float(live_price_data.get("last_price", 0.0))
+            
+            chains = {}
+            expiry_dates = set()
+            for dto in dtos:
+                if not dto.expiry:
+                    continue
+                expiry_dates.add(dto.expiry)
+                if dto.expiry not in chains:
+                    chains[dto.expiry] = []
+                chains[dto.expiry].append({
+                    "strike": dto.strike,
+                    "type": dto.option_type,
+                    "last_price": dto.ltp,
+                    "oi": dto.oi,
+                    "volume": dto.volume,
+                    "iv": dto.iv,
+                    "expiry": dto.expiry
+                })
+            
+            data = {
+                "symbol": symbol_clean,
+                "spot_price": spot_price,
+                "expiry_dates": sorted(list(expiry_dates)),
+                "chains": chains,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "summary": {"total_strikes": len(set(d.strike for d in dtos))}
+            }
+            
+            if redis:
+                try:
+                    raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
+                    await redis.set(raw_key, json.dumps(data, default=str), ex=600)
+                    
+                    price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
+                    p_data = {
+                        "symbol": symbol_clean,
+                        "last_price": spot_price,
+                        "last_updated": datetime.now(timezone.utc).date().isoformat()
+                    }
+                    await redis.set(price_key, json.dumps(p_data, default=str), ex=600)
+                except Exception as cache_exc:
+                    logger.warning("[%s] Failed caching dynamically fetched options to Redis: %s", symbol_clean, cache_exc)
+            
+            raw_cached = json.dumps(data, default=str)
+        elif live_price_data:
+            spot_price = float(live_price_data.get("last_price", 0.0))
+            data = {
+                "symbol": symbol_clean,
+                "spot_price": spot_price,
+                "expiry_dates": [],
+                "chains": {},
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "summary": {"total_strikes": 0}
+            }
+            if redis:
+                try:
+                    raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
+                    await redis.set(raw_key, json.dumps(data, default=str), ex=600)
+                    
+                    price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
+                    p_data = {
+                        "symbol": symbol_clean,
+                        "last_price": spot_price,
+                        "last_updated": datetime.now(timezone.utc).date().isoformat()
+                    }
+                    await redis.set(price_key, json.dumps(p_data, default=str), ex=600)
+                except Exception as cache_exc:
+                    logger.warning("[%s] Failed caching empty options to Redis: %s", symbol_clean, cache_exc)
+            
+            raw_cached = json.dumps(data, default=str)
+        else:
+            data = {
+                "symbol": symbol_clean,
+                "spot_price": 0.0,
+                "expiry_dates": [],
+                "chains": {},
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "summary": {"total_strikes": 0}
+            }
+            raw_cached = json.dumps(data, default=str)
+
     if raw_cached:
         try:
             chain_data = json.loads(raw_cached)
@@ -292,6 +395,29 @@ async def get_ticker_parameters(symbol: str):
 
             expiries = chain_data.get("expiry_dates", [])
             chains = chain_data.get("chains", {})
+
+            if not expiries or not chains:
+                return PricerTickerDataResponse(
+                    symbol=symbol_clean,
+                    stock_price=spot,
+                    implied_volatility=0.0,
+                    historical_volatility=0.0,
+                    bid_price=0.0,
+                    ask_price=0.0,
+                    open_interest=0,
+                    volume=0,
+                    strike_price=0.0,
+                    expiry_days=0,
+                    risk_free_rate=6.5 if "NS" in symbol_upper or symbol_clean in {"NIFTY"} else 5.25,
+                    dividend_yield=0.0,
+                    expiry_dates=[],
+                    option_chains={},
+                    generated_at=_generated_at(),
+                    source="live_market_fetch" if spot > 0 else "deterministic_mock",
+                    stale=False,
+                    partial=False,
+                    status="COMPLETED",
+                )
 
             if spot > 0 and expiries and chains:
                 # Target nearest expiry

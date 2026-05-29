@@ -117,6 +117,8 @@ class TimescaleAdapter(ISentimentStorePort, IEventStorePort):
                 return [
                     BaseDomainEvent(
                         payload=json.loads(r["payload"]),
+                        event_id=r["event_id"],
+                        occurred_at=r["occurred_at"],
                     )
                     for r in rows
                 ]

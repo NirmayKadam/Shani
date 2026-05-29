@@ -45,9 +45,9 @@ class CrankNicolsonPDE:
             
         # 3. Tridiagonal Matrix Coefficients
         i = np.arange(1, self.M)
-        alpha = 0.25 * self.dt * ((self.sigma**2 * i**2) - (self.r * i))
-        beta = -0.5 * self.dt * ((self.sigma**2 * i**2) + self.r)
-        gamma = 0.25 * self.dt * ((self.sigma**2 * i**2) + (self.r * i))
+        alpha = -0.25 * self.dt * ((self.sigma**2 * i**2) - (self.r * i))
+        beta = 0.5 * self.dt * ((self.sigma**2 * i**2) + self.r)
+        gamma = -0.25 * self.dt * ((self.sigma**2 * i**2) + (self.r * i))
         
         # Matrix A (Implicit side) and Matrix B (Explicit side)
         A = diags([-alpha[1:], 1 - beta, -gamma[:-1]], [-1, 0, 1], format='csc')
@@ -58,13 +58,22 @@ class CrankNicolsonPDE:
             # Compute RHS
             rhs = B.dot(grid[1:self.M])
             
-            # Boundary Conditions
+            # Boundary Conditions (Implicit + Explicit contributions)
+            t_new = j * self.dt
+            t_old = (j + 1) * self.dt
+            
             if self.option_type == 'call':
-                rhs[0] -= alpha[0] * 0  # S=0 boundary
-                rhs[-1] -= gamma[-1] * (self.S_max - self.K * np.exp(-self.r * (self.T - j*self.dt)))
+                # S=0 boundary is 0 for Call
+                # S_max boundary is S_max - K * e^(-r * (T - t))
+                v_new_bound = self.S_max - self.K * np.exp(-self.r * (self.T - t_new))
+                v_old_bound = self.S_max - self.K * np.exp(-self.r * (self.T - t_old))
+                rhs[-1] += gamma[-1] * (v_new_bound + v_old_bound)
             else:
-                rhs[0] -= alpha[0] * (self.K * np.exp(-self.r * (self.T - j*self.dt)))
-                rhs[-1] -= gamma[-1] * 0
+                # S=0 boundary is K * e^(-r * (T - t)) for Put
+                # S_max boundary is 0 for Put
+                v_new_bound = self.K * np.exp(-self.r * (self.T - t_new))
+                v_old_bound = self.K * np.exp(-self.r * (self.T - t_old))
+                rhs[0] += alpha[0] * (v_new_bound + v_old_bound)
 
             # Solve the system
             grid[1:self.M] = spsolve(A, rhs)
