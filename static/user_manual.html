@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website User Manual - AlphaStreams</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Modern Premium Style Sheet */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #334155;
+            background-color: #f8fafc;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            border-bottom: 4px solid #f37021;
+            padding: 30px 20px;
+            color: white;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .header .logo-accent {
+            color: #f37021;
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .back-nav {
+            margin-bottom: 25px;
+        }
+
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+            color: #334155;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .back-btn:hover {
+            border-color: #3c3580;
+            color: #3c3580;
+            transform: translateX(-3px);
+        }
+
+        .intro-p {
+            font-size: 15px;
+            color: #475569;
+            margin-bottom: 30px;
+        }
+
+        .guide-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .guide-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .guide-card {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            transition: all 0.2s ease;
+        }
+
+        .guide-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(60, 53, 128, 0.3);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+        }
+
+        .guide-card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #3c3580;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .guide-card p, .guide-card ul {
+            font-size: 13px;
+            color: #475569;
+            line-height: 1.6;
+        }
+
+        .guide-card ul {
+            margin-left: 20px;
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .label-teal {
+            background-color: rgba(13, 148, 136, 0.1);
+            color: #0d9488;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .label-orange {
+            background-color: rgba(234, 88, 12, 0.1);
+            color: #ea580c;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 30px 20px;
+            color: #64748b;
+            font-size: 12px;
+            border-top: 1px solid #cbd5e1;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <h1><span class="logo-accent">Alpha</span>Streams Option Chain</h1>
+        <p>Interactive User Guide & Walkthrough</p>
+    </header>
+
+    <main class="container">
+        <div class="back-nav">
+            <a href="/" class="back-btn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Back to Dashboard
+            </a>
+        </div>
+
+        <p class="intro-p">Welcome to the **AlphaStreams Option Chain Analytics** platform. This handbook outlines our system's architecture, tools, math modules, and navigation panels designed to support active options analysis.</p>
+
+        <div class="guide-grid">
+            <div class="guide-card">
+                <h3>Dynamic Search & Filters</h3>
+                <p>Use the search box in the top filter bar to look up active stock symbols or indices (e.g., <code>NIFTY</code>, <code>RELIANCE</code>, <code>TCS</code>) traded on the NSE. The system auto-completes and fetches active parameters. Filter option expiry dates or isolate specific strikes from the drop-downs.</p>
+            </div>
+
+            <div class="guide-card">
+                <h3>Black-Scholes-Merton Calculator</h3>
+                <p>Adjust variables in the BSM Control Panel to simulate pricing environments:</p>
+                <ul>
+                    <li><strong>Spot Price:</strong> Base underlying asset value (supports slide scaling).</li>
+                    <li><strong>Volatility (σ %):</strong> Standard deviation of underlying returns.</li>
+                    <li><strong>Days to Expiry:</strong> Time remaining until derivative settlement.</li>
+                    <li><strong>Risk-Free Rate:</strong> Prevailing interest rate environment.</li>
+                    <li><strong>Dividend Yield:</strong> Continuous cash payouts of stock or index.</li>
+                </ul>
+            </div>
+
+            <div class="guide-card">
+                <h3>Option Chain Shading & Pricing Highlights</h3>
+                <p><strong>ITM Shading:</strong> Pale yellow highlights show in-the-money strikes (calls under spot, puts above spot).</p>
+                <p style="margin-top: 8px;"><strong>Underpriced / Overpriced Fields (BS PRICE):</strong> Comparing BSM fair price with market Last Traded Price (LTP):</p>
+                <ul>
+                    <li><span class="label-teal">Teal Green:</span> Market price is <em>Underpriced</em> compared to BSM model (Theoretical Edge available).</li>
+                    <li><span class="label-orange">Orange Red:</span> Market price is <em>Overpriced</em> compared to BSM model.</li>
+                </ul>
+            </div>
+
+            <div class="guide-card">
+                <h3>Strike Greeks Analysis</h3>
+                <p>Click on any <strong>Strike Price</strong> cell or <strong>LTP</strong> value to launch the Greeks Inspection Modal. This reveals detailed mathematical parameters (d₁, d₂, N(d₁), N(d₂)) and active model outputs (Delta, Gamma, Vega, Theta, Rho) for both Call and Put contracts on that specific strike.</p>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>&copy; 2026 AlphaStreams Option Chain Analytics. All rights reserved.</p>
+    </footer>
+
+</body>
+</html>

@@ -6,7 +6,7 @@ Built with **FastAPI, Celery, Redis Streams, TimescaleDB, PyTorch**, and a **pro
 
 ---
 
-## ✨ Features
+## Features
 
 - **NSE Option Chain Dashboard** — interactive web UI cloning the NSE India option chain layout, with Calls / Strikes / Puts dual-column table.
 - **Client-Side BSM Calculator** — real-time Black-Scholes-Merton pricing, full Greeks (Δ, Γ, ν, θ, ρ), and theoretical edge overlays.
@@ -19,7 +19,7 @@ Built with **FastAPI, Celery, Redis Streams, TimescaleDB, PyTorch**, and a **pro
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 ### Backend Infrastructure
 
@@ -66,7 +66,7 @@ Built with **FastAPI, Celery, Redis Streams, TimescaleDB, PyTorch**, and a **pro
 
 ---
 
-## 💡 Architecture (Modular Monolith)
+## Architecture (Modular Monolith)
 
 ```mermaid
 graph LR
@@ -158,7 +158,7 @@ All services run inside one Docker container, orchestrated by `supervisord`:
 
 ---
 
-## 📡 Event Model (Durable-first)
+## Event Model (Durable-first)
 
 Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-group semantics). Pub/Sub is used only for UX/live push.
 
@@ -206,7 +206,7 @@ sequenceDiagram
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 This system is completely dockerized. All infrastructure (Redis, TimescaleDB, Python workers, ML models) runs in a single container.
 
@@ -256,7 +256,7 @@ docker compose logs -f app
 
 ---
 
-## 🖥 Web Dashboard
+## Web Dashboard
 
 The system serves an interactive **NSE India-style Option Chain dashboard** at the root URL (`/`).
 
@@ -275,7 +275,7 @@ The system serves an interactive **NSE India-style Option Chain dashboard** at t
 
 ---
 
-## 🧪 API Reference
+## API Reference
 
 ### Interactive Documentation
 
@@ -377,7 +377,7 @@ ws://localhost:8000/v1/ws/NIFTY
 
 ---
 
-## 🔄 Workflow (Request-Response Path)
+## Workflow (Request-Response Path)
 
 ### `GET /v1/signals/{symbol}`
 
@@ -406,7 +406,7 @@ sequenceDiagram
 
 ---
 
-## 🗄️ Database & Stream Visualization
+## Database & Stream Visualization
 
 ### TimescaleDB (PostgreSQL)
 
@@ -448,7 +448,7 @@ Redis Insight allows you to visualize **Redis Streams** (e.g., `stream:headlines
 
 ---
 
-## 🧯 Operational Runbooks
+## Operational Runbooks
 
 ### Viewing Logs
 
@@ -484,7 +484,7 @@ docker compose exec app psql -U postgres -d NexusQuantDB -f /app/scripts/init_sc
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 MarketSentimentAnalysis2/
@@ -542,7 +542,7 @@ MarketSentimentAnalysis2/
 
 ---
 
-## 🏁 Onboarding Guide
+## Onboarding Guide
 
 ### Suggested Reading Order
 
@@ -567,6 +567,6 @@ MarketSentimentAnalysis2/
 
 ---
 
-## 📄 License
+## License
 
 This project is for educational and research purposes.

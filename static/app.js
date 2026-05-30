@@ -101,7 +101,13 @@ const elements = {
     modalD1: document.getElementById("modal-d1"),
     modalD2: document.getElementById("modal-d2"),
     modalNd1: document.getElementById("modal-nd1"),
-    modalNd2: document.getElementById("modal-nd2")
+    modalNd2: document.getElementById("modal-nd2"),
+    
+    // Info and Regulatory modal elements
+    userManualBtn: document.getElementById("user-manual-btn"),
+    termsBtn: document.getElementById("terms-btn"),
+    infoModal: document.getElementById("info-modal"),
+    infoModalClose: document.getElementById("info-modal-close")
 };
 
 // ----------------------------------------------------
@@ -404,7 +410,7 @@ function closeSuggestions() {
 async function fetchTickerData(symbol) {
     try {
         // Show loading state in the table
-        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">🔄 Loading option chain for ${symbol}...</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">Loading option chain for ${symbol}...</td></tr>`;
         
         const res = await fetch(`/v1/pricer/ticker/${symbol}`);
         if (!res.ok) throw new Error(`Ticker query failed for ${symbol}`);
@@ -478,7 +484,7 @@ async function fetchTickerData(symbol) {
         recalculateAndRender();
     } catch (e) {
         console.error("Error fetching options parameters: ", e);
-        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">⚠️ Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
     }
 }
 
@@ -535,7 +541,7 @@ function recalculateAndRender() {
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
     if (chainRows.length === 0) {
         const symbolText = appState.symbol ? appState.symbol : "selected instrument";
-        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #ea580c; background-color: rgba(234, 88, 12, 0.04);">⚠️ Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #ea580c; background-color: rgba(234, 88, 12, 0.04);">Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
         return;
     }
 
@@ -819,9 +825,63 @@ elements.modalClose.onclick = function() {
     elements.greeksModal.classList.remove("show");
 };
 
+// Help & Regulatory Info Modal Logic
+function openInfoTab(tabId) {
+    elements.infoModal.classList.add("show");
+    
+    // Deactivate all tab buttons & contents, activate target
+    const tabButtons = elements.infoModal.querySelectorAll(".info-tab-btn");
+    tabButtons.forEach(btn => {
+        if (btn.getAttribute("data-tab") === tabId) {
+            btn.classList.add("active");
+        } else {
+            btn.classList.remove("active");
+        }
+    });
+    
+    const tabContents = elements.infoModal.querySelectorAll(".info-tab-content");
+    tabContents.forEach(content => {
+        if (content.id === tabId) {
+            content.classList.add("active");
+        } else {
+            content.classList.remove("active");
+        }
+    });
+}
+
+// Robust event delegation click handler for Info Modal triggers
+document.addEventListener("click", function(e) {
+    const userManualTrigger = e.target.closest("#footer-user-manual-btn, #user-manual-btn");
+    const termsTrigger = e.target.closest("#footer-terms-btn, #terms-btn");
+    const closeTrigger = e.target.closest("#info-modal-close");
+    
+    if (userManualTrigger) {
+        e.preventDefault();
+        openInfoTab("user-manual");
+    } else if (termsTrigger) {
+        e.preventDefault();
+        openInfoTab("terms-conditions");
+    } else if (closeTrigger) {
+        const infoM = elements.infoModal || document.getElementById("info-modal");
+        if (infoM) infoM.classList.remove("show");
+    }
+});
+
+// Bind clicks to individual tab buttons
+document.querySelectorAll(".info-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+        const tabId = btn.getAttribute("data-tab");
+        openInfoTab(tabId);
+    });
+});
+
 window.onclick = function(event) {
     if (event.target == elements.greeksModal) {
         elements.greeksModal.classList.remove("show");
+    }
+    const infoModalEl = elements.infoModal || document.getElementById("info-modal");
+    if (event.target == infoModalEl) {
+        infoModalEl.classList.remove("show");
     }
 };
 
