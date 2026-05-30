@@ -410,7 +410,7 @@ function closeSuggestions() {
 async function fetchTickerData(symbol) {
     try {
         // Show loading state in the table
-        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">Loading option chain for ${symbol}...</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="25" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">Loading option chain for ${symbol}...</td></tr>`;
         
         const res = await fetch(`/v1/pricer/ticker/${symbol}`);
         if (!res.ok) throw new Error(`Ticker query failed for ${symbol}`);
@@ -484,7 +484,7 @@ async function fetchTickerData(symbol) {
         recalculateAndRender();
     } catch (e) {
         console.error("Error fetching options parameters: ", e);
-        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="25" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
     }
 }
 
@@ -541,7 +541,7 @@ function recalculateAndRender() {
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
     if (chainRows.length === 0) {
         const symbolText = appState.symbol ? appState.symbol : "selected instrument";
-        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #ea580c; background-color: rgba(234, 88, 12, 0.04);">Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="25" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #ea580c; background-color: rgba(234, 88, 12, 0.04);">Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
         return;
     }
 
