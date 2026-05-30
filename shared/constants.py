@@ -34,6 +34,9 @@ class Channels:
     # Sentiment domain publishes:
     SENTIMENT_SCORED      = "sentiment.scored.{symbol}"
     AGGREGATE_UPDATED     = "sentiment.aggregate_updated.{symbol}"
+    
+    # Analytics domain/Alert publishes:
+    ALERT_DISPATCHED      = "alerts.dispatched.{symbol}"
 
 
 # ── Redis Streams (Durable Topics) ────────────────────────────
@@ -41,9 +44,11 @@ class Channels:
 class Streams:
     """Redis Stream names for durable/replayable cross-domain events."""
 
-    # Ingestion -> NLP (critical)
+    # Ingestion -> NLP / Analytics (critical)
     HEADLINE_FETCHED      = "stream:headlines.fetched"
     PRICE_TRIGGER         = "stream:market.price_trigger"
+    OPTIONS_RAW_FETCHED   = "stream:options.raw_fetched"
+    OPTIONS_PRICED        = "stream:options.priced"
 
     # NLP -> API/read model consumers (critical)
     SENTIMENT_SCORED      = "stream:sentiment.scored"

@@ -47,11 +47,35 @@ body {
     background-color: #ffffff;
     border-bottom: 2px solid #3c3580;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    position: relative;
+}
+
+@media (max-width: 768px) {
+    .nse-top-navbar::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 40px;
+        height: 100%;
+        background: linear-gradient(to right, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.9));
+        pointer-events: none;
+        z-index: 5;
+    }
 }
 
 .nse-tabs {
     display: flex;
     gap: 4px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none; /* Hide scrollbar Firefox */
+    -ms-overflow-style: none;  /* Hide scrollbar IE 10+ */
+    padding-bottom: 2px;
+}
+
+.nse-tabs::-webkit-scrollbar {
+    display: none; /* Hide scrollbar Chrome/Safari */
 }
 
 .nse-tab {
@@ -645,7 +669,19 @@ input[type=range]::-webkit-slider-thumb:hover {
     font-weight: 600;
     color: #334155;
     background-color: rgba(71, 85, 105, 0.05);
+    transition: background-color 0.2s, color 0.2s;
 }
+
+.bs-field.bs-underpriced {
+    color: #0d9488 !important; /* Premium teal green */
+    background-color: rgba(13, 148, 136, 0.09) !important; /* Soft, harmonious teal background */
+}
+
+.bs-field.bs-overpriced {
+    color: #ea580c !important; /* Premium warm orange-red */
+    background-color: rgba(234, 88, 12, 0.09) !important; /* Soft, harmonious orange background */
+}
+
 
 /* --- Greeks Modal --- */
 .modal {

@@ -1,21 +1,36 @@
 import asyncio
-import logging
-from domains.ingestion.application.tasks.ingestion_tasks import get_service
+import pytest
+from unittest.mock import patch, MagicMock
+from domains.ingestion.application.tasks.ingestion_tasks import _create_service
+from domains.ingestion.application.dto.raw_article_dto import RawArticleDTO
+from datetime import datetime, timezone
 
+
+@pytest.mark.integration
 async def test_news_ingestion_pipeline():
     """
-    Automated test for triggering news ingestion.
+    Automated test for triggering news ingestion without live external network requests.
     """
-    svc = await get_service()
-    Symbols = ["NIFTY", "RELIANCE"]
+    svc = await _create_service()
+    symbols = ["NIFTY", "RELIANCE"]
     
-    print("\n[+] Triggering news ingestion...")
-    for Symbol in Symbols:
-        try:
-            await svc.ingest_news(Symbol)
-            print(f"  ✅ Ingestion dispatched for {Symbol}")
-        except Exception as e:
-            assert False, f"Failed ingestion for {Symbol}: {e}"
+    # Prepare mock article data
+    mock_articles = [
+        RawArticleDTO(
+            symbol="NIFTY",
+            headline="Indian markets set for massive rally",
+            body="Option chain volume surges as global sentiment shifts positive.",
+            source="Reuters",
+            published_at=datetime.now(timezone.utc),
+            url="https://example.com/market-rally-2026"
+        )
+    ]
 
-if __name__ == "__main__":
-    asyncio.run(test_news_ingestion_pipeline())
+    with patch("domains.ingestion.infrastructure.adapters.outbound.news_api_adapter.NewsApiAdapter.fetch_articles", return_value=mock_articles):
+        print("\n[+] Triggering news ingestion pipeline...")
+        for symbol in symbols:
+            try:
+                await svc.ingest_news(symbol)
+                print(f"  ✅ Ingestion dispatched for {symbol}")
+            except Exception as e:
+                assert False, f"Failed ingestion for {symbol}: {e}"

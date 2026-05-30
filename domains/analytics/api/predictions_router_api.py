@@ -12,6 +12,7 @@ Database Tables:
 - None.
 """
 import logging
+import threading
 
 from fastapi import APIRouter, HTTPException
 from domains.analytics.application.services.ml_forecasting.cnn_predictor_service import CnnPredictorService
@@ -20,12 +21,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predictions", tags=["predictions"])
 _predictor = None
+_predictor_lock = threading.Lock()
 
 
 def _get_predictor():
     global _predictor
     if _predictor is None:
-        _predictor = CnnPredictorService()
+        with _predictor_lock:
+            # Double-checked locking
+            if _predictor is None:
+                _predictor = CnnPredictorService()
     return _predictor
 
 

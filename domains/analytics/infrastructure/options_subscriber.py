@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from redis.asyncio import Redis
 from domains.analytics.application.derivatives.pde_solver import CrankNicolsonPDE
 from domains.analytics.application.derivatives.black_scholes import BlackScholesMerton
-from shared.constants import RedisKeys, TTL
+from shared.constants import RedisKeys, TTL, Streams, Channels
 
 logger = logging.getLogger("options_pricing_subscriber")
 
@@ -61,12 +61,15 @@ def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv: fl
 class OptionsPricingSubscriber:
     def __init__(self, redis_client: Redis):
         self.redis = redis_client
-        self.consume_stream = "stream:options.raw_fetched"
-        self.publish_stream = "stream:options.priced"
-        self.pubsub_channel = "market.options_updated."
+        self.consume_stream = Streams.OPTIONS_RAW_FETCHED
+        self.publish_stream = Streams.OPTIONS_PRICED
+        self.pubsub_channel = Channels.OPTIONS_UPDATED
 
     async def start_consuming(self):
-        # Use "$" to only read new messages (not replay history on restart)
+        # WARNING: Using "$" means we only read NEW messages — any messages
+        # published while this subscriber was down are lost.  For durable
+        # processing, migrate to XREADGROUP with a consumer group (like
+        # DurableEventStream in shared/infrastructure/event_bus/streams.py).
         last_id = "$"
         logger.info("PDE Solver Engine listening for raw options data...")
 
@@ -129,7 +132,7 @@ class OptionsPricingSubscriber:
         await self.redis.xadd(self.publish_stream, {"data": event_data})
 
         # Publish Ephemeral Event (Live UX update)
-        await self.redis.publish(f"{self.pubsub_channel}{symbol}", event_data)
+        await self.redis.publish(self.pubsub_channel.format(symbol=symbol), event_data)
         logger.info("Priced %d strikes for %s. Surface published.", len(priced_chain), symbol)
 
 

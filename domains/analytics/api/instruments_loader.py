@@ -128,6 +128,7 @@ class InstrumentsCatalog:
 
     def __init__(self) -> None:
         self._instruments: List[Dict[str, str]] = []
+        self._symbol_set: set = set()  # O(1) lookup cache
         self._lock = threading.Lock()
         self._loaded = False
 
@@ -180,6 +181,8 @@ class InstrumentsCatalog:
                         added_symbols.add(item["symbol"])
             
             self._loaded = True
+            # Build O(1) lookup set from loaded instruments
+            self._symbol_set = {inst["symbol"] for inst in self._instruments}
 
     def search(self, query: str, limit: int = 15) -> List[Dict[str, str]]:
         """
@@ -219,11 +222,11 @@ class InstrumentsCatalog:
         return [item[0] for item in matches[:limit]]
 
     def is_valid_symbol(self, symbol: str) -> bool:
-        """Quick check if a symbol is recognized in our catalog."""
+        """Quick O(1) check if a symbol is recognized in our catalog."""
         if not self._loaded:
             self.load()
         sym = symbol.strip().upper().replace(".NS", "").replace(".BO", "")
-        return any(inst["symbol"] == sym for inst in self._instruments)
+        return sym in self._symbol_set
 
 
 # Global Singleton Instance

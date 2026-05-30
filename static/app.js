@@ -230,23 +230,36 @@ function bindSlider(numInput, sliderInput, stateProp, callback) {
         let val = parseFloat(e.target.value);
         if (isNaN(val)) return;
         
-        // Clamp value inside slider range
-        const min = parseFloat(sliderInput.min);
-        const max = parseFloat(sliderInput.max);
-        if (val < min) val = min;
-        if (val > max) val = max;
-        
+        // Update state and slider without clamping on every keystroke
         sliderInput.value = val;
         appState[stateProp] = val;
         if (callback) callback();
     });
     
-    sliderInput.addEventListener("input", (e) => {
+    numInput.addEventListener("blur", (e) => {
+        let val = parseFloat(e.target.value);
+        if (isNaN(val)) return;
+        
+        // Clamp only on blur
+        const min = parseFloat(sliderInput.min);
+        const max = parseFloat(sliderInput.max);
+        if (val < min) val = min;
+        if (val > max) val = max;
+        
+        numInput.value = val;
+        sliderInput.value = val;
+        appState[stateProp] = val;
+        if (callback) callback();
+    });
+    
+    const updateFromSlider = (e) => {
         let val = parseFloat(e.target.value);
         numInput.value = val;
         appState[stateProp] = val;
         if (callback) callback();
-    });
+    };
+    sliderInput.addEventListener("input", updateFromSlider);
+    sliderInput.addEventListener("change", updateFromSlider);
 }
 
 let debounceTimer;
@@ -390,6 +403,9 @@ function closeSuggestions() {
  */
 async function fetchTickerData(symbol) {
     try {
+        // Show loading state in the table
+        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">🔄 Loading option chain for ${symbol}...</td></tr>`;
+        
         const res = await fetch(`/v1/pricer/ticker/${symbol}`);
         if (!res.ok) throw new Error(`Ticker query failed for ${symbol}`);
         
@@ -462,6 +478,7 @@ async function fetchTickerData(symbol) {
         recalculateAndRender();
     } catch (e) {
         console.error("Error fetching options parameters: ", e);
+        elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">⚠️ Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
     }
 }
 
@@ -592,6 +609,33 @@ function recalculateAndRender() {
         const cChgClass = row.call?.chng < 0 ? "negative-val" : (row.call?.chng > 0 ? "positive-val" : "");
         const pChgClass = row.put?.chng < 0 ? "negative-val" : (row.put?.chng > 0 ? "positive-val" : "");
 
+        // Color coding for BSM Prices based on comparison with LTP (market price)
+        let callBsClass = "";
+        let callBsTitle = "BSM Theoretical Price";
+        if (row.call?.ltp && callBS.call) {
+            const edge = callBS.call - row.call.ltp;
+            if (edge > 0.05) {
+                callBsClass = "bs-underpriced";
+                callBsTitle = `BSM Price (${formatNumber(callBS.call, 2)}) > LTP (${formatNumber(row.call.ltp, 2)}) - Option is underpriced (Theoretical Edge: +${formatNumber(edge, 2)})`;
+            } else if (edge < -0.05) {
+                callBsClass = "bs-overpriced";
+                callBsTitle = `BSM Price (${formatNumber(callBS.call, 2)}) < LTP (${formatNumber(row.call.ltp, 2)}) - Option is overpriced (Theoretical Edge: ${formatNumber(edge, 2)})`;
+            }
+        }
+
+        let putBsClass = "";
+        let putBsTitle = "BSM Theoretical Price";
+        if (row.put?.ltp && putBS.put) {
+            const edge = putBS.put - row.put.ltp;
+            if (edge > 0.05) {
+                putBsClass = "bs-underpriced";
+                putBsTitle = `BSM Price (${formatNumber(putBS.put, 2)}) > LTP (${formatNumber(row.put.ltp, 2)}) - Option is underpriced (Theoretical Edge: +${formatNumber(edge, 2)})`;
+            } else if (edge < -0.05) {
+                putBsClass = "bs-overpriced";
+                putBsTitle = `BSM Price (${formatNumber(putBS.put, 2)}) < LTP (${formatNumber(row.put.ltp, 2)}) - Option is overpriced (Theoretical Edge: ${formatNumber(edge, 2)})`;
+            }
+        }
+
         tr.innerHTML = `
             <!-- CALLS -->
             <td class="chart-cell">
@@ -605,7 +649,7 @@ function recalculateAndRender() {
             <td class="${callItmClass} ${row.call?.chng_in_oi < 0 ? 'negative-val' : ''}">${formatNumber(row.call?.chng_in_oi, 0, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.volume, 0, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.iv, 2, "-")}</td>
-            <td class="${callItmClass} bs-field">${formatNumber(callBS.call, 2)}</td>
+            <td class="${callItmClass} bs-field ${callBsClass}" title="${callBsTitle}">${formatNumber(callBS.call, 2)}</td>
             <td class="${callItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.call?.ltp, 2, "-")}</td>
             <td class="${callItmClass} ${cChgClass}">${formatNumber(row.call?.chng, 2, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.bid_qty, 0, "-")}</td>
@@ -623,7 +667,7 @@ function recalculateAndRender() {
             <td class="${putItmClass}">${formatNumber(row.put?.ask_qty, 0, "-")}</td>
             <td class="${putItmClass} ${pChgClass}">${formatNumber(row.put?.chng, 2, "-")}</td>
             <td class="${putItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.put?.ltp, 2, "-")}</td>
-            <td class="${putItmClass} bs-field">${formatNumber(putBS.put, 2)}</td>
+            <td class="${putItmClass} bs-field ${putBsClass}" title="${putBsTitle}">${formatNumber(putBS.put, 2)}</td>
             <td class="${putItmClass}">${formatNumber(row.put?.iv, 2, "-")}</td>
             <td class="${putItmClass}">${formatNumber(row.put?.volume, 0, "-")}</td>
             <td class="${putItmClass} ${row.put?.chng_in_oi < 0 ? 'negative-val' : ''}">${formatNumber(row.put?.chng_in_oi, 0, "-")}</td>
@@ -813,6 +857,16 @@ elements.expirySelect.addEventListener("change", (e) => {
 elements.strikeSelect.addEventListener("change", (e) => {
     appState.selectedStrike = e.target.value;
     recalculateAndRender();
+});
+
+// Search button trigger
+document.getElementById("main-search-btn").addEventListener("click", () => {
+    const symbol = elements.symbolSearchInput.value.trim().toUpperCase();
+    if (symbol) {
+        closeSuggestions();
+        isFirstLoad = true;
+        fetchTickerData(symbol);
+    }
 });
 
 // Refresh button trigger

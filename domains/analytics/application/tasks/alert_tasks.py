@@ -6,7 +6,7 @@ from shared.infrastructure.redis_client import get_redis_client_sync
 
 logger = logging.getLogger(__name__)
 
-@celery_app.task(name="analytics.dispatch_alert")
+@celery_app.task(name="analytics.dispatch_alert", queue="analytics")
 def dispatch_alert(alert_payload: dict):
     """
     Dispatches an analytical alert to external sinks and UI.
@@ -19,7 +19,7 @@ def dispatch_alert(alert_payload: dict):
     # Mirror to Redis Pub/Sub for UI
     try:
         redis = get_redis_client_sync()
-        channel = Channels.SENTIMENT_SCORED.format(symbol=symbol) # Using scored channel as proxy for alerts
+        channel = Channels.ALERT_DISPATCHED.format(symbol=symbol)
         redis.publish(channel, json.dumps(alert_payload))
     except Exception as exc:
         logger.error("Failed to publish alert to Pub/Sub: %s", exc)

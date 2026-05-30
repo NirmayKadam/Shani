@@ -33,8 +33,9 @@ celery_app.conf.update(
     timezone="Asia/Kolkata",
     enable_utc=True,
     task_routes={
-        "domains.ingestion.application.tasks.ingestion_tasks.*": {"queue": "ingestion"},
-        "domains.ingestion.application.tasks.market_tasks.*": {"queue": "ingestion"},
+        "ingestion.*": {"queue": "ingestion"},
+        "analytics.*": {"queue": "analytics"},
+        "domains.ingestion.application.tasks.*": {"queue": "ingestion"},
         "domains.analytics.application.tasks.*": {"queue": "analytics"},
     },
     task_acks_late=True,

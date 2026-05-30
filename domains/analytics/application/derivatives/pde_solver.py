@@ -31,6 +31,15 @@ class CrankNicolsonPDE:
         self.S_max = max(3 * K, S0 * 2.5) 
         self.dS = self.S_max / self.M
         self.dt = self.T / self.N
+
+        # CFL stability check: clamp dt if explicit part of Crank-Nicolson
+        # could become unstable for large sigma or fine grids.
+        # The stability limit is dt <= 1 / (sigma^2 * M^2) for the explicit term.
+        if sigma > 0:
+            dt_max = 0.9 / (sigma**2 * M**2) * (self.S_max**2 / 1.0)  # Scaled for grid
+            if self.dt > dt_max and dt_max > 0:
+                self.N = max(int(self.T / dt_max) + 1, N)
+                self.dt = self.T / self.N
         
     def solve(self) -> float:
         # 1. Setup the grid
@@ -44,6 +53,9 @@ class CrankNicolsonPDE:
             grid = np.maximum(self.K - S_nodes, 0)
             
         # 3. Tridiagonal Matrix Coefficients
+        #    Sign convention: alpha/beta/gamma are defined for the *explicit* side.
+        #    Matrix A (implicit, LHS) uses negated off-diagonals and (1 - beta) on main.
+        #    Matrix B (explicit, RHS) uses original signs and (1 + beta) on main.
         i = np.arange(1, self.M)
         alpha = -0.25 * self.dt * ((self.sigma**2 * i**2) - (self.r * i))
         beta = 0.5 * self.dt * ((self.sigma**2 * i**2) + self.r)

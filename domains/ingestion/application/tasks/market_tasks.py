@@ -18,12 +18,11 @@ import asyncio
 import os
 import httpx
 from celery import shared_task
-from shared.infrastructure.redis_client import get_redis_client_sync
+from shared.infrastructure.redis_client import get_redis_client
 from urllib.parse import quote
+from shared.constants import Streams
 
 logger = logging.getLogger(__name__)
-
-_INTERNAL_API_URL = os.getenv("INTERNAL_API_URL", "http://localhost:8000")
 
 
 async def _fetch_and_publish_options_async(symbol: str):
@@ -31,7 +30,12 @@ async def _fetch_and_publish_options_async(symbol: str):
     from datetime import datetime
     from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import NseApiAdapter
 
-    redis = get_redis_client_sync()
+    # Reset async Redis singleton to bind to the current event loop
+    # (asyncio.run() in the Celery task creates a fresh loop each time)
+    import shared.infrastructure.redis_client as _rc
+    _rc._redis_client = None
+
+    redis = await get_redis_client()
     db_pool = await get_database_pool()
     adapter = NseApiAdapter()
 
@@ -105,7 +109,7 @@ async def _fetch_and_publish_options_async(symbol: str):
             "strikes_data": strikes_payload
         }
 
-        redis.xadd("stream:options.raw_fetched", {
+        await redis.xadd(Streams.OPTIONS_RAW_FETCHED, {
             "symbol": symbol,
             "data": json.dumps(payload)
         })

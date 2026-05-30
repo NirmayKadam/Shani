@@ -49,3 +49,9 @@ models/
 # Persistence and State
 dump.rdb
 celerybeat-schedule
+
+# Legacy / Scratch
+functions.txt
+main.txt
+scratch/
+NSE-OCA.ini

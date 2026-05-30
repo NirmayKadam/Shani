@@ -19,45 +19,45 @@ logger = logging.getLogger(__name__)
 
 # ── Module-level singleton ──────────────────────────────────────
 _redis_client: Optional[aioredis.Redis] = None
+_redis_healthy: bool = False
 
 
 async def get_redis_client() -> aioredis.Redis:
     """
     Return the shared async Redis client.
     Creates the connection pool on first call; reuses it thereafter.
+    Re-pings on access if the last connection attempt failed.
     """
-    global _redis_client
+    global _redis_client, _redis_healthy
 
-    if _redis_client is not None:
+    if _redis_client is not None and _redis_healthy:
         return _redis_client
 
     from app.config import get_settings
     cfg = get_settings()
 
-    try:
+    # Create client if needed (or recreate after a close)
+    if _redis_client is None:
         _redis_client = aioredis.from_url(
             cfg.RedisUrl,
             decode_responses=True,
             max_connections=20,
         )
+
+    try:
         await _redis_client.ping()
+        _redis_healthy = True
         logger.info("Redis connected  (%s)", cfg.RedisUrl)
     except (aioredis.ConnectionError, aioredis.RedisError, OSError) as exc:
+        _redis_healthy = False
         logger.error("Redis connection failed: %s  — continuing without Redis", exc)
-        # Still create client for lazy reconnect on next operation
-        if _redis_client is None:
-            _redis_client = aioredis.from_url(
-                cfg.RedisUrl,
-                decode_responses=True,
-                max_connections=20,
-            )
 
     return _redis_client
 
 
 async def close_redis_client() -> None:
     """Graceful shutdown — call from FastAPI lifespan shutdown."""
-    global _redis_client
+    global _redis_client, _redis_healthy
 
     if _redis_client is not None:
         try:
@@ -67,6 +67,7 @@ async def close_redis_client() -> None:
             logger.error("Error closing Redis client: %s", exc)
         finally:
             _redis_client = None
+            _redis_healthy = False
 
 
 # Backward-compatible alias

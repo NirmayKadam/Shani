@@ -253,6 +253,7 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
         - {"type": "sentiment", "data": {...}}
         - {"type": "options", "data": {...}}
         - {"type": "trigger", "data": {...}}
+        - {"type": "alert", "data": {...}}
     """
     symbol_upper = symbol.upper()
 
@@ -296,6 +297,7 @@ def _derive_type_and_symbol(channel: str) -> tuple[str, str]:
         "market.price_trigger.": "trigger",
         "sentiment.scored.": "sentiment",
         "sentiment.aggregate_updated.": "aggregate",
+        "alerts.dispatched.": "alert",
     }
     for prefix, msg_type in prefixes.items():
         if channel.startswith(prefix):
@@ -321,6 +323,7 @@ async def _redis_global_listener(stop_event: asyncio.Event):
             Channels.PRICE_TRIGGER.format(symbol="*"),
             Channels.SENTIMENT_SCORED.format(symbol="*"),
             Channels.AGGREGATE_UPDATED.format(symbol="*"),
+            Channels.ALERT_DISPATCHED.format(symbol="*"),
         ]
 
         await pubsub.psubscribe(*patterns)

@@ -437,8 +437,8 @@ async def get_ticker_parameters(symbol: str):
                     # Calculate implied/historical params
                     # Expiry days estimation
                     try:
-                        exp_dt = datetime.strptime(nearest_exp, "%Y-%m-%d")
-                        delta = (exp_dt - datetime.now()).days
+                        exp_dt = datetime.strptime(nearest_exp, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        delta = (exp_dt - datetime.now(timezone.utc)).days
                         expiry_days = max(delta, 1)
                     except Exception:
                         expiry_days = 30

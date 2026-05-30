@@ -67,7 +67,8 @@ class IngestionService:
         for h in headlines:
             url = h.url
             # Deterministic hash — consistent across processes
-            url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+            # Using 16 hex chars (64 bits) for low collision probability
+            url_hash = hashlib.md5(url.encode()).hexdigest()[:16]
             
             if await self._dedup.is_seen(url_hash):
                 continue

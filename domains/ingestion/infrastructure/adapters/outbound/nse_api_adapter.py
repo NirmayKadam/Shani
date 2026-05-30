@@ -25,6 +25,7 @@ import aiohttp
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import hashlib
 import pytz
 
 from shared.constants import MarketStatus, INDEX_SYMBOLS
@@ -85,13 +86,20 @@ def _to_yfinance_symbol(symbol: str) -> str:
     return f"{upper}.NS"
 
 
-def _get_market_status() -> MarketStatus:
+def _get_market_status(now_dt: Optional[datetime] = None) -> MarketStatus:
     """
     Determine if Indian market (NSE) is currently open.
     Market hours: 9:15 AM to 3:30 PM IST, Monday to Friday.
     """
     ist = pytz.timezone("Asia/Kolkata")
-    now = datetime.now(ist)
+    if now_dt is not None:
+        # Ensure it has timezone info or is localized to IST
+        if now_dt.tzinfo is None:
+            now = ist.localize(now_dt)
+        else:
+            now = now_dt.astimezone(ist)
+    else:
+        now = datetime.now(ist)
 
     # Weekend check
     if now.weekday() >= 5:
@@ -293,8 +301,13 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                     oi_ce = int(15000 * np.exp(-abs(strike - spot) / (spot * 0.03))) + 100
                     oi_pe = int(14000 * np.exp(-abs(strike - spot) / (spot * 0.03))) + 100
                     
-                    vol_ce = int(oi_ce * (1.2 + 0.5 * np.random.rand()))
-                    vol_pe = int(oi_pe * (1.2 + 0.5 * np.random.rand()))
+                    # Deterministic noise based on symbol+expiry+strike hash
+                    # (avoids flickering data between calls)
+                    noise_hash = int(hashlib.md5(f"{symbol}-{exp}-{strike}".encode()).hexdigest(), 16)
+                    noise_ce = 1.2 + 0.5 * ((noise_hash % 1000) / 1000.0)
+                    noise_pe = 1.2 + 0.5 * (((noise_hash >> 10) % 1000) / 1000.0)
+                    vol_ce = int(oi_ce * noise_ce)
+                    vol_pe = int(oi_pe * noise_pe)
 
                     ticks.append({
                         "strike": float(strike),
@@ -450,4 +463,5 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         try:
             d, m, y = date_str.split("-")
             return f"{y}-{months[m.capitalize()]}-{d.zfill(2)}"
-        except: return None
+        except Exception:
+            return None

@@ -12,8 +12,7 @@ Endpoints/APIs: GET /options/{symbol}
 Database Tables: None (Direct NSE API proxy)
 """
 from fastapi import APIRouter, HTTPException
-from contextlib import asynccontextmanager
-from typing import Dict, Any, AsyncGenerator
+from typing import Dict, Any
 from urllib.parse import quote
 import httpx
 import asyncio
@@ -40,25 +39,26 @@ HEADERS = {
 client: httpx.AsyncClient = None
 
 
-@asynccontextmanager
-async def lifespan(app) -> AsyncGenerator[None, None]:
-    """Manages the lifecycle of the HTTP client."""
+async def startup_nse_client() -> None:
+    """Initialize the NSE httpx client. Called from main app lifespan."""
     global client
     client = httpx.AsyncClient(headers=HEADERS, timeout=20.0, follow_redirects=True)
-    # Initialize cookies on startup
     try:
         await refresh_nse_cookies()
     except Exception as e:
         logger.error("Initial cookie refresh failed: %s", e)
 
-    yield
 
+async def shutdown_nse_client() -> None:
+    """Close the NSE httpx client. Called from main app lifespan."""
+    global client
     if client:
         await client.aclose()
+        client = None
 
 
-# Single router instance with lifespan
-nse_options_router_api = APIRouter(lifespan=lifespan)
+# Single router instance (lifespan managed by main app, not this sub-router)
+nse_options_router_api = APIRouter()
 
 
 async def refresh_nse_cookies(symbol: str = "NIFTY"):

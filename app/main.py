@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # Domain routers
 from domains.analytics.api.signals_router_api import router as signals_router
@@ -50,7 +51,22 @@ async def lifespan(application: FastAPI):
     except Exception as exc:
         logger.warning("Redis warmup failed (will retry on first use): %s", exc)
 
+    # Startup: initialize NSE httpx client for option chain fetching
+    try:
+        from domains.ingestion.api.nse_options_router_api import startup_nse_client
+        await startup_nse_client()
+        logger.info("NSE httpx client initialized during startup")
+    except Exception as exc:
+        logger.warning("NSE client startup failed (will lazy-init on first use): %s", exc)
+
     yield
+
+    # Shutdown: close NSE httpx client
+    try:
+        from domains.ingestion.api.nse_options_router_api import shutdown_nse_client
+        await shutdown_nse_client()
+    except Exception as exc:
+        logger.warning("NSE client shutdown error: %s", exc)
 
     # Shutdown: close connection pools
     await close_redis_client()
@@ -68,7 +84,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi.staticfiles import StaticFiles
 
 app.include_router(signals_router, prefix="/v1")
 app.include_router(events_router, prefix="/v1")
