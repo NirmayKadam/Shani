@@ -30,7 +30,7 @@ async def _create_service():
     """
     from shared.infrastructure.redis_client import get_redis_client
     from domains.ingestion.infrastructure.adapters.outbound.news_api_adapter import NewsApiAdapter
-    from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import NseApiAdapter
+    from domains.ingestion.infrastructure.adapters.outbound.adapter_factory import get_market_data_adapter
     from domains.ingestion.infrastructure.adapters.outbound.redis_event_bus_adapter import RedisEventBusAdapter
     from domains.ingestion.infrastructure.adapters.outbound.redis_dedup_adapter import RedisDedupAdapter
     from domains.ingestion.application.services.ingestion_service import IngestionService
@@ -41,10 +41,11 @@ async def _create_service():
 
     redis = await get_redis_client()
     news = NewsApiAdapter(api_key=os.getenv("NEWS_API_KEY", ""))
-    nse_adapter = NseApiAdapter()
+    market_adapter = get_market_data_adapter()
     bus = RedisEventBusAdapter(redis)
     dedup = RedisDedupAdapter(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
-    return IngestionService(news, nse_adapter, nse_adapter, dedup, bus, redis)
+    return IngestionService(news, market_adapter, market_adapter, dedup, bus, redis)
+
 
 
 @celery_app.task(name="ingestion.poll_news", queue="ingestion")

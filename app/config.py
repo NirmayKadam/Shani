@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     # External APIs
     NewsApiKey: str      = Field("", validation_alias="NEWS_API_KEY")
 
+    # Market Data Provider
+    MarketDataProvider: str = Field("nse", validation_alias="MARKET_DATA_PROVIDER")
+    GrowwApiKey: str      = Field("", validation_alias="GROWW_API_KEY")
+    GrowwApiSecret: str   = Field("", validation_alias="GROWW_API_SECRET")
+    GrowwAccessToken: str = Field("", validation_alias="GROWW_ACCESS_TOKEN")
+
+
     # NLP Models
     ModelCacheDir: str   = Field("./models", validation_alias="MODEL_CACHE_DIR")
     FinbertModel: str    = Field("ProsusAI/finbert", validation_alias="FINBERT_MODEL")

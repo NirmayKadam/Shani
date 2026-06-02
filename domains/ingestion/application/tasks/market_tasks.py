@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 async def _fetch_and_publish_options_async(symbol: str):
     from shared.infrastructure.database import get_database_pool
     from datetime import datetime
-    from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import NseApiAdapter
+    from domains.ingestion.infrastructure.adapters.outbound.adapter_factory import get_market_data_adapter
 
     # Reset async Redis singleton to bind to the current event loop
     # (asyncio.run() in the Celery task creates a fresh loop each time)
@@ -37,7 +37,8 @@ async def _fetch_and_publish_options_async(symbol: str):
 
     redis = await get_redis_client()
     db_pool = await get_database_pool()
-    adapter = NseApiAdapter()
+    adapter = get_market_data_adapter()
+
 
     try:
         dtos = await adapter.fetch_option_chain(symbol)
