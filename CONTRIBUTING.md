@@ -47,11 +47,13 @@ This is a **Modular Monolith** following Domain-Driven Design (DDD) principles:
 
 ```
 domains/
-├── ingestion/     # Fetches data from external sources (NSE, NewsAPI, yfinance)
+├── ingestion/     # Fetches data from external sources (Groww, NSE, NewsAPI, yfinance)
 ├── analytics/     # NLP scoring, ML forecasting, options pricing, read-model updates
 ```
 
 Cross-domain communication uses **Redis Streams** (durable events). See `shared/infrastructure/event_bus/` for contracts.
+
+Market data ingestion uses a **pluggable adapter factory** (`adapter_factory.py`) that selects the provider based on `MARKET_DATA_PROVIDER` env var. Each adapter implements `IMarketPriceSourcePort` and `IOptionChainSourcePort`.
 
 ---
 
@@ -73,6 +75,17 @@ Cross-domain communication uses **Redis Streams** (durable events). See `shared/
 
 ---
 
+## Adding a New Market Data Provider
+
+1. Create a new adapter in `domains/ingestion/infrastructure/adapters/outbound/` (e.g., `zerodha_api_adapter.py`).
+2. Implement both `IMarketPriceSourcePort` and `IOptionChainSourcePort` interfaces.
+3. Add a fallback to `NseApiAdapter` for resilience (see `GrowwApiAdapter` as reference).
+4. Register the provider in `adapter_factory.py` with a new `MARKET_DATA_PROVIDER` value.
+5. Add any required credentials to `app/config.py` (`Settings` class) and `.env.template`.
+6. Write unit tests in `tests/unit/test_<provider>_adapter.py`.
+
+---
+
 ## Adding a New Stream Event
 
 1. Define the event contract in `shared/infrastructure/event_bus/contracts.py`.
@@ -86,12 +99,30 @@ Cross-domain communication uses **Redis Streams** (durable events). See `shared/
 ## Testing
 
 ```bash
-# Run unit tests
+# Run all tests
+docker compose exec app python -m pytest tests/ -v
+
+# Run unit tests only
 docker compose exec app python -m pytest tests/unit/ -v
 
-# Run integration tests
+# Run integration tests only
 docker compose exec app python -m pytest tests/integration/ -v
+
+# Run a specific test file
+docker compose exec app python -m pytest tests/unit/test_groww_api_adapter.py -v
 ```
+
+### Test Coverage
+
+| Category | Files |
+|---|---|
+| **Adapters** | `test_groww_api_adapter.py`, `test_nse_api_adapter.py` |
+| **Services** | `test_ingestion_service.py`, `test_sentiment_analyzer.py`, `test_sentiment_recompute.py` |
+| **Pricing** | `test_black_scholes.py`, `test_options_subscriber.py` |
+| **Utilities** | `test_symbol_validator.py`, `test_market_status.py` |
+| **Pipelines** | `test_api_endpoints.py`, `test_derivatives_pipeline.py`, `test_ingest_pipeline.py` |
+
+When adding a new adapter or service, add corresponding tests following the existing patterns in `tests/conftest.py` for shared fixtures.
 
 ---
 
@@ -117,3 +148,12 @@ fix: resolve BSM pricing edge case for deep OTM options
 docs: update API reference with pricer endpoints
 refactor: extract symbol validation into shared utility
 ```
+
+---
+
+## Performance Guidelines
+
+- **Celery Tasks**: Use `_get_or_create_loop()` from `ingestion_tasks.py` for persistent event loops. Never call `asyncio.run()` — it creates and destroys a loop per invocation.
+- **Connection Pools**: Reuse Redis and `aiohttp` sessions via `_get_or_create_service()`. Connections are bound to the event loop that created them.
+- **Static Data Caching**: Cache slow-changing data (e.g., dividend yields) in Redis with appropriate TTLs. See `GrowwApiAdapter.fetch_price()` for the pattern.
+- **uvloop**: The production container uses `uvloop` for the FastAPI server (`--loop uvloop`). This is Linux-only and ignored on Windows.

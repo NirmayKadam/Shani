@@ -14,7 +14,7 @@ Built with **FastAPI, Celery, Redis Streams, TimescaleDB, PyTorch**, and a **pro
 - **Real-Time WebSocket Push** — live price ticks, scored sentiment, and options data streamed to the UI.
 - **FinBERT NLP Sentiment** — automatic financial headline scoring (BULLISH / BEARISH / NEUTRAL) using ProsusAI/FinBERT.
 - **MTF-CNN-LSTM Volatility Prediction** — 5-day forward volatility forecasting (VOL_CRUSH / NEUTRAL / VOL_EXPAND).
-- **Crank-Nicolson PDE Fair Pricing** — numerical PDE solver for American-style option fair values.
+- **Crank-Nicolson PDE Fair Pricing** — numerical PDE solver for European-style option fair values.
 - **Single-Container Deployment** — everything (FastAPI, Celery, Redis, TimescaleDB, ML models) runs in one Docker container via `supervisord`.
 
 ---
@@ -51,8 +51,8 @@ Built with **FastAPI, Celery, Redis Streams, TimescaleDB, PyTorch**, and a **pro
 
 | Layer | Technology |
 |---|---|
-| Market Data | [yfinance](https://github.com/ranaroussi/yfinance) (NSE/BSE symbols) |
-| Options Chain | Live NSE API adapter with automatic fallback |
+| Market Data (Primary) | [Groww API](https://groww.in/) or [yfinance](https://github.com/ranaroussi/yfinance) — configurable via `MARKET_DATA_PROVIDER` |
+| Options Chain | Live NSE API adapter with automatic Groww ↔ NSE fallback |
 | News Intelligence | [NewsAPI](https://newsapi.org/) (Financial headlines) |
 | Symbol Discovery | Dynamic NSE equity CSV catalog (`EQUITY_L.csv`) |
 
@@ -72,6 +72,7 @@ Built with **FastAPI, Celery, Redis Streams, TimescaleDB, PyTorch**, and a **pro
 graph LR
     subgraph External_Sources [Market & News Data]
         NewsAPI([News API])
+        GrowwAPI([Groww API])
         YFinance([yfinance - NSE/BSE])
         NseArchives([NSE Archives])
     end
@@ -80,7 +81,9 @@ graph LR
         subgraph Ingestion_Context [Ingestion]
             CeleryTasks[Ingestion Tasks]
             CeleryBeat[Scheduler]
+            AdapterFactory[Adapter Factory]
             NseAdapter[NSE API Adapter]
+            GrowwAdapter[Groww API Adapter]
         end
 
         subgraph Analytics_Context [Analytics]
@@ -103,16 +106,21 @@ graph LR
     subgraph Infrastructure
         RedisStreams[(Redis Streams)]
         RedisPubSub[(Redis Pub/Sub)]
+        RedisCache[(Redis Cache)]
         TimescaleDB[(TimescaleDB)]
     end
 
     %% Flow
-    External_Sources --> Ingestion_Context
+    External_Sources --> AdapterFactory
+    AdapterFactory --> NseAdapter
+    AdapterFactory --> GrowwAdapter
+    GrowwAdapter -. "fallback" .-> NseAdapter
     NseArchives --> SymbolSearch
     Ingestion_Context -- "Durable Events" --> RedisStreams
     RedisStreams -- "Consume/Score" --> Analytics_Context
     Analytics_Context -- "Persist" --> TimescaleDB
     Analytics_Context -- "Publish Aggregates" --> RedisStreams
+    GrowwAdapter -- "Dividend Cache" --> RedisCache
     App_Context -- "Live Mirror" --> RedisPubSub
     RedisPubSub --> WSServer
 ```
@@ -124,9 +132,11 @@ The codebase is aligned to a **Modular Monolith** with explicit context boundari
 #### `ingestion`
 * Polls news and market prices (restricted to **NSE/BSE**).
 * Implements dynamic symbol retrieval for arbitrary Indian tickers.
-* Fetches live NSE option chains via the `NseApiAdapter`.
+* Fetches live option chains via a pluggable **Adapter Factory** — supports `NseApiAdapter` (yfinance/NSE proxy) and `GrowwApiAdapter` (Groww REST API) with automatic fallback.
+* Caches static data (e.g., dividend yields) in Redis to reduce external HTTP round-trips.
+* Uses **persistent event loops** and **reusable connection pools** per Celery worker thread for low-latency async I/O.
 * Publishes durable stream events.
-* **Primary module:** `domains/ingestion/application/tasks/ingestion_tasks.py`
+* **Primary modules:** `domains/ingestion/application/tasks/ingestion_tasks.py`, `domains/ingestion/infrastructure/adapters/outbound/adapter_factory.py`
 
 #### `analytics`
 * Consumes ingestion events via Redis Streams.
@@ -148,8 +158,8 @@ All services run inside one Docker container, orchestrated by `supervisord`:
 |---|---------|---------|
 | 1 | **Redis** | `redis-server` |
 | 2 | **PostgreSQL 15** (TimescaleDB) | `/usr/lib/postgresql/15/bin/postgres` |
-| 3 | **FastAPI** (+ static UI) | `uvicorn app.main:app --host 0.0.0.0 --port 8000` |
-| 4 | **Celery Worker** | `celery -A shared.infrastructure.celery_app:celery_app worker -Q celery,ingestion` |
+| 3 | **FastAPI** (+ static UI) | `uvicorn app.main:app --host 0.0.0.0 --port 8000 --loop uvloop` |
+| 4 | **Celery Worker** | `celery -A shared.infrastructure.celery_app:celery_app worker -Q celery,ingestion,analytics` |
 | 5 | **Celery Beat** (Scheduler) | `celery -A shared.infrastructure.celery_app:celery_app beat` |
 | 6 | **Sentiment Orchestrator** | `python3 domains/analytics/application/services/nlp/sentiment_orchestrator_service.py` |
 | 7 | **Read-Model Updater** | `python3 domains/analytics/application/services/read_model_updater_service.py` |
@@ -168,9 +178,20 @@ Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-g
 |---|---|---|---|
 *   `stream:headlines.fetched` | ingestion | analytics | Canonical fetched headlines.
 *   `stream:market.price_trigger` | ingestion | analytics | Triggered market anomalies.
+*   `stream:options.raw_fetched` | ingestion | analytics | Raw option chain ticks for PDE solver.
+*   `stream:options.priced` | analytics | app | Fair-priced option chain output.
 *   `stream:sentiment.scored` | analytics | downstream/read-model consumers | Per-headline sentiment result.
 *   `stream:sentiment.aggregate_updated` | analytics | app read-model consumers | Timeframe aggregates.
+*   `stream:analysis.completed` | analytics | app | Analysis completion signal.
 *   `stream:analysis.refresh_requested` | app | ingestion | Async refresh command path.
+
+### Dead-letter queues (DLQ)
+
+| Stream | Purpose |
+|---|---|
+*   `stream:dlq:ingestion_to_nlp` | Failed ingestion → NLP events.
+*   `stream:dlq:nlp_to_api` | Failed NLP → API events.
+*   `stream:dlq:refresh_request` | Failed refresh request events.
 
 ### Ephemeral Pub/Sub mirrors (UX-only)
 
@@ -182,6 +203,7 @@ Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-g
 *   `market.price_trigger.{symbol}` | Live trigger notifications.
 *   `sentiment.scored.{symbol}` | Live scored-sentiment fan-out.
 *   `sentiment.aggregate_updated.{symbol}` | Live aggregate fan-out.
+*   `alerts.dispatched.{symbol}` | Live alert dispatch notifications.
 
 **Policy:** publish critical events to durable streams first; Pub/Sub mirrors are non-replayable and not correctness-critical.
 
@@ -224,7 +246,12 @@ cd MarketSentimentAnalysis2
 cp .env.template .env
 ```
 
-Edit `.env` and add your `NEWS_API_KEY`. All other defaults work out of the box.
+Edit `.env` and configure:
+- **`NEWS_API_KEY`** — required for headline ingestion (free tier works).
+- **`MARKET_DATA_PROVIDER`** — set to `groww` for Groww API or `nse` (default) for yfinance/NSE proxy.
+- **`GROWW_API_KEY` / `GROWW_API_SECRET` / `GROWW_ACCESS_TOKEN`** — required only if using the Groww provider.
+
+All other defaults work out of the box.
 
 ### 2. Start the System
 
@@ -490,7 +517,7 @@ docker compose exec app psql -U postgres -d NexusQuantDB -f /app/scripts/init_sc
 MarketSentimentAnalysis2/
 ├── app/
 │   ├── main.py                        # FastAPI entry point
-│   └── config.py                      # Pydantic settings
+│   └── config.py                      # Pydantic settings (incl. Groww config)
 ├── domains/
 │   ├── analytics/
 │   │   ├── api/                       # REST + WebSocket routers
@@ -507,16 +534,29 @@ MarketSentimentAnalysis2/
 │   │   └── infrastructure/            # Event subscribers, DB adapters
 │   └── ingestion/
 │       ├── api/                       # NSE options ingestion router
-│       ├── application/               # Celery tasks, orchestrators
+│       ├── application/
+│       │   ├── tasks/
+│       │   │   ├── ingestion_tasks.py      # News/price/options Celery tasks
+│       │   │   └── market_tasks.py         # Option chain fetch + publish task
+│       │   ├── services/              # Orchestrators, ingestion service
+│       │   ├── dto/                   # RawTickDTO, data transfer objects
+│       │   └── ports/                 # Port interfaces (inbound/outbound)
 │       ├── domain/                    # Domain models
-│       └── infrastructure/            # External API adapters (NSE, yfinance)
+│       └── infrastructure/
+│           └── adapters/outbound/
+│               ├── adapter_factory.py     # Market data provider factory
+│               ├── groww_api_adapter.py   # Groww REST API adapter
+│               ├── nse_api_adapter.py     # NSE/yfinance proxy adapter
+│               ├── news_api_adapter.py    # NewsAPI adapter
+│               ├── redis_event_bus_adapter.py  # Redis stream publisher
+│               └── redis_dedup_adapter.py     # Headline deduplication
 ├── shared/
 │   ├── infrastructure/
 │   │   ├── redis_client.py            # Async Redis connection pool
 │   │   ├── database.py                # AsyncPG connection pool
 │   │   ├── celery_app.py              # Celery configuration
 │   │   └── event_bus/                 # Stream contracts & publishers
-│   ├── constants.py                   # Redis keys, stream names, channels
+│   ├── constants.py                   # Redis keys, stream names, channels, DLQs
 │   └── utils/                         # Symbol validator, helpers
 ├── static/
 │   ├── index.html                     # Option Chain dashboard
@@ -525,18 +565,39 @@ MarketSentimentAnalysis2/
 ├── models/                            # ML model weights (gitignored)
 ├── scripts/
 │   ├── init_schema.sql                # TimescaleDB schema
-│   └── train_cnn_predictor.py         # MTF-CNN-LSTM training script
+│   ├── migration_add_iv.sql           # IV column migration
+│   ├── train_cnn_predictor.py         # MTF-CNN-LSTM training script
+│   ├── train_daily_predictor.py       # Daily predictor training script
+│   ├── diagnose_nulls.py              # Data quality diagnostic
+│   ├── read_dlq.py                    # Dead-letter queue reader
+│   └── verify_proxy.py               # Proxy verification utility
 ├── research/
 │   └── ModelTraining.ipynb            # Jupyter notebook for model R&D
 ├── tests/
-│   ├── unit/                          # Unit tests
-│   └── integration/                   # Integration tests
+│   ├── conftest.py                    # Shared test fixtures
+│   ├── unit/
+│   │   ├── test_groww_api_adapter.py      # Groww adapter unit tests
+│   │   ├── test_nse_api_adapter.py        # NSE adapter unit tests
+│   │   ├── test_black_scholes.py          # BSM pricing tests
+│   │   ├── test_ingestion_service.py      # Ingestion service tests
+│   │   ├── test_market_status.py          # Market hours tests
+│   │   ├── test_options_subscriber.py     # Options subscriber tests
+│   │   ├── test_sentiment_analyzer.py     # FinBERT tests
+│   │   ├── test_sentiment_recompute.py    # Sentiment recompute tests
+│   │   └── test_symbol_validator.py       # Symbol validation tests
+│   └── integration/
+│       ├── test_api_endpoints.py          # API endpoint tests
+│       ├── test_derivatives_pipeline.py   # Derivatives pipeline tests
+│       └── test_ingest_pipeline.py        # Ingestion pipeline tests
 ├── Dockerfile                         # Single-container build
 ├── docker-compose.yml                 # Docker Compose orchestration
 ├── supervisord.conf                   # Process manager configuration
 ├── start.sh                           # Container entrypoint
 ├── requirements.txt                   # Python dependencies
 ├── .env.template                      # Environment template
+├── CONTRIBUTING.md                    # Development guidelines
+├── USER_MANUAL.md                     # Dashboard user manual
+├── TERMS_AND_CONDITIONS.md            # Terms of use
 └── README.md
 ```
 
@@ -561,9 +622,14 @@ MarketSentimentAnalysis2/
 | **Modular Monolith** (not Microservices) | Single-developer project; avoids operational overhead of distributed deploys, service mesh, and multi-repo management. |
 | **Single Container** | Simplifies deployment. Redis and PostgreSQL run as supervised processes alongside application code. |
 | **Redis Streams** (not Kafka) | Lightweight, sufficient durability for this scale. Consumer groups provide at-least-once delivery. |
+| **Adapter Factory** (Groww / NSE) | Pluggable market data providers via `MARKET_DATA_PROVIDER` env var. Groww adapter falls back to NSE/yfinance automatically on failure. |
+| **Persistent Event Loops** | Celery worker threads reuse a single `asyncio` event loop and connection pool, eliminating per-task loop creation overhead. |
+| **uvloop** | High-performance `asyncio` event loop (Linux only) used by both FastAPI (uvicorn) and Celery workers for reduced latency. |
+| **Redis Dividend Caching** | Dividend yields fetched via yfinance are cached in Redis (24h TTL) to avoid redundant HTTP calls from the Groww adapter. |
 | **Client-side BSM** | Avoids round-trips for interactive pricing. Users can adjust parameters in real-time without server calls. |
 | **Deterministic Mocks** | Hash-based mock data ensures consistent, reproducible results when live data is unavailable. |
 | **NSE CSV Catalog** | Live download of all NSE equities on startup; robust local fallback ensures the app works without network access. |
+| **Dead-Letter Queues** | Failed stream events are routed to DLQ streams for debugging and replay. |
 
 ---
 
