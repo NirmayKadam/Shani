@@ -508,7 +508,7 @@ input[type=range]::-webkit-slider-thumb:hover {
 .nse-option-chain-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: 10px;
     text-align: right;
     white-space: nowrap;
 }
@@ -529,7 +529,7 @@ input[type=range]::-webkit-slider-thumb:hover {
     background-color: #3c3580;
     color: #ffffff;
     font-weight: 700;
-    padding: 6px 8px;
+    padding: 5px 3px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     text-align: right;
 }
@@ -557,9 +557,10 @@ input[type=range]::-webkit-slider-thumb:hover {
 
 .sub-header th {
     background-color: #4c4495;
-    font-size: 9.5px;
+    font-size: 8px;
     text-align: center !important;
     vertical-align: middle;
+    padding: 5px 2px;
 }
 
 /* Main strike column formatting */
@@ -583,7 +584,7 @@ input[type=range]::-webkit-slider-thumb:hover {
 }
 
 .nse-option-chain-table td {
-    padding: 5px 8px;
+    padding: 4px 3px;
     border-right: 1px solid #e0e0e0;
     vertical-align: middle;
 }
@@ -600,7 +601,7 @@ input[type=range]::-webkit-slider-thumb:hover {
     text-align: center !important;
     cursor: pointer;
     transition: background 0.15s;
-    font-size: 11px;
+    font-size: 10px;
 }
 
 .nse-option-chain-table td.strike-cell:hover {
@@ -642,7 +643,7 @@ input[type=range]::-webkit-slider-thumb:hover {
 /* Chart Link Styling */
 .chart-cell {
     text-align: center !important;
-    padding: 0 4px !important;
+    padding: 0 2px !important;
 }
 
 .chart-icon-btn {
