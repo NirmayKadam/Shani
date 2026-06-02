@@ -206,6 +206,16 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
 
     # ── Option Chain (NSE V3 API) ───────────────────────────────
 
+    async def fetch_expiry_dates(self, symbol: str) -> List[str]:
+        """Fetches available option expiry dates for symbol from NSE or fallback."""
+        try:
+            fallback_chain = await self._fetch_option_chain_raw(symbol)
+            if fallback_chain and "expiry_dates" in fallback_chain:
+                return fallback_chain["expiry_dates"]
+        except Exception as e:
+            logger.warning("[%s] Failed to fetch expiry dates: %s", symbol, e)
+        return []
+
     async def fetch_option_chain(self, symbol: str) -> List[RawTickDTO]:
         """Fetches full option chain and returns list of RawTickDTOs."""
         data = await self._fetch_option_chain_raw(symbol)

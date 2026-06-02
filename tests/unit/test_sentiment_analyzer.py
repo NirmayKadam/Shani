@@ -22,7 +22,7 @@ class TestComputeAggregate:
         assert result["label"] == "BULLISH"
         assert result["count"] == 3
         assert result["bullish_pct"] == pytest.approx(66.7, abs=0.1)
-        assert result["avg_score"] > 0.1
+        assert result["avg_score"] == pytest.approx(0.54, abs=0.01)
 
     def test_bearish_aggregate(self):
         headlines = [
@@ -32,7 +32,7 @@ class TestComputeAggregate:
         ]
         result = SentimentAnalyzerService.compute_aggregate(headlines)
         assert result["label"] == "BEARISH"
-        assert result["avg_score"] < -0.1
+        assert result["avg_score"] == pytest.approx(-0.50, abs=0.01)
 
     def test_neutral_aggregate(self):
         headlines = [

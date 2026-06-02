@@ -28,12 +28,13 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
     Adapter for market data via Groww API with a fallback to NseApiAdapter (yfinance/NSE proxy).
     """
 
-    def __init__(self, api_key: str = "", secret_key: str = "", access_token: str = "") -> None:
+    def __init__(self, api_key: str = "", secret_key: str = "", access_token: str = "", redis_client=None) -> None:
         self.api_key = api_key
         self.secret_key = secret_key
         self._access_token = access_token
         self._session: Optional[aiohttp.ClientSession] = None
         self._fallback_adapter = NseApiAdapter()
+        self._redis = redis_client
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         current_loop = asyncio.get_running_loop()
@@ -47,7 +48,12 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
 
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=15),
+                timeout=aiohttp.ClientTimeout(total=8, connect=3),
+                connector=aiohttp.TCPConnector(
+                    limit=20,
+                    keepalive_timeout=60,
+                    enable_cleanup_closed=True,
+                ),
             )
         return self._session
 
@@ -131,12 +137,19 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                         volume = payload.get("volume") or 0
                         change_percent = payload.get("day_change_perc") or payload.get("dayChangePerc") or 0.0
                         
-                        # Fallback for dividend yield since Groww doesn't typically provide it directly
+                        # Dividend yield: check Redis cache first, fallback to yfinance only on miss
                         dividend_yield = 0.0
+                        div_key = f"market:dividend_yield:{symbol.upper()}"
                         try:
-                            yf_info = await self._fallback_adapter.fetch_price(symbol)
-                            if yf_info:
-                                dividend_yield = yf_info.get("dividend_yield", 0.0)
+                            cached_div = await self._redis.get(div_key) if self._redis else None
+                            if cached_div is not None:
+                                dividend_yield = float(cached_div)
+                            else:
+                                yf_info = await self._fallback_adapter.fetch_price(symbol)
+                                if yf_info:
+                                    dividend_yield = yf_info.get("dividend_yield", 0.0)
+                                if self._redis:
+                                    await self._redis.setex(div_key, 86400, str(dividend_yield))
                         except Exception:
                             pass
 
@@ -177,9 +190,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             # 1. Fetch available expiries from fallback adapter (NSE/yfinance) to bypass the forbidden expiries endpoint
             expiries = []
             try:
-                fallback_chain = await self._fallback_adapter._fetch_option_chain_raw(symbol)
-                if fallback_chain and "expiry_dates" in fallback_chain:
-                    expiries = fallback_chain["expiry_dates"]
+                expiries = await self._fallback_adapter.fetch_expiry_dates(symbol)
             except Exception as e:
                 logger.warning("[%s] Failed to fetch expiries from fallback adapter: %s", symbol, e)
 

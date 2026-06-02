@@ -2,6 +2,7 @@
 File Overview: Celery tasks for advanced market data fetching and stream publishing.
 Fetches option chain from internal NSE proxy API, persists to TimescaleDB, and publishes
 to Redis Streams for PDE solver consumption.
+Uses persistent event loop per worker thread (shared with ingestion_tasks).
 
 All Functions/Classes:
 - _fetch_and_publish_options_async: Core logic for chain retrieval and publishing.
@@ -15,12 +16,12 @@ Database Tables: TimescaleDB (tickdata), Redis (Streams: stream:options.raw_fetc
 import json
 import logging
 import asyncio
-import os
-import httpx
 from celery import shared_task
 from shared.infrastructure.redis_client import get_redis_client
-from urllib.parse import quote
 from shared.constants import Streams
+
+# Reuse persistent loop from ingestion_tasks
+from domains.ingestion.application.tasks.ingestion_tasks import _get_or_create_loop
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +31,9 @@ async def _fetch_and_publish_options_async(symbol: str):
     from datetime import datetime
     from domains.ingestion.infrastructure.adapters.outbound.adapter_factory import get_market_data_adapter
 
-    # Reset async Redis singleton to bind to the current event loop
-    # (asyncio.run() in the Celery task creates a fresh loop each time)
-    import shared.infrastructure.redis_client as _rc
-    _rc._redis_client = None
-
     redis = await get_redis_client()
     db_pool = await get_database_pool()
-    adapter = get_market_data_adapter()
-
+    adapter = get_market_data_adapter(redis_client=redis)
 
     try:
         dtos = await adapter.fetch_option_chain(symbol)
@@ -121,10 +116,6 @@ async def _fetch_and_publish_options_async(symbol: str):
         logger.error("Error fetching/publishing options for %s: %s", symbol, e, exc_info=True)
     finally:
         await adapter.close()
-        from shared.infrastructure.redis_client import close_redis_client
-        from shared.infrastructure.database import close_database_pool
-        await close_redis_client()
-        await close_database_pool()
 
 
 @shared_task(queue='ingestion', name='ingestion.fetch_and_publish_options')
@@ -132,4 +123,5 @@ def fetch_and_publish_options(symbol: str = "NIFTY"):
     """
     Pulls raw chain from NSE wrapper and drops it into Redis Streams.
     """
-    asyncio.run(_fetch_and_publish_options_async(symbol))
+    loop = _get_or_create_loop()
+    loop.run_until_complete(_fetch_and_publish_options_async(symbol))

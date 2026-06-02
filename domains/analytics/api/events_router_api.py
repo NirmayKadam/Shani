@@ -336,7 +336,7 @@ async def _redis_global_listener(stop_event: asyncio.Event):
         while not stop_event.is_set():
             message = await pubsub.get_message(
                 ignore_subscribe_messages=True,
-                timeout=1.0,
+                timeout=0.1,
             )
             if message is None:
                 continue

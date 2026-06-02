@@ -48,8 +48,8 @@ async def test_options_pricing_subscriber_process_event():
     assert priced_strike["live_put"] == 42.0
 
     # Verify BSM call/put fair values are correct and realistic
-    assert 40.0 < priced_strike["bs_fair_call"] < 80.0
-    assert 30.0 < priced_strike["bs_fair_put"] < 60.0
+    assert priced_strike["bs_fair_call"] == pytest.approx(56.16, abs=0.1)
+    assert priced_strike["bs_fair_put"] == pytest.approx(48.31, abs=0.1)
 
     # Check stream publishing
     mock_redis.xadd.assert_called_once()

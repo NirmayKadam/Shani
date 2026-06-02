@@ -42,7 +42,10 @@ async def get_redis_client() -> aioredis.Redis:
         _redis_client = aioredis.from_url(
             cfg.RedisUrl,
             decode_responses=True,
-            max_connections=20,
+            max_connections=50,
+            socket_connect_timeout=5,
+            socket_keepalive=True,
+            retry_on_timeout=True,
         )
 
     try:

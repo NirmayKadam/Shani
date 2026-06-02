@@ -10,6 +10,7 @@ Tests the pure/static methods of NseApiAdapter without hitting live APIs.
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone
+import pandas as pd
 
 from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import (
     NseApiAdapter,
@@ -142,9 +143,6 @@ class TestFetchPriceSync:
 
     @patch("domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter.yf")
     def test_successful_fetch(self, mock_yf):
-        import pandas as pd
-        import numpy as np
-
         mock_hist = pd.DataFrame({
             "close": [24400.0, 24500.0],
             "open": [24350.0, 24450.0],
@@ -173,7 +171,6 @@ class TestFetchPriceSync:
 
     @patch("domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter.yf")
     def test_empty_history_returns_none(self, mock_yf):
-        import pandas as pd
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = pd.DataFrame()
         mock_yf.Ticker.return_value = mock_ticker

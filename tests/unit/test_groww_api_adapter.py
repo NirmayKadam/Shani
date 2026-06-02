@@ -21,19 +21,23 @@ class TestGrowwApiAdapterToken:
         mock_sdk.get_access_token.return_value = "mock_generated_token"
 
         adapter = GrowwApiAdapter(api_key="key", secret_key="secret")
-        token = await adapter._get_token()
+        try:
+            token = await adapter._get_token()
 
-        assert token == "mock_generated_token"
-        mock_sdk.get_access_token.assert_called_once_with(api_key="key", secret="secret")
-        await adapter.close()
+            assert token == "mock_generated_token"
+            mock_sdk.get_access_token.assert_called_once_with(api_key="key", secret="secret")
+        finally:
+            await adapter.close()
 
     @pytest.mark.asyncio
     async def test_configured_token_precedence(self):
         adapter = GrowwApiAdapter(api_key="key", secret_key="secret", access_token="pre_set_token")
-        token = await adapter._get_token()
+        try:
+            token = await adapter._get_token()
 
-        assert token == "pre_set_token"
-        await adapter.close()
+            assert token == "pre_set_token"
+        finally:
+            await adapter.close()
 
 
 @pytest.mark.unit
@@ -67,17 +71,19 @@ class TestGrowwApiAdapterFetchPrice:
         # Mock fallback fetch_price to not call real yfinance for dividend_yield
         adapter._fallback_adapter.fetch_price = AsyncMock(return_value={"dividend_yield": 0.015})
 
-        result = await adapter.fetch_price("NIFTY")
+        try:
+            result = await adapter.fetch_price("NIFTY")
 
-        assert result is not None
-        assert result["last_price"] == 24500.0
-        assert result["open"] == 24450.0
-        assert result["high"] == 24600.0
-        assert result["low"] == 24400.0
-        assert result["volume"] == 120000
-        assert result["change_percent"] == 0.41
-        assert result["dividend_yield"] == 0.015
-        await adapter.close()
+            assert result is not None
+            assert result["last_price"] == 24500.0
+            assert result["open"] == 24450.0
+            assert result["high"] == 24600.0
+            assert result["low"] == 24400.0
+            assert result["volume"] == 120000
+            assert result["change_percent"] == 0.41
+            assert result["dividend_yield"] == 0.015
+        finally:
+            await adapter.close()
 
     @pytest.mark.asyncio
     @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
@@ -87,12 +93,14 @@ class TestGrowwApiAdapterFetchPrice:
         adapter = GrowwApiAdapter()
         adapter._fallback_adapter.fetch_price = AsyncMock(return_value={"last_price": 100.0})
 
-        result = await adapter.fetch_price("RELIANCE")
+        try:
+            result = await adapter.fetch_price("RELIANCE")
 
-        assert result is not None
-        assert result["last_price"] == 100.0
-        adapter._fallback_adapter.fetch_price.assert_called_once_with("RELIANCE")
-        await adapter.close()
+            assert result is not None
+            assert result["last_price"] == 100.0
+            adapter._fallback_adapter.fetch_price.assert_called_once_with("RELIANCE")
+        finally:
+            await adapter.close()
 
 
 @pytest.mark.unit
@@ -144,24 +152,25 @@ class TestGrowwApiAdapterFetchOptionChain:
         adapter = GrowwApiAdapter(access_token="valid_token")
         adapter._ensure_session = AsyncMock(return_value=mock_session)
         adapter.fetch_price = AsyncMock(return_value={"last_price": 24480.0})
-        adapter._fallback_adapter._fetch_option_chain_raw = AsyncMock(return_value={"expiry_dates": ["2026-06-04", "2026-06-11"]})
+        adapter._fallback_adapter.fetch_expiry_dates = AsyncMock(return_value=["2026-06-04", "2026-06-11"])
 
 
-        result = await adapter.fetch_option_chain("NIFTY")
+        try:
+            result = await adapter.fetch_option_chain("NIFTY")
 
-        assert len(result) == 4 # 2 expiries * 2 types (CE/PE)
-        assert isinstance(result[0], RawTickDTO)
-        assert result[0].strike == 24500.0
-        assert result[0].underlying_price == 24480.0
-        
-        # Verify CE normalization (15.5 -> 0.155)
-        ce_tick = [r for r in result if r.option_type == "CE" and r.expiry == "2026-06-04"][0]
-        assert ce_tick.ltp == 120.0
-        assert ce_tick.oi == 5000
-        assert ce_tick.volume == 15000
-        assert abs(ce_tick.iv - 0.155) < 0.001
-
-        await adapter.close()
+            assert len(result) == 4 # 2 expiries * 2 types (CE/PE)
+            assert isinstance(result[0], RawTickDTO)
+            assert result[0].strike == 24500.0
+            assert result[0].underlying_price == 24480.0
+            
+            # Verify CE normalization (15.5 -> 0.155)
+            ce_tick = [r for r in result if r.option_type == "CE" and r.expiry == "2026-06-04"][0]
+            assert ce_tick.ltp == 120.0
+            assert ce_tick.oi == 5000
+            assert ce_tick.volume == 15000
+            assert abs(ce_tick.iv - 0.155) < 0.001
+        finally:
+            await adapter.close()
 
     @pytest.mark.asyncio
     @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
@@ -176,9 +185,11 @@ class TestGrowwApiAdapterFetchOptionChain:
             )
         ])
 
-        result = await adapter.fetch_option_chain("NIFTY")
+        try:
+            result = await adapter.fetch_option_chain("NIFTY")
 
-        assert len(result) == 1
-        assert result[0].ltp == 15.0
-        adapter._fallback_adapter.fetch_option_chain.assert_called_once_with("NIFTY")
-        await adapter.close()
+            assert len(result) == 1
+            assert result[0].ltp == 15.0
+            adapter._fallback_adapter.fetch_option_chain.assert_called_once_with("NIFTY")
+        finally:
+            await adapter.close()

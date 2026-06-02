@@ -60,9 +60,9 @@ class Settings(BaseSettings):
         "NIFTY,BANKNIFTY,RELIANCE,INFY,HDFCBANK,TCS,ICICIBANK",
         validation_alias="WATCHLIST_SYMBOLS"
     )
-    NewsPollIntervalSeconds: int = Field(120, validation_alias="NEWS_POLL_INTERVAL_SECONDS")
-    PricePollIntervalSeconds: int = Field(15, validation_alias="PRICE_POLL_INTERVAL_SECONDS")
-    OptionsPollIntervalSeconds: int = Field(30, validation_alias="OPTIONS_POLL_INTERVAL_SECONDS")
+    NewsPollIntervalSeconds: int = Field(90, validation_alias="NEWS_POLL_INTERVAL_SECONDS")
+    PricePollIntervalSeconds: int = Field(5, validation_alias="PRICE_POLL_INTERVAL_SECONDS")
+    OptionsPollIntervalSeconds: int = Field(15, validation_alias="OPTIONS_POLL_INTERVAL_SECONDS")
 
     # ── Helpers ────────────────────────────────────────────────
 

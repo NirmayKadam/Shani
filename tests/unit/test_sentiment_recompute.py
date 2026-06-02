@@ -7,7 +7,6 @@ Uses mocked dependencies instead of live Redis/Postgres.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from dataclasses import dataclass
 
 from domains.analytics.application.services.nlp.sentiment_orchestrator_service import (
     recompute_and_publish_aggregates,

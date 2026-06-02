@@ -18,6 +18,11 @@ async def test_derivatives_pipeline_e2e():
     symbols = ["NIFTY", "RELIANCE"]
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     redis_client = aioredis.from_url(redis_url, decode_responses=True)
+    try:
+        await redis_client.ping()
+    except Exception:
+        await redis_client.aclose()
+        pytest.skip("Redis server is not running")
 
     # Clean up keys first
     for sym in symbols:

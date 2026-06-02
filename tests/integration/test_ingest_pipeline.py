@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import patch, MagicMock
-from domains.ingestion.application.tasks.ingestion_tasks import _create_service
+from domains.ingestion.application.tasks.ingestion_tasks import _get_or_create_service
 from domains.ingestion.application.dto.raw_article_dto import RawArticleDTO
 from datetime import datetime, timezone
 
@@ -11,7 +11,12 @@ async def test_news_ingestion_pipeline():
     """
     Automated test for triggering news ingestion without live external network requests.
     """
-    svc = await _create_service()
+    svc = await _get_or_create_service()
+    try:
+        await svc._redis.ping()
+    except Exception:
+        pytest.skip("Redis server is not running")
+
     symbols = ["NIFTY", "RELIANCE"]
     
     # Prepare mock article data
