@@ -20,7 +20,7 @@ class CrankNicolsonPDE:
         self.K = K
         self.T = max(T, 1e-6)  # Guard against T=0
         self.r = r
-        self.sigma = sigma
+        self.sigma = max(sigma, 1e-6)
         self.option_type = option_type.lower()
         
         # Grid parameters (M: Price steps, N: Time steps)

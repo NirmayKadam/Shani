@@ -120,6 +120,10 @@ async def _fetch_and_publish_options_async(symbol: str):
         logger.error("Error fetching/publishing options for %s: %s", symbol, e, exc_info=True)
     finally:
         await adapter.close()
+        from shared.infrastructure.redis_client import close_redis_client
+        from shared.infrastructure.database import close_database_pool
+        await close_redis_client()
+        await close_database_pool()
 
 
 @shared_task(queue='ingestion', name='ingestion.fetch_and_publish_options')

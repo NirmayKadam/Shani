@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # ── Module-level singleton ──────────────────────────────────────
 _redis_client: Optional[aioredis.Redis] = None
 _redis_healthy: bool = False
+_redis_sync_client = None
 
 
 async def get_redis_client() -> aioredis.Redis:
@@ -78,7 +79,12 @@ def get_redis_client_sync():
     """
     Returns a sync Redis client connection.
     """
+    global _redis_sync_client
+    if _redis_sync_client is not None:
+        return _redis_sync_client
+
     from app.config import get_settings
     cfg = get_settings()
     import redis
-    return redis.Redis.from_url(cfg.RedisUrl, decode_responses=True)
+    _redis_sync_client = redis.Redis.from_url(cfg.RedisUrl, decode_responses=True)
+    return _redis_sync_client

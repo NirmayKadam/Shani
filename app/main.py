@@ -59,6 +59,15 @@ async def lifespan(application: FastAPI):
     except Exception as exc:
         logger.warning("NSE client startup failed (will lazy-init on first use): %s", exc)
 
+    # Startup: Warm CNN Volatility Predictor Model
+    try:
+        import asyncio
+        from domains.analytics.api.predictions_router_api import _get_predictor
+        await asyncio.to_thread(_get_predictor)
+        logger.info("CNN Volatility Predictor warmed during startup")
+    except Exception as exc:
+        logger.warning("CNN Volatility Predictor warmup failed: %s", exc)
+
     yield
 
     # Shutdown: close NSE httpx client

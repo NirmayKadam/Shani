@@ -446,10 +446,10 @@ async def get_ticker_parameters(symbol: str):
                     ltp = float(nearest_strike_opt.get("last_price", 0.0))
                     bid = round(ltp * 0.98, 2)
                     ask = round(ltp * 1.02, 2)
-                    iv = float(nearest_strike_opt.get("iv", 0.0)) * 100.0  # as percentage
-
-                    # If iv is 0/missing, use fallback
-                    if iv <= 0:
+                    iv = float(nearest_strike_opt.get("iv", 0.0) or 0.0)
+                    if iv > 0.0 and iv < 1.0:
+                        iv *= 100.0
+                    elif iv <= 0:
                         iv = 25.0
 
                     # Parse option chains for ALL expiries from Redis

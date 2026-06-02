@@ -17,6 +17,8 @@ Database Tables:
 import os
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 import torch
 import torch.nn as nn
@@ -89,7 +91,11 @@ class CnnPredictorService:
             if os.path.exists(alt_path): self.model_path = alt_path
             else: raise FileNotFoundError(f"Model not found at {self.model_path}")
         
-        checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=False)
+        try:
+            checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=True)
+        except Exception:
+            logger.warning("Unsafe load fallback for checkpoint: using weights_only=False")
+            checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=False)
         self.model = MultiTimeframeCNN(len(self.feature_cols)).to(self.device)
         self.model.load_state_dict(checkpoint['model'])
         self.model.eval()
@@ -163,7 +169,7 @@ class CnnPredictorService:
 
     async def predict(self, symbol: str) -> Dict[str, Any]:
         try:
-            clean_sym = SymbolValidator.get_clean_symbol(symbol)
+            clean_sym = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol)
             
             # Map canonical symbols to yfinance-specific tickers
             yf_mapping = {

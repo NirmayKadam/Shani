@@ -12,6 +12,7 @@ Database Tables:
 """
 import json
 import logging
+import asyncio
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 
@@ -50,7 +51,8 @@ async def get_derivatives(symbol: str):
     """
     symbol_upper = symbol.strip().upper()
 
-    if not SymbolValidator.validate(symbol_upper):
+    is_valid = await asyncio.to_thread(SymbolValidator.validate, symbol_upper)
+    if not is_valid:
         raise HTTPException(
             status_code=400,
             detail=_error_envelope(
@@ -62,7 +64,7 @@ async def get_derivatives(symbol: str):
             ),
         )
 
-    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+    symbol_clean = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol_upper)
     redis = await get_redis_client()
 
     # 1. Fetch raw option chain statistics

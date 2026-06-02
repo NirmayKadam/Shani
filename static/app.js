@@ -20,6 +20,11 @@ let appState = {
     atmStrike: 0.0
 };
 
+// WebSocket and inspection states
+let currentSocket = null;
+let activeSocketSymbol = null;
+let activeInspectedStrike = null;
+
 // DOM Elements
 const elements = {
     symbolSearchInput: document.getElementById("symbol-search-input"),
@@ -482,9 +487,161 @@ async function fetchTickerData(symbol) {
         
         // Recalculate and render Option Chain table grid
         recalculateAndRender();
+        
+        // Setup/Switch WebSocket for real-time updates
+        if (!currentSocket || appState.symbol !== activeSocketSymbol) {
+            setupWebSocket(appState.symbol);
+        }
     } catch (e) {
         console.error("Error fetching options parameters: ", e);
         elements.tableBody.innerHTML = `<tr><td colspan="23" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
+    }
+}
+
+/**
+ * Setup WebSocket connection for real-time updates
+ */
+function setupWebSocket(symbol) {
+    if (currentSocket) {
+        try {
+            currentSocket.close(1000, "Switching symbol");
+        } catch (e) {
+            console.error("Error closing existing socket:", e);
+        }
+        currentSocket = null;
+    }
+    
+    const loc = window.location;
+    const wsProtocol = loc.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProtocol}//${loc.host}/v1/ws/${symbol}`;
+    
+    console.log(`Connecting WebSocket for ${symbol} to: ${wsUrl}`);
+    const socket = new WebSocket(wsUrl);
+    currentSocket = socket;
+    activeSocketSymbol = symbol;
+    
+    socket.onopen = () => {
+        console.log(`WebSocket connected for symbol: ${symbol}`);
+    };
+    
+    socket.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "price") {
+                console.log(`Real-time price update received for ${symbol}:`, msg.data);
+                const priceData = msg.data;
+                if (priceData && priceData.last_price) {
+                    const newPrice = priceData.last_price;
+                    const isSpotSynced = Math.abs(appState.spot - appState.marketSpot) < 0.01 || appState.spot === 0;
+                    
+                    appState.marketSpot = newPrice;
+                    elements.underlyingPrice.textContent = formatNumber(newPrice, 2);
+                    
+                    const updateTime = priceData.last_updated ? new Date(priceData.last_updated) : new Date();
+                    elements.underlyingTime.textContent = updateTime.toLocaleDateString("en-IN", {
+                        day: "2-digit", month: "short", year: "numeric"
+                    }) + " " + updateTime.toLocaleTimeString("en-IN");
+                    
+                    const spotMin = Math.round(appState.marketSpot * 0.7 * 100) / 100;
+                    const spotMax = Math.round(appState.marketSpot * 1.3 * 100) / 100;
+                    
+                    elements.bsmSpotSlider.min = spotMin;
+                    elements.bsmSpotSlider.max = spotMax;
+                    elements.spotMinLbl.textContent = formatNumber(spotMin, 2);
+                    elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
+                    
+                    if (isSpotSynced) {
+                        appState.spot = newPrice;
+                        elements.bsmSpot.value = appState.spot;
+                        elements.bsmSpotSlider.value = appState.spot;
+                    }
+                    
+                    recalculateAndRender();
+                    updateGreeksModalIfOpen();
+                }
+            } else if (msg.type === "options") {
+                console.log(`Real-time options update received for ${symbol}`);
+                fetchTickerDataBackground(symbol);
+            }
+        } catch (err) {
+            console.error("Error parsing WebSocket message:", err);
+        }
+    };
+    
+    socket.onclose = (event) => {
+        console.log(`WebSocket closed for symbol: ${symbol}. Code: ${event.code}`);
+        if (currentSocket === socket) {
+            currentSocket = null;
+            activeSocketSymbol = null;
+            
+            if (event.code !== 1000 && appState.symbol === symbol) {
+                console.log(`Attempting reconnection in 5s...`);
+                setTimeout(() => {
+                    if (appState.symbol === symbol) {
+                        setupWebSocket(symbol);
+                    }
+                }, 5000);
+            }
+        }
+    };
+    
+    socket.onerror = (err) => {
+        console.error("WebSocket error:", err);
+    };
+}
+
+/**
+ * Silently fetch ticker data in the background and update UI
+ */
+async function fetchTickerDataBackground(symbol) {
+    try {
+        const res = await fetch(`/v1/pricer/ticker/${symbol}`);
+        if (!res.ok) throw new Error(`Background ticker query failed for ${symbol}`);
+        
+        const data = await res.json();
+        
+        if (data.symbol !== appState.symbol) return;
+        
+        // Check if user is synced with market spot price
+        const isSpotSynced = Math.abs(appState.spot - appState.marketSpot) < 0.01 || appState.spot === 0;
+        
+        appState.marketSpot = data.stock_price;
+        appState.optionChains = data.option_chains || {};
+        
+        elements.underlyingPrice.textContent = formatNumber(appState.marketSpot, 2);
+        
+        const now = new Date(data.generated_at || new Date());
+        elements.underlyingTime.textContent = now.toLocaleDateString("en-IN", {
+            day: "2-digit", month: "short", year: "numeric"
+        }) + " " + now.toLocaleTimeString("en-IN");
+        
+        const spotMin = Math.round(appState.marketSpot * 0.7 * 100) / 100;
+        const spotMax = Math.round(appState.marketSpot * 1.3 * 100) / 100;
+        
+        elements.bsmSpotSlider.min = spotMin;
+        elements.bsmSpotSlider.max = spotMax;
+        elements.spotMinLbl.textContent = formatNumber(spotMin, 2);
+        elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
+        
+        if (isSpotSynced) {
+            appState.spot = data.stock_price;
+            elements.bsmSpot.value = appState.spot;
+            elements.bsmSpotSlider.value = appState.spot;
+        }
+        
+        recalculateAndRender();
+        updateGreeksModalIfOpen();
+    } catch (e) {
+        console.error("Error in background options update:", e);
+    }
+}
+
+/**
+ * Refresh Greeks details modal if open
+ */
+function updateGreeksModalIfOpen() {
+    if (activeInspectedStrike !== null && elements.greeksModal.classList.contains("show")) {
+        openStrikeModal(activeInspectedStrike);
     }
 }
 
@@ -708,6 +865,7 @@ let isFirstLoad = true;
  * Open Greeks Details Modal loaded with specific strike's analytical parameters
  */
 window.openStrikeModal = function(strikePrice) {
+    activeInspectedStrike = strikePrice;
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
     const row = chainRows.find(r => Math.abs(r.strike_price - strikePrice) < 0.01);
     if (!row) return;
@@ -823,6 +981,7 @@ function downloadCSV() {
 // Close Greeks Modal
 elements.modalClose.onclick = function() {
     elements.greeksModal.classList.remove("show");
+    activeInspectedStrike = null;
 };
 
 // Help & Regulatory Info Modal Logic
@@ -878,6 +1037,7 @@ document.querySelectorAll(".info-tab-btn").forEach(btn => {
 window.onclick = function(event) {
     if (event.target == elements.greeksModal) {
         elements.greeksModal.classList.remove("show");
+        activeInspectedStrike = null;
     }
     const infoModalEl = elements.infoModal || document.getElementById("info-modal");
     if (event.target == infoModalEl) {

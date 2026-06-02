@@ -57,13 +57,19 @@ def poll_news(symbol: str = None):
         symbols = get_settings().get_default_symbols_as_list()
 
     async def _run_batch():
-        svc = await _create_service()
-        tasks = []
-        for sym in symbols:
-            clean_sym = SymbolValidator.get_clean_symbol(sym)
-            tasks.append(svc.ingest_news(clean_sym))
+        from shared.infrastructure.redis_client import close_redis_client
+        from shared.infrastructure.database import close_database_pool
+        try:
+            svc = await _create_service()
+            tasks = []
+            for sym in symbols:
+                clean_sym = SymbolValidator.get_clean_symbol(sym)
+                tasks.append(svc.ingest_news(clean_sym))
 
-        await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            await close_redis_client()
+            await close_database_pool()
 
     asyncio.run(_run_batch())
 
@@ -78,13 +84,19 @@ def poll_prices(symbol: str = None):
         symbols = get_settings().get_default_symbols_as_list()
 
     async def _run_batch():
-        svc = await _create_service()
-        tasks = []
-        for sym in symbols:
-            clean_sym = SymbolValidator.get_clean_symbol(sym)
-            tasks.append(svc.ingest_market_data(clean_sym))
+        from shared.infrastructure.redis_client import close_redis_client
+        from shared.infrastructure.database import close_database_pool
+        try:
+            svc = await _create_service()
+            tasks = []
+            for sym in symbols:
+                clean_sym = SymbolValidator.get_clean_symbol(sym)
+                tasks.append(svc.ingest_market_data(clean_sym))
 
-        await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            await close_redis_client()
+            await close_database_pool()
 
     asyncio.run(_run_batch())
 
@@ -99,12 +111,18 @@ def poll_options(symbol: str = None):
         symbols = get_settings().get_default_symbols_as_list()
 
     async def _run_batch():
-        svc = await _create_service()
-        tasks = []
-        for sym in symbols:
-            clean_sym = SymbolValidator.get_clean_symbol(sym)
-            tasks.append(svc.ingest_options(clean_sym))
+        from shared.infrastructure.redis_client import close_redis_client
+        from shared.infrastructure.database import close_database_pool
+        try:
+            svc = await _create_service()
+            tasks = []
+            for sym in symbols:
+                clean_sym = SymbolValidator.get_clean_symbol(sym)
+                tasks.append(svc.ingest_options(clean_sym))
 
-        await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            await close_redis_client()
+            await close_database_pool()
 
     asyncio.run(_run_batch())

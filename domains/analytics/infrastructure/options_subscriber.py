@@ -139,8 +139,11 @@ class OptionsPricingSubscriber:
 async def main():
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     redis_client = Redis.from_url(redis_url)
-    subscriber = OptionsPricingSubscriber(redis_client)
-    await subscriber.start_consuming()
+    try:
+        subscriber = OptionsPricingSubscriber(redis_client)
+        await subscriber.start_consuming()
+    finally:
+        await redis_client.aclose()
 
 
 if __name__ == "__main__":

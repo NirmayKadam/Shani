@@ -17,7 +17,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from shared.constants import RedisKeys, Streams, TTL
+from shared.constants import RedisKeys, Streams, TTL, Channels
 from domains.ingestion.application.ports.interface.outbound.i_news_source_port import INewsSourcePort
 from domains.ingestion.application.ports.interface.outbound.i_option_chain_source_port import IOptionChainSourcePort
 from domains.ingestion.application.ports.interface.outbound.i_market_price_source_port import IMarketPriceSourcePort
@@ -113,6 +113,10 @@ class IngestionService:
         await self._redis.set(cache_key, json.dumps(data, default=str), ex=TTL.MARKET_PRICE)
         logger.info("[%s] Cached market price: %.2f", symbol, data.get("last_price", 0))
 
+        # Publish to Redis Pub/Sub for live real-time clients
+        pub_channel = Channels.PRICE_UPDATED.format(symbol=symbol.upper())
+        await self._redis.publish(pub_channel, json.dumps(data, default=str))
+
     # ── Options ─────────────────────────────────────────────────
 
     async def ingest_options(self, symbol: str) -> None:
@@ -158,3 +162,7 @@ class IngestionService:
         cache_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol.upper())
         await self._redis.set(cache_key, json.dumps(data, default=str), ex=TTL.MARKET_OPTIONS)
         logger.info("[%s] Cached option chain (%d expiries)", symbol, len(data.get("expiry_dates", [])))
+
+        # Publish to Redis Pub/Sub for live real-time clients
+        pub_channel = Channels.OPTIONS_UPDATED.format(symbol=symbol.upper())
+        await self._redis.publish(pub_channel, json.dumps({"symbol": symbol.upper(), "status": "updated"}))
