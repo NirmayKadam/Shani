@@ -9,7 +9,7 @@ flower>=2.0.0
 
 # Async I/O
 aiohttp>=3.9.0
-redis>=5.0.0
+redis[hiredis]>=5.0.0
 
 # Database
 asyncpg>=0.29.0
