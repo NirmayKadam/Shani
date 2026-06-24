@@ -227,11 +227,15 @@ class CnnPredictorService:
             xw = get_seq(df_w, self.scalers['weekly'], 12).to(self.device)
             xm = get_seq(df_m, self.scalers['monthly'], 6).to(self.device)
 
-            with torch.no_grad():
-                logits = self.model(xd, xw, xm)
-                probs = torch.softmax(logits, dim=1)
-                pred_idx = torch.argmax(probs, dim=1).item()
-                conf = probs[0][pred_idx].item()
+            def _run_forward(xd_tensor, xw_tensor, xm_tensor):
+                with torch.no_grad():
+                    logits = self.model(xd_tensor, xw_tensor, xm_tensor)
+                    probs = torch.softmax(logits, dim=1)
+                    pred_idx = torch.argmax(probs, dim=1).item()
+                    conf = probs[0][pred_idx].item()
+                    return pred_idx, conf
+
+            pred_idx, conf = await asyncio.to_thread(_run_forward, xd, xw, xm)
 
             return {
                 "symbol": symbol,

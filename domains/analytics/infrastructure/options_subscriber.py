@@ -79,7 +79,10 @@ class OptionsPricingSubscriber:
 
             for stream, messages in events:
                 for message_id, payload in messages:
-                    await self.process_event(payload)
+                    try:
+                        await self.process_event(payload)
+                    except Exception as exc:
+                        logger.error("Failed to process options event %s: %s", message_id, exc, exc_info=True)
                     last_id = message_id
 
     async def process_event(self, payload: dict):
@@ -147,4 +150,9 @@ async def main():
 
 
 if __name__ == "__main__":
+    try:
+        import uvloop
+        uvloop.install()
+    except ImportError:
+        pass
     asyncio.run(main())

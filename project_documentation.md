@@ -178,8 +178,10 @@ The system uses **Redis Streams** for asynchronous cross-domain communication, a
     *   `stream:options.raw_fetched`: Raw option chain ticks.
     *   `stream:options.priced`: Volatility and PDE fair price calculations.
 3.  **Dead-Letter Queue (DLQ) Strategy**:
-    If a consumer fails to process a stream event (due to JSON syntax issues, DB connection loss, etc.) after 3 retries, the event is acknowledged in the main stream and forwarded to a specialized dead-letter queue (e.g., `stream:dlq:ingestion_to_nlp`) to prevent consumer group starvation.
-4.  **Ephemeral Pub/Sub Mirroring**:
+    If a consumer fails to process a stream event (due to JSON syntax issues, DB connection loss, etc.) after 3 retries, the event is acknowledged in the main stream and forwarded to a specialized dead-letter queue (e.g., `stream:dlq:ingestion_to_nlp` or `stream:dlq:refresh_request`) via the `stream_bus.retry_or_dead_letter(...)` interface to prevent consumer group starvation and PEL leakage.
+4.  **Consumer Loop Fault-Tolerance**:
+    The raw option pricing subscriber (`options_subscriber.py`) wraps event processing within active try-except guards. This protects the primary daemon process against crashes caused by malformed ticks or downstream database write exceptions.
+5.  **Ephemeral Pub/Sub Mirroring**:
     To feed front-end clients via WebSockets, critical processed data is mirrored to Redis Pub/Sub channels (e.g., `channel:options:updated:{SYMBOL}`). Front-end clients subscribe to these channels to receive immediate visual updates.
 
 ---
@@ -262,7 +264,7 @@ Where:
     *   RHS correction at node $1$: $\text{rhs}[0] \mathrel{+}= \alpha_1 (V_0^j + V_0^{j+1})$
 
 #### SciPy Sparse Solver Integration
-Because $\mathbf{A}$ is a static tridiagonal matrix, the engine optimizes the solution by instantiating it as a Compressed Sparse Column matrix (`scipy.sparse.csc_matrix`). The system is solved using the SuperLU direct solver wrapper (`scipy.sparse.linalg.spsolve`), and the final value is obtained via linear interpolation at the spot price $S_0$.
+Because $\mathbf{A}$ is a static, time-invariant tridiagonal matrix, the engine optimizes the solution by pre-factorizing it using the SuperLU direct solver (`scipy.sparse.linalg.splu`) outside the temporal loop. During each backward step, the pre-factorized solver resolves the system in linear $O(M)$ time using `A_solver.solve(rhs)`. This bypasses the overhead of recalculating sparse LU decompositions inside the loop (shifting execution complexity from $O(N \cdot \text{factorization})$ to a single factorization and $N$ back-solves), and the final value is obtained via linear interpolation at the spot price $S_0$.
 
 ---
 
@@ -321,6 +323,9 @@ The model processes spatial patterns and temporal sequences by feeding features 
 *   **Residual Blocks (`ResBlock1D`)**: Skip connections with Batch Normalization and GELU activation bypass deep layers to avoid vanishing gradients.
 *   **LSTM Cells**: Process sequential dependencies along each temporal path.
 *   **Dense Projection Head**: Concatenates output vectors, applies a 20% Dropout regularization layer, and projects values into a softmax layer to output probabilities for the three target classes.
+
+### Async Thread Pool Offloading
+Running deep learning models like PyTorch CNN-LSTM directly inside asynchronous coroutines can cause performance degradation because CPU-bound tensor arithmetic blocks the cooperative FastAPI event loop. To prevent this, model prediction is executed inside a background thread pool executor via `asyncio.to_thread(_run_forward, ...)` inside `CnnPredictorService.predict`. This ensures the web server remains responsive to simultaneous WebSocket and HTTP clients.
 
 ---
 
@@ -450,6 +455,9 @@ When the Docker container starts, `start.sh` executes the following initializati
     *   Executes `init_schema.sql` to generate database tables and hypertables.
 3.  **Locale Initialization**: Sets the local timezone to `Asia/Kolkata` and updates default locale files inside configuration templates.
 4.  **Process Handover**: Handover control to `supervisord` to manage the lifecycle of all services.
+
+### High-Performance Event Loops (`uvloop`)
+To maximize networking performance on Unix platforms inside the Docker container, standalone Python entry point processes (`options_subscriber` and `sentiment_orchestrator`) conditionally import and install `uvloop` upon startup. This drops overheads associated with standard `asyncio` event loops by leveraging `libuv` under the hood.
 
 ---
 

@@ -624,12 +624,14 @@ MarketSentimentAnalysis2/
 | **Redis Streams** (not Kafka) | Lightweight, sufficient durability for this scale. Consumer groups provide at-least-once delivery. |
 | **Adapter Factory** (Groww / NSE) | Pluggable market data providers via `MARKET_DATA_PROVIDER` env var. Groww adapter falls back to NSE/yfinance automatically on failure. |
 | **Persistent Event Loops** | Celery worker threads reuse a single `asyncio` event loop and connection pool, eliminating per-task loop creation overhead. |
-| **uvloop** | High-performance `asyncio` event loop (Linux only) used by both FastAPI (uvicorn) and Celery workers for reduced latency. |
+| **uvloop** | High-performance `asyncio` event loop (Linux only) used by FastAPI (uvicorn), Celery workers, and background daemons for low-latency network I/O. |
 | **Redis Dividend Caching** | Dividend yields fetched via yfinance are cached in Redis (24h TTL) to avoid redundant HTTP calls from the Groww adapter. |
 | **Client-side BSM** | Avoids round-trips for interactive pricing. Users can adjust parameters in real-time without server calls. |
 | **Deterministic Mocks** | Hash-based mock data ensures consistent, reproducible results when live data is unavailable. |
 | **NSE CSV Catalog** | Live download of all NSE equities on startup; robust local fallback ensures the app works without network access. |
-| **Dead-Letter Queues** | Failed stream events are routed to DLQ streams for debugging and replay. |
+| **Dead-Letter Queues** | Failed stream events are automatically routed to DLQ streams (`stream:dlq:ingestion_to_nlp`, `stream:dlq:refresh_request`) to prevent consumer group stalling. |
+| **CN PDE Factorization** | Crank-Nicolson numerical solver pre-factorizes the tridiagonal matrix $A$ using `splu`, reducing backward sweeps to $O(M)$ linear time. |
+| **PyTorch Thread Isolation** | Offloads blocking CPU-bound ML forward passes to background thread pools via `asyncio.to_thread` to keep the FastAPI event loop responsive. |
 
 ---
 

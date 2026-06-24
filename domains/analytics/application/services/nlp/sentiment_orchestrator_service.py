@@ -243,6 +243,7 @@ async def main():
         all_msgs = (messages or []) + (refresh_messages or [])
         for msg in all_msgs:
             group = StreamGroups.REFRESH_TO_SENTIMENT if msg.stream == Streams.ANALYSIS_REFRESH_REQUESTED else StreamGroups.INGESTION_TO_NLP
+            dlq_stream = Streams.REFRESH_REQUEST_DLQ if group == StreamGroups.REFRESH_TO_SENTIMENT else Streams.INGESTION_TO_NLP_DLQ
             try:
                 if msg.stream == Streams.HEADLINE_FETCHED:
                     await handle_headline("", msg.payload, deps)
@@ -256,7 +257,22 @@ async def main():
                 await stream_bus.ack(msg.stream, group, msg.message_id)
             except Exception as exc:
                 logger.error("Processing failed for %s: %s", msg.stream, exc)
+                try:
+                    await stream_bus.retry_or_dead_letter(
+                        stream=msg.stream,
+                        dlq_stream=dlq_stream,
+                        group=group,
+                        message=msg,
+                        error=exc,
+                    )
+                except Exception as dlq_exc:
+                    logger.error("Failed to route message %s to DLQ: %s", msg.message_id, dlq_exc)
 
 
 if __name__ == "__main__":
+    try:
+        import uvloop
+        uvloop.install()
+    except ImportError:
+        pass
     asyncio.run(main())

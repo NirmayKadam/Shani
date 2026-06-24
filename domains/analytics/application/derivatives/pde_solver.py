@@ -12,7 +12,7 @@ Database Tables: None
 import numpy as np
 
 from scipy.sparse import diags
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import spsolve, splu
 
 class CrankNicolsonPDE:
     def __init__(self, S0: float, K: float, T: float, r: float, sigma: float, option_type: str = 'call', M: int = 200, N: int = 200):
@@ -65,6 +65,9 @@ class CrankNicolsonPDE:
         A = diags([-alpha[1:], 1 - beta, -gamma[:-1]], [-1, 0, 1], format='csc')
         B = diags([alpha[1:], 1 + beta, gamma[:-1]], [-1, 0, 1], format='csc')
         
+        # Pre-factorize A for fast solving (SuperLU direct solver)
+        A_solver = splu(A)
+        
         # 4. Backward Time Loop (Solve A * V_new = B * V_old)
         for j in range(self.N - 1, -1, -1):
             # Compute RHS
@@ -87,8 +90,8 @@ class CrankNicolsonPDE:
                 v_old_bound = self.K * np.exp(-self.r * (self.T - t_old))
                 rhs[0] += alpha[0] * (v_new_bound + v_old_bound)
 
-            # Solve the system
-            grid[1:self.M] = spsolve(A, rhs)
+            # Solve the system using pre-factorized solver
+            grid[1:self.M] = A_solver.solve(rhs)
             
         # 5. Interpolate final price to match exact S0
         return float(np.interp(self.S0, S_nodes, grid))
