@@ -89,3 +89,11 @@ class RedisAdapter(ICachePort, IEventPublisherPort):
             await client.zremrangebyrank(key, start, stop)
         except Exception as exc:
             logger.error("Redis ZREMRANGEBYRANK failed for key=%s: %s", key, exc)
+
+    async def publish_pubsub(self, channel: str, message: str) -> None:
+        try:
+            client = await self._get_client()
+            await client.publish(channel, message)
+        except Exception as exc:
+            logger.error("Redis publish_pubsub failed for channel=%s: %s", channel, exc)
+

@@ -298,6 +298,7 @@ def _derive_type_and_symbol(channel: str) -> tuple[str, str]:
         "sentiment.scored.": "sentiment",
         "sentiment.aggregate_updated.": "aggregate",
         "alerts.dispatched.": "alert",
+        "ml.predicted.": "prediction",
     }
     for prefix, msg_type in prefixes.items():
         if channel.startswith(prefix):
@@ -324,6 +325,7 @@ async def _redis_global_listener(stop_event: asyncio.Event):
             Channels.SENTIMENT_SCORED.format(symbol="*"),
             Channels.AGGREGATE_UPDATED.format(symbol="*"),
             Channels.ALERT_DISPATCHED.format(symbol="*"),
+            Channels.ML_PREDICTED.format(symbol="*"),
         ]
 
         await pubsub.psubscribe(*patterns)

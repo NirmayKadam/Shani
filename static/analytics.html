@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Volatility & Derivatives Analytics - AlphaStreams</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css?v=2.1.1">
+    <style>
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        @media (max-width: 992px) {
+            .analytics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .analytics-card {
+            background-color: #ffffff;
+            border: 1px solid #dcdcdc;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            transition: all 0.3s ease;
+        }
+        .analytics-card:hover {
+            box-shadow: 0 6px 12px rgba(0,0,0,0.05);
+        }
+        .card-title {
+            color: #3c3580;
+            font-size: 16px;
+            font-weight: 700;
+            border-bottom: 2px solid #f7f9fb;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .volatility-regime-box {
+            text-align: center;
+            padding: 25px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 24px;
+            font-weight: 800;
+            transition: all 0.3s;
+        }
+        .regime-neutral {
+            background-color: #f3f4f6;
+            color: #4b5563;
+            border: 1px solid #e5e7eb;
+        }
+        .regime-crush {
+            background-color: #ecfdf5;
+            color: #059669;
+            border: 1px solid #a7f3d0;
+        }
+        .regime-expand {
+            background-color: #fff7ed;
+            color: #d97706;
+            border: 1px solid #fed7aa;
+        }
+        .confidence-label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        .progress-bar-container {
+            width: 100%;
+            height: 10px;
+            background-color: #e5e7eb;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .progress-bar {
+            height: 100%;
+            border-radius: 5px;
+            background-color: #3c3580;
+            width: 0%;
+            transition: width 0.5s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #f37021;
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            font-size: 13px;
+            transition: background-color 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #d35400;
+        }
+        .edge-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .edge-table th {
+            background-color: #f7f9fb;
+            color: #3c3580;
+            padding: 8px;
+            text-align: right;
+            border-bottom: 1px solid #dcdcdc;
+            font-weight: 600;
+        }
+        .edge-table th:first-child, .edge-table td:first-child {
+            text-align: center;
+        }
+        .edge-table td {
+            padding: 8px;
+            border-bottom: 1px solid #f3f4f6;
+            text-align: right;
+            font-family: monospace;
+        }
+        .socket-status-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+        }
+        .socket-status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #ef4444;
+            display: inline-block;
+            box-shadow: 0 0 4px #ef4444;
+        }
+        .socket-status-dot.connected {
+            background-color: #10b981;
+            box-shadow: 0 0 6px #10b981;
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .macro-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .macro-item {
+            background-color: #f9fafb;
+            border: 1px solid #f3f4f6;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+        }
+        .macro-label {
+            font-size: 10px;
+            color: #666;
+            font-weight: 600;
+        }
+        .macro-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1a237e;
+            margin-top: 2px;
+        }
+        .edge-high {
+            color: #059669;
+            font-weight: 700;
+        }
+        .edge-low {
+            color: #dc2626;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <!-- AlphaStreams Brand Header -->
+    <div class="alphastreams-brand-header">
+        <div class="nse-container">
+            <h1 style="margin: 10px 0 5px 0; font-size: 28px; font-weight: 700; color: #1a237e;">AlphaStreams</h1>
+        </div>
+    </div>
+
+    <!-- Top Brand Tab Bar -->
+    <div class="nse-top-navbar">
+        <div class="nse-container">
+            <div class="nse-tabs">
+                <a href="/index.html" class="nse-tab" style="text-decoration: none; display: inline-block;">Option Chain</a>
+                <a href="/analytics.html" class="nse-tab active" style="text-decoration: none; display: inline-block;">AI Volatility Analytics</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="nse-container main-content">
+        <!-- Header -->
+        <div class="nse-header">
+            <h1 class="nse-title">AI Volatility & Derivatives Analytics</h1>
+            <div class="socket-status-container">
+                <span id="socket-dot" class="socket-status-dot"></span>
+                <span id="socket-text">Disconnected</span>
+            </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="nse-filters-box">
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label for="symbol-search-input">Search Instrument (Indices/Stocks):</label>
+                    <div class="autocomplete-wrapper">
+                        <input type="text" id="symbol-search-input" placeholder="Type NIFTY, RELIANCE, TCS..." value="NIFTY" autocomplete="off">
+                        <div id="search-suggestions" class="suggestions-dropdown hidden"></div>
+                    </div>
+                </div>
+                <div class="filter-group">
+                    <label style="visibility: hidden;">Action</label>
+                    <button id="main-search-btn" style="padding: 7px 16px; background-color: #f37021; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 13px;">Search</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info and Actions Bar -->
+        <div class="nse-info-bar">
+            <div class="nse-underlying-info">
+                <span class="gray-text">Underlying Index:</span>
+                <span id="underlying-symbol" class="bold-text">NIFTY</span>
+                <span id="underlying-price" class="bold-text price-text">0.00</span>
+                <span class="gray-text font-mono" style="margin-left: 10px;">As on</span>
+                <span id="underlying-time" class="gray-text font-mono">Loading...</span>
+                <button id="reload-btn" class="nse-reload-icon" title="Reload Parameters">
+                    <svg viewBox="0 0 24 24" width="14" height="14">
+                        <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Analytics Body -->
+        <div class="analytics-grid">
+            <!-- Left Side: CNN Volatility Forecast -->
+            <div class="analytics-card">
+                <div class="card-title">
+                    <span>CNN-LSTM Volatility Forecast</span>
+                </div>
+                <div id="vol-regime-box" class="volatility-regime-box regime-neutral">
+                    NEUTRAL
+                </div>
+                
+                <div class="confidence-label">
+                    <span>Confidence Level</span>
+                    <span id="confidence-pct">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="confidence-progress" class="progress-bar"></div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <button id="recompute-vol-btn" class="btn-primary">Recompute Volatility</button>
+                </div>
+
+                <div class="card-title" style="margin-top: 25px;">
+                    <span>Model Input Features (Macro)</span>
+                </div>
+                <div class="macro-grid">
+                    <div class="macro-item">
+                        <div class="macro-label">VIX MOMENTUM</div>
+                        <div id="macro-vix" class="macro-value">0.00</div>
+                    </div>
+                    <div class="macro-item">
+                        <div class="macro-label">TNX MOMENTUM</div>
+                        <div id="macro-tnx" class="macro-value">0.00</div>
+                    </div>
+                    <div class="macro-item">
+                        <div class="macro-label">DXY RETURN (5D)</div>
+                        <div id="macro-dxy" class="macro-value">0.00</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Derivatives Pricing Edge comparison -->
+            <div class="analytics-card">
+                <div class="card-title">
+                    <span>Crank-Nicolson PDE Solver Pricing Edge</span>
+                </div>
+                <div style="overflow-x: auto; max-height: 400px;">
+                    <table class="edge-table">
+                        <thead>
+                            <tr>
+                                <th style="text-align: center;">Strike</th>
+                                <th>Live CE LTP</th>
+                                <th>BSM Fair Call</th>
+                                <th>CN PDE Fair Call</th>
+                                <th>CN PDE Edge (CE)</th>
+                                <th>CN PDE Edge (PE)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="edge-tbody">
+                            <tr>
+                                <td colspan="6" style="text-align: center; padding: 30px; color: #666;">
+                                    Select an instrument or load details...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/analytics.js?v=1.0.0"></script>
+</body>
+</html>

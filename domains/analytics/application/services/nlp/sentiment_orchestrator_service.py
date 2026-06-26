@@ -41,7 +41,7 @@ from domains.analytics.infrastructure.adapters.outbound.timescale_adapter import
 from domains.analytics.infrastructure.adapters.outbound.redis_adapter import RedisAdapter
 from domains.analytics.application.services.nlp.timeframes_service import TimeframeComputerService
 from shared.infrastructure.event_bus.contracts import PriceTriggerEvent
-from shared.constants import RedisKeys, TTL, Streams, StreamGroups
+from shared.constants import RedisKeys, TTL, Streams, StreamGroups, Channels
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +160,12 @@ async def _recompute_all(symbol: str, deps: SubscriberDependencies) -> None:
     
     # Cache prediction for API
     pred_key = RedisKeys.ML_PREDICTION.format(symbol=symbol)
-    await deps.cache.set(pred_key, json.dumps(prediction), TTL.ML_PREDICTION)
+    pred_json = json.dumps(prediction)
+    await deps.cache.set(pred_key, pred_json, TTL.ML_PREDICTION)
+    
+    # Publish to Pub/Sub for WebSockets
+    await deps.cache.publish_pubsub(Channels.ML_PREDICTED.format(symbol=symbol), pred_json)
+
 
     # 3. Signal Fusion
     composite_signal = deps.composer.compose_signal(symbol, tf_data, prediction)

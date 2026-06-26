@@ -37,6 +37,8 @@ class Channels:
     
     # Analytics domain/Alert publishes:
     ALERT_DISPATCHED      = "alerts.dispatched.{symbol}"
+    ML_PREDICTED          = "ml.predicted.{symbol}"
+
 
 
 # ── Redis Streams (Durable Topics) ────────────────────────────

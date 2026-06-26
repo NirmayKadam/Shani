@@ -1,12 +1,24 @@
 """
-File Overview: Celery tasks for processing derivatives market data and options chains (Skeleton).
-
-All Functions/Classes:
-- ProcessTickBatchTask: Future placeholder for tick aggregation. Take raw ticks and send summarized aggregates to PDE solver.
-
-Endpoints/APIs: None
-
-Database Tables: None
+File Overview: Celery tasks for processing derivatives market data and options chains.
 """
-# TODO: implement Celery Tasks ProcessTickBatchTask
+import logging
+from celery import shared_task
+import asyncio
 
+logger = logging.getLogger(__name__)
+
+@shared_task(name="domains.analytics.application.tasks.derivatives_tasks.process_tick_batch")
+def process_tick_batch(symbol: str) -> bool:
+    """
+    Celery task to run Crank-Nicolson/BSM options pricing for a symbol.
+    """
+    logger.info("[%s] Celery task process_tick_batch started", symbol)
+    try:
+        from domains.analytics.application.services.derivatives.derivatives_orchestrator_service import DerivativesOrchestratorService
+        orchestrator = DerivativesOrchestratorService()
+        success = asyncio.run(orchestrator.price_options_chain(symbol))
+        logger.info("[%s] Celery task process_tick_batch finished with success=%s", symbol, success)
+        return success
+    except Exception as exc:
+        logger.error("[%s] Celery task process_tick_batch failed: %s", symbol, exc)
+        return False

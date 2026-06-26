@@ -30,3 +30,7 @@ class ICachePort(ABC):
     @abstractmethod
     async def zremrangebyrank(self, key: str, start: int, stop: int) -> None:
         pass
+    @abstractmethod
+    async def publish_pubsub(self, channel: str, message: str) -> None:
+        pass
+
