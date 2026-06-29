@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone
 import pandas as pd
 
-from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import (
+from domains.ingestion.infrastructure.outbound.nse_api_adapter import (
     NseApiAdapter,
     _to_yfinance_symbol,
 )
@@ -141,7 +141,7 @@ class TestParseOptionChain:
 class TestFetchPriceSync:
     """Tests for NseApiAdapter._fetch_price_sync() with mocked yfinance."""
 
-    @patch("domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter.yf")
+    @patch("domains.ingestion.infrastructure.outbound.nse_api_adapter.yf")
     def test_successful_fetch(self, mock_yf):
         mock_hist = pd.DataFrame({
             "close": [24400.0, 24500.0],
@@ -169,7 +169,7 @@ class TestFetchPriceSync:
         assert result["dividend_yield"] == 0.015
         assert abs(result["change_percent"] - 0.41) < 0.01
 
-    @patch("domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter.yf")
+    @patch("domains.ingestion.infrastructure.outbound.nse_api_adapter.yf")
     def test_empty_history_returns_none(self, mock_yf):
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = pd.DataFrame()
@@ -178,7 +178,7 @@ class TestFetchPriceSync:
         result = NseApiAdapter._fetch_price_sync("INVALID")
         assert result is None
 
-    @patch("domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter.yf")
+    @patch("domains.ingestion.infrastructure.outbound.nse_api_adapter.yf")
     def test_exception_returns_none(self, mock_yf):
         mock_yf.Ticker.side_effect = Exception("Network error")
 

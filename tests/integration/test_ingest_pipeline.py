@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import patch, MagicMock
-from domains.ingestion.application.tasks.ingestion_tasks import _get_or_create_service
+from domains.ingestion.tasks.ingestion_tasks import _get_or_create_service
 from domains.ingestion.application.dto.raw_article_dto import RawArticleDTO
 from datetime import datetime, timezone
 
@@ -31,7 +31,7 @@ async def test_news_ingestion_pipeline():
         )
     ]
 
-    with patch("domains.ingestion.infrastructure.adapters.outbound.news_api_adapter.NewsApiAdapter.fetch_articles", return_value=mock_articles):
+    with patch("domains.ingestion.infrastructure.outbound.news_api_adapter.NewsApiAdapter.fetch_articles", return_value=mock_articles):
         print("\n[+] Triggering news ingestion pipeline...")
         for symbol in symbols:
             try:

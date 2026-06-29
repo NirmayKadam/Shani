@@ -18,11 +18,11 @@ import logging
 from datetime import datetime, timezone
 
 from shared.constants import RedisKeys, Streams, TTL, Channels
-from domains.ingestion.application.ports.interface.outbound.i_news_source_port import INewsSourcePort
-from domains.ingestion.application.ports.interface.outbound.i_option_chain_source_port import IOptionChainSourcePort
-from domains.ingestion.application.ports.interface.outbound.i_market_price_source_port import IMarketPriceSourcePort
-from domains.ingestion.application.ports.interface.outbound.i_event_publisher_port import IEventPublisherPort
-from domains.ingestion.application.ports.interface.outbound.i_dedup_store_port import IDedupStorePort
+from domains.ingestion.ports.interface.outbound.i_news_source_port import INewsSourcePort
+from domains.ingestion.ports.interface.outbound.i_option_chain_source_port import IOptionChainSourcePort
+from domains.ingestion.ports.interface.outbound.i_market_price_source_port import IMarketPriceSourcePort
+from domains.ingestion.ports.interface.outbound.i_event_publisher_port import IEventPublisherPort
+from domains.ingestion.ports.interface.outbound.i_dedup_store_port import IDedupStorePort
 
 logger = logging.getLogger(__name__)
 

@@ -44,7 +44,8 @@ nlp_logs.txt
 
 # Downloaded ML Models (HuggingFace)
 model_cache/
-models/
+artifacts/models--*
+artifacts/.locks/
 
 # Persistence and State
 dump.rdb

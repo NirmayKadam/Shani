@@ -1,5 +1,5 @@
 import pytest
-from domains.analytics.application.derivatives.black_scholes import BlackScholesMerton
+from domains.analytics.application.services.derivatives.black_scholes import BlackScholesMerton
 
 
 @pytest.mark.unit

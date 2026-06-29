@@ -20,8 +20,8 @@ import os
 from datetime import datetime, timezone
 
 from redis.asyncio import Redis
-from domains.analytics.application.derivatives.pde_solver import CrankNicolsonPDE
-from domains.analytics.application.derivatives.black_scholes import BlackScholesMerton
+from domains.analytics.application.services.derivatives.pde_solver import CrankNicolsonPDE
+from domains.analytics.application.services.derivatives.black_scholes import BlackScholesMerton
 from shared.constants import RedisKeys, TTL, Streams, Channels
 
 logger = logging.getLogger("options_pricing_subscriber")

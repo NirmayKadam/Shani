@@ -39,7 +39,7 @@ _EPOCHS = 100
 _LEARNING_RATE = 1e-3
 _EARLY_STOPPING_PATIENCE = 10  # Stop if val accuracy doesn't improve for 10 epochs
 
-_MODEL_DIR = "/app/models"
+_MODEL_DIR = "/app/artifacts"
 _MODEL_PATH = os.path.join(_MODEL_DIR, "CNN1DPredictor.pt")
 os.makedirs(_MODEL_DIR, exist_ok=True)
 

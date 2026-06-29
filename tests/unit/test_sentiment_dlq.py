@@ -13,28 +13,20 @@ from shared.infrastructure.event_bus.streams import StreamMessage
 
 
 @pytest.mark.unit
-@patch("domains.analytics.application.services.nlp.sentiment_orchestrator_service.RedisAdapter")
-@patch("domains.analytics.application.services.nlp.sentiment_orchestrator_service.FinBertScorerService")
-@patch("domains.analytics.application.services.nlp.sentiment_orchestrator_service.TimeframeComputerService")
-@patch("domains.analytics.application.services.nlp.sentiment_orchestrator_service.DailyPredictorService")
-@patch("domains.analytics.application.services.nlp.sentiment_orchestrator_service.SignalComposerService")
-@patch("domains.analytics.application.services.nlp.sentiment_orchestrator_service.TimescaleAdapter")
+@patch("app.bootstrap.Bootstrap.get_sentiment_subscriber_deps")
 @patch("domains.analytics.application.services.nlp.sentiment_orchestrator_service.handle_headline")
 async def test_sentiment_orchestrator_dlq_routing(
     mock_handle_headline,
-    mock_timescale,
-    mock_composer,
-    mock_predictor,
-    mock_timeframe,
-    mock_scorer,
-    mock_redis_adapter
+    mock_get_deps
 ):
-    # Setup mocks
+    # Setup mock dependencies
     mock_redis = AsyncMock()
-    mock_redis_adapter.return_value = mock_redis
-    
     mock_stream_bus = AsyncMock()
     mock_redis._get_stream_bus.return_value = mock_stream_bus
+
+    mock_deps = MagicMock()
+    mock_deps.publisher = mock_redis
+    mock_get_deps.return_value = mock_deps
 
     # Mock handle_headline to throw exception (simulating processing failure)
     mock_handle_headline.side_effect = Exception("Test processing error")
@@ -47,8 +39,7 @@ async def test_sentiment_orchestrator_dlq_routing(
         retry_count=0
     )
     
-    # We want main() to execute the loop once and then exit/break or raise an exception to exit
-    # We can make read_group return dummy_message on first call, then raise Exception or return None and raise KeyboardInterrupt
+    # We want main() to execute the loop once and then exit/break
     mock_stream_bus.read_group.side_effect = [
         [dummy_message],  # first call for INGESTION_TO_NLP
         [],               # first call for REFRESH_TO_SENTIMENT

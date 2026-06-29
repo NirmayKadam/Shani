@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime
 import pytz
 
-from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import _get_market_status
+from domains.ingestion.infrastructure.outbound.nse_api_adapter import _get_market_status
 from shared.constants import MarketStatus
 
 IST = pytz.timezone("Asia/Kolkata")

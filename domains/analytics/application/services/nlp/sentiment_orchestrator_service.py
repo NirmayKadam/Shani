@@ -30,15 +30,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.config import get_settings
-from domains.analytics.application.ports.interface.outbound.i_sentiment_store_port import ISentimentStorePort
-from domains.analytics.application.ports.interface.outbound.i_event_publisher_port import IEventPublisherPort
-from domains.analytics.application.ports.interface.outbound.i_cache_port import ICachePort
+from domains.analytics.ports.interface.outbound.i_sentiment_store_port import ISentimentStorePort
+from domains.analytics.ports.interface.outbound.i_event_publisher_port import IEventPublisherPort
+from domains.analytics.ports.interface.outbound.i_cache_port import ICachePort
 from domains.analytics.application.services.nlp.fin_bert_scorer_service import FinBertScorerService
 from domains.analytics.application.services.ml_forecasting.daily_predictor_service import DailyPredictorService
 from domains.analytics.application.services.nlp.signal_composer_service import SignalComposerService
-from domains.analytics.domain.entities.sentiment_score_entity import SentimentScoreEntity
-from domains.analytics.infrastructure.adapters.outbound.timescale_adapter import TimescaleAdapter
-from domains.analytics.infrastructure.adapters.outbound.redis_adapter import RedisAdapter
+from domains.analytics.domain.entities import SentimentScoreEntity
+from domains.analytics.infrastructure.outbound.timescale_adapter import TimescaleAdapter
+from domains.analytics.infrastructure.outbound.redis_adapter import RedisAdapter
 from domains.analytics.application.services.nlp.timeframes_service import TimeframeComputerService
 from shared.infrastructure.event_bus.contracts import PriceTriggerEvent
 from shared.constants import RedisKeys, TTL, Streams, StreamGroups, Channels
@@ -210,19 +210,10 @@ async def recompute_and_publish_aggregates(symbol: str, deps: SubscriberDependen
 
 async def main():
     logger.info("Starting Sentiment Event Subscriber...")
-    redis_adapter = RedisAdapter()
-    
-    deps = SubscriberDependencies(
-        scorer=FinBertScorerService(),
-        timeframe_computer=TimeframeComputerService(),
-        predictor=DailyPredictorService(),
-        composer=SignalComposerService(),
-        cache=redis_adapter,
-        store=TimescaleAdapter(),
-        publisher=redis_adapter
-    )
+    from app.bootstrap import Bootstrap
+    deps = await Bootstrap.get_sentiment_subscriber_deps()
 
-    stream_bus = await redis_adapter._get_stream_bus()
+    stream_bus = await deps.publisher._get_stream_bus()
     await stream_bus.ensure_group(Streams.HEADLINE_FETCHED, StreamGroups.INGESTION_TO_NLP)
     await stream_bus.ensure_group(Streams.PRICE_TRIGGER, StreamGroups.INGESTION_TO_NLP)
     

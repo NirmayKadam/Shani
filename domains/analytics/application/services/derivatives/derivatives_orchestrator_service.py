@@ -7,8 +7,8 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
-from domains.analytics.application.derivatives.pde_solver import CrankNicolsonPDE
-from domains.analytics.application.derivatives.black_scholes import BlackScholesMerton
+from domains.analytics.application.services.derivatives.pde_solver import CrankNicolsonPDE
+from domains.analytics.application.services.derivatives.black_scholes import BlackScholesMerton
 from shared.constants import RedisKeys, TTL, Streams, Channels
 from shared.infrastructure.redis_client import get_redis_client
 

@@ -288,7 +288,7 @@ async def get_ticker_parameters(symbol: str):
 
     if not raw_cached:
         # Try live fetch
-        from domains.ingestion.infrastructure.adapters.outbound.adapter_factory import get_market_data_adapter
+        from domains.ingestion.infrastructure.outbound.adapter_factory import get_market_data_adapter
         adapter = get_market_data_adapter()
 
         dtos = []

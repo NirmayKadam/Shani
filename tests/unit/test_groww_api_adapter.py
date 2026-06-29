@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone
 
-from domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter import GrowwApiAdapter
+from domains.ingestion.infrastructure.outbound.groww_api_adapter import GrowwApiAdapter
 from domains.ingestion.application.dto.raw_tick_dto import RawTickDTO
 
 
@@ -14,8 +14,8 @@ from domains.ingestion.application.dto.raw_tick_dto import RawTickDTO
 class TestGrowwApiAdapterToken:
     """Tests for token generation in GrowwApiAdapter."""
 
-    @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GROWW_SDK_AVAILABLE", True)
-    @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GrowwAPI", create=True)
+    @patch("domains.ingestion.infrastructure.outbound.groww_api_adapter.GROWW_SDK_AVAILABLE", True)
+    @patch("domains.ingestion.infrastructure.outbound.groww_api_adapter.GrowwAPI", create=True)
     @pytest.mark.asyncio
     async def test_dynamic_token_retrieval(self, mock_sdk):
         mock_sdk.get_access_token.return_value = "mock_generated_token"
@@ -45,7 +45,7 @@ class TestGrowwApiAdapterFetchPrice:
     """Tests for fetch_price in GrowwApiAdapter."""
 
     @pytest.mark.asyncio
-    @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
+    @patch("domains.ingestion.infrastructure.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
     async def test_fetch_price_success(self, mock_get_token):
         mock_get_token.return_value = "valid_token"
 
@@ -86,7 +86,7 @@ class TestGrowwApiAdapterFetchPrice:
             await adapter.close()
 
     @pytest.mark.asyncio
-    @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
+    @patch("domains.ingestion.infrastructure.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
     async def test_fetch_price_fallback(self, mock_get_token):
         mock_get_token.return_value = None  # No token -> fallback
 
@@ -108,7 +108,7 @@ class TestGrowwApiAdapterFetchOptionChain:
     """Tests for fetch_option_chain in GrowwApiAdapter."""
 
     @pytest.mark.asyncio
-    @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
+    @patch("domains.ingestion.infrastructure.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
     async def test_fetch_option_chain_success(self, mock_get_token):
         mock_get_token.return_value = "valid_token"
 
@@ -173,7 +173,7 @@ class TestGrowwApiAdapterFetchOptionChain:
             await adapter.close()
 
     @pytest.mark.asyncio
-    @patch("domains.ingestion.infrastructure.adapters.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
+    @patch("domains.ingestion.infrastructure.outbound.groww_api_adapter.GrowwApiAdapter._get_token")
     async def test_fetch_option_chain_fallback(self, mock_get_token):
         mock_get_token.return_value = None  # No token -> fallback
 

@@ -2,7 +2,7 @@ import pytest
 import json
 from unittest.mock import patch, MagicMock, AsyncMock
 from domains.analytics.application.services.derivatives.derivatives_orchestrator_service import DerivativesOrchestratorService
-from domains.analytics.application.tasks.derivatives_tasks import process_tick_batch
+from domains.analytics.tasks.derivatives_tasks import process_tick_batch
 
 @pytest.mark.unit
 class TestDerivativesOrchestratorService:

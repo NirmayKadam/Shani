@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 import redis.asyncio as aioredis
 
-from domains.ingestion.application.tasks.market_tasks import _fetch_and_publish_options_async
+from domains.ingestion.tasks.market_tasks import _fetch_and_publish_options_async
 from domains.analytics.infrastructure.options_subscriber import OptionsPricingSubscriber
 from shared.constants import RedisKeys, Streams
 
@@ -62,8 +62,8 @@ async def test_derivatives_pipeline_e2e():
     ]
 
     with patch("shared.infrastructure.database.get_database_pool", return_value=mock_pool), \
-         patch("domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter.NseApiAdapter.fetch_option_chain", return_value=mock_ticks), \
-         patch("domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter.NseApiAdapter.fetch_price", return_value={"dividend_yield": 0.012}):
+         patch("domains.ingestion.infrastructure.outbound.nse_api_adapter.NseApiAdapter.fetch_option_chain", return_value=mock_ticks), \
+         patch("domains.ingestion.infrastructure.outbound.nse_api_adapter.NseApiAdapter.fetch_price", return_value={"dividend_yield": 0.012}):
 
         print("\n[1/3] Triggering option ingestion & DB persistence...")
         for sym in symbols:

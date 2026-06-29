@@ -22,7 +22,7 @@ from domains.analytics.application.services.nlp.model import QuantCNN1D
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = "/app/models/CNN1DPredictor.pt"
+MODEL_PATH = "/app/artifacts/CNN1DPredictor.pt"
 SEQ_LEN = 21
 
 class InferenceEngine:
@@ -102,7 +102,7 @@ class InferenceEngine:
             return None
             
         try:
-            from domains.ingestion.infrastructure.adapters.outbound.nse_api_adapter import _to_yfinance_symbol
+            from domains.ingestion.infrastructure.outbound.nse_api_adapter import _to_yfinance_symbol
 
             # Map Indian Indices correctly for yfinance historical pulls
             yh_symbol = _to_yfinance_symbol(symbol)

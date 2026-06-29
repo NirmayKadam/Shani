@@ -71,7 +71,7 @@ class MultiTimeframeCNN(nn.Module):
     def forward(self, xd, xw, xm): return self.head(torch.cat([self.d(xd), self.w(xw), self.m(xm)], 1))
 
 class CnnPredictorService:
-    def __init__(self, model_path: str = "models/MTF_CNN_LSTM_VOL.pt"):
+    def __init__(self, model_path: str = "artifacts/MTF_CNN_LSTM_VOL.pt"):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = model_path
         self.feature_cols = [

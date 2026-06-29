@@ -25,6 +25,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from shared.logging import setup_logging
+setup_logging()
+
 # Domain routers
 from domains.analytics.api.signals_router_api import router as signals_router
 from domains.analytics.api.events_router_api import router as events_router
@@ -85,6 +88,20 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(title="AlphaStreams DDD Engine", lifespan=lifespan)
 
+from shared.middleware import (
+    RequestIDMiddleware,
+    TimingMiddleware,
+    MetricsMiddleware,
+    APIKeyAuthMiddleware,
+)
+from shared.logging import StructuredLoggingMiddleware
+
+app.add_middleware(APIKeyAuthMiddleware)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(TimingMiddleware)
+app.add_middleware(StructuredLoggingMiddleware)
+app.add_middleware(RequestIDMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -108,4 +125,4 @@ def health():
     return {"status": "ok"}
 
 
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

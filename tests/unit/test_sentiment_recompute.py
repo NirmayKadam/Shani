@@ -12,7 +12,7 @@ from domains.analytics.application.services.nlp.sentiment_orchestrator_service i
     recompute_and_publish_aggregates,
     SubscriberDependencies,
 )
-from domains.analytics.domain.entities.sentiment_score_entity import SentimentScoreEntity
+from domains.analytics.domain.entities import SentimentScoreEntity
 
 
 def _make_mock_deps(scores=None):
