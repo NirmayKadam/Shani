@@ -1143,8 +1143,39 @@ elements.resetMarketBtn.addEventListener("click", () => {
     recalculateAndRender();
 });
 
+function startHeaderClock() {
+    const clockTime = document.getElementById("clock-time");
+    const clockDate = document.getElementById("clock-date");
+    if (!clockTime || !clockDate) return;
+
+    function update() {
+        const now = new Date();
+        
+        let hours = now.getHours();
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12; // the hour '0' should be '12'
+        const hoursStr = String(hours).padStart(2, '0');
+        
+        clockTime.textContent = `${hoursStr}:${minutes}:${seconds} ${ampm}`;
+        
+        const day = String(now.getDate()).padStart(2, '0');
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const monthStr = months[now.getMonth()];
+        const year = now.getFullYear();
+        
+        clockDate.textContent = `${day} ${monthStr} ${year}`;
+    }
+    
+    update();
+    setInterval(update, 1000);
+}
+
 // App Entry Point
 async function initApp() {
+    startHeaderClock();
     setupAutocomplete();
     await fetchTickerData("NIFTY");
 }

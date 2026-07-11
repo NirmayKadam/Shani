@@ -342,7 +342,7 @@ async def get_ticker_parameters(symbol: str):
                     p_data = {
                         "symbol": symbol_clean,
                         "last_price": spot_price,
-                        "last_updated": datetime.now(timezone.utc).date().isoformat()
+                        "last_updated": datetime.now(timezone.utc).isoformat()
                     }
                     await redis.set(price_key, json.dumps(p_data, default=str), ex=600)
                 except Exception as cache_exc:
@@ -368,7 +368,7 @@ async def get_ticker_parameters(symbol: str):
                     p_data = {
                         "symbol": symbol_clean,
                         "last_price": spot_price,
-                        "last_updated": datetime.now(timezone.utc).date().isoformat()
+                        "last_updated": datetime.now(timezone.utc).isoformat()
                     }
                     await redis.set(price_key, json.dumps(p_data, default=str), ex=600)
                 except Exception as cache_exc:

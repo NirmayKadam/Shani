@@ -164,7 +164,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                             "change_percent": round(float(change_percent), 2),
                             "currency": "INR",
                             "dividend_yield": float(dividend_yield),
-                            "last_updated": datetime.now(timezone.utc).date().isoformat(),
+                            "last_updated": datetime.now(timezone.utc).isoformat(),
                         }
                     else:
                         logger.warning("[%s] Groww API returned status: %s. Falling back to yfinance.", symbol, data.get("status"))

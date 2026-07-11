@@ -198,7 +198,7 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 "change_percent": change_pct,
                 "currency": ticker.info.get("currency", "INR"),
                 "dividend_yield": float(div_yield),
-                "last_updated": str(hist.index[-1].date()),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as exc:
             logger.error("[%s] _fetch_price_sync error: %s", yf_symbol, exc)
