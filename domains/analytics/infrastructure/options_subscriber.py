@@ -136,7 +136,7 @@ class OptionsPricingSubscriber:
 
         # Publish Ephemeral Event (Live UX update)
         await self.redis.publish(self.pubsub_channel.format(symbol=symbol), event_data)
-        logger.info("Priced %d strikes for %s. Surface published.", len(priced_chain), symbol)
+        logger.debug("Priced %d strikes for %s. Surface published.", len(priced_chain), symbol)
 
 
 async def main():

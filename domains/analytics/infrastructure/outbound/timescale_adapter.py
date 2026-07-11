@@ -1,18 +1,15 @@
 """
 File Overview: Outbound adapter for TimescaleDB/Postgres persistence.
-Implements i_sentiment_store and i_event_store port interfaces.
+Implements i_event_store port interface.
 
 All Functions/Classes:
-- timescale_adapter: Unified store for sentiment scores and domain events.
-- save_score: Persist sentiment score to TimescaleDB. Data: sentiment_score -> SQL INSERT.
-- get_last_n: Query latest scores. Data: symbol/count -> list of sentiment_score entities.
+- timescale_adapter: Unified store for domain events.
 - save_event: Persist domain event. Data: base_domain_event -> SQL INSERT.
 - get_events: Retrieve recent events. Data: symbol/limit -> list of base_domain_event.
 
 Endpoints/APIs: None
 
 Database Tables:
-- sentiment_scores (TimescaleDB hypertable)
 - domain_events (event log)
 """
 import json
@@ -20,16 +17,14 @@ import logging
 import asyncio
 from typing import List, Optional
 
-from domains.analytics.ports.interface.outbound.i_sentiment_store_port import ISentimentStorePort
 from domains.analytics.ports.interface.outbound.i_event_store_port import IEventStorePort
 from shared.domain.base_domain_event import BaseDomainEvent
-from domains.analytics.domain.entities import SentimentScoreEntity
 
 logger = logging.getLogger(__name__)
 
 
-class TimescaleAdapter(ISentimentStorePort, IEventStorePort):
-    """Concrete TimescaleDB adapter implementing sentiment and event store ports."""
+class TimescaleAdapter(IEventStorePort):
+    """Concrete TimescaleDB adapter implementing event store port."""
 
     def __init__(self, url: str = None):
         self._url = url
@@ -41,49 +36,6 @@ class TimescaleAdapter(ISentimentStorePort, IEventStorePort):
         from shared.infrastructure.database import GetDatabasePool
         self._pool = await GetDatabasePool()
         return self._pool
-
-    async def save_score(self, score: SentimentScoreEntity) -> None:
-        """Persist a sentiment score."""
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """INSERT INTO SentimentScores (Symbol, SentimentLabel, sentiment_score, Confidence, SourceType, CreatedAt)
-                       VALUES ($1, $2, $3, $4, $5, NOW())
-                       ON CONFLICT DO NOTHING""",
-                    score.symbol,
-                    score.label,
-                    score.score,
-                    score.confidence,
-                    "NEWS",  # Default source type for news-based sentiment
-                )
-        except Exception as exc:
-            logger.error("Failed to save sentiment score for %s: %s", score.symbol, exc)
-
-    async def get_last_n(self, symbol: str, n: int) -> List[SentimentScoreEntity]:
-        """Retrieve the last N sentiment scores for a symbol."""
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT Symbol as symbol, SentimentLabel as label, sentiment_score as score, Confidence as confidence
-                       FROM SentimentScores
-                       WHERE Symbol = $1
-                       ORDER BY CreatedAt DESC LIMIT $2""",
-                    symbol, n,
-                )
-                return [
-                    SentimentScoreEntity(
-                        symbol=r["symbol"],
-                        label=r["label"],
-                        score=float(r["score"] or 0.0),
-                        confidence=float(r["confidence"] or 0.0),
-                    )
-                    for r in rows
-                ]
-        except Exception as exc:
-            logger.error("Failed to query sentiment scores for %s: %s", symbol, exc)
-            return []
 
     async def save_event(self, event: BaseDomainEvent) -> None:
         """Persist a domain event to the event log."""

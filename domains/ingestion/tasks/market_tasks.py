@@ -109,7 +109,7 @@ async def _fetch_and_publish_options_async(symbol: str):
             "symbol": symbol,
             "data": json.dumps(payload)
         })
-        logger.info("Published raw options for %s: %d ticks saved to DB, %d strikes to stream.",
+        logger.debug("Published raw options for %s: %d ticks saved to DB, %d strikes to stream.",
                      symbol, len(db_records), len(strikes_payload))
 
     except Exception as e:

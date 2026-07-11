@@ -23,21 +23,6 @@ END $$;
 -- Retention Policy (7 days)
 SELECT add_retention_policy('tickdata', INTERVAL '7 days', if_not_exists => true);
 
--- Processed sentiment scores
-CREATE TABLE IF NOT EXISTS SentimentScores (
-    ScoreId         UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
-    Symbol          VARCHAR(20)     NOT NULL,
-    SentimentLabel  VARCHAR(10)     NOT NULL,  -- BULLISH | BEARISH | NEUTRAL
-    sentiment_score DOUBLE PRECISION NOT NULL,
-    Confidence      DECIMAL(5,4)    NOT NULL,
-    SourceType      VARCHAR(10)     NOT NULL,  -- NEWS | REDDIT | TELEGRAM
-    SourceUrl       TEXT,
-    Headline        TEXT,
-    ModelVersion    VARCHAR(50),
-    CreatedAt       TIMESTAMPTZ     DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_sentiment_symbol_time ON SentimentScores (Symbol, CreatedAt DESC);
-
 -- Detected events
 CREATE TABLE IF NOT EXISTS DetectedEvents (
     EventId         UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -74,4 +59,3 @@ CREATE TABLE IF NOT EXISTS DomainEvents (
 
 CREATE INDEX IF NOT EXISTS idx_domain_events_occurred_at ON DomainEvents (OccurredAt DESC);
 CREATE INDEX IF NOT EXISTS idx_domain_events_payload_symbol ON DomainEvents ((Payload->>'symbol'));
-

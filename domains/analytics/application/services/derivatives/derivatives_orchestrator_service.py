@@ -50,7 +50,7 @@ class DerivativesOrchestratorService:
         Loads the raw option chain, calculates fair prices under CN and BSM models, caches the result, and publishes to Pub/Sub.
         """
         symbol_upper = symbol.strip().upper()
-        logger.info("[%s] Pricing options chain...", symbol_upper)
+        logger.debug("[%s] Pricing options chain...", symbol_upper)
         
         try:
             redis = await get_redis_client()
@@ -134,7 +134,7 @@ class DerivativesOrchestratorService:
 
             # Publish to Pub/Sub (Live UI)
             await redis.publish(Channels.OPTIONS_UPDATED.format(symbol=symbol_upper), event_data)
-            logger.info("[%s] Option pricing complete. Priced %d strikes.", symbol_upper, len(priced_chain))
+            logger.debug("[%s] Option pricing complete. Priced %d strikes.", symbol_upper, len(priced_chain))
             return True
             
         except Exception as exc:

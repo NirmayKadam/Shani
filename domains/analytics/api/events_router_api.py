@@ -1,5 +1,5 @@
 """
-File Overview: Real-time WebSocket aggregator for pushing market data, headlines, and sentiment updates to clients via shared Redis Pub/Sub subscription.
+File Overview: Real-time WebSocket aggregator for pushing market data to clients via shared Redis Pub/Sub subscription.
 
 All Functions/Classes:
 - ConnectionManager: Orchestrates active WebSocket connections and task lifecycle. Take data from Redis Pub/Sub and send to WebSocket clients.
@@ -21,11 +21,6 @@ Endpoints/APIs:
 Database Tables:
 - Redis (Pub/Sub).
 """
-# domains/analytics/api/events_router.py — WebSocket /ws/{symbol} for real-time push
-
-#
-# When a client connects, subscribes to all relevant Redis Pub/Sub channels
-# for that symbol and forwards events as JSON messages in real-time.
 
 import json
 import asyncio
@@ -248,9 +243,7 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
     Real-time WebSocket endpoint for a symbol.
 
     Subscribes to Redis Pub/Sub channels and pushes events:
-        - {"type": "headline", "data": {...}}
         - {"type": "price", "data": {...}}
-        - {"type": "sentiment", "data": {...}}
         - {"type": "options", "data": {...}}
         - {"type": "trigger", "data": {...}}
         - {"type": "alert", "data": {...}}
@@ -291,14 +284,10 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
 def _derive_type_and_symbol(channel: str) -> tuple[str, str]:
     """Map Redis channel name to event type and symbol."""
     prefixes = {
-        "headlines.fetched.": "headline",
         "market.price_updated.": "price",
         "market.options_updated.": "options",
         "market.price_trigger.": "trigger",
-        "sentiment.scored.": "sentiment",
-        "sentiment.aggregate_updated.": "aggregate",
         "alerts.dispatched.": "alert",
-        "ml.predicted.": "prediction",
     }
     for prefix, msg_type in prefixes.items():
         if channel.startswith(prefix):
@@ -318,14 +307,10 @@ async def _redis_global_listener(stop_event: asyncio.Event):
         pubsub = redis.pubsub()
 
         patterns = [
-            Channels.HEADLINE_FETCHED.format(symbol="*"),
             Channels.PRICE_UPDATED.format(symbol="*"),
             Channels.OPTIONS_UPDATED.format(symbol="*"),
             Channels.PRICE_TRIGGER.format(symbol="*"),
-            Channels.SENTIMENT_SCORED.format(symbol="*"),
-            Channels.AGGREGATE_UPDATED.format(symbol="*"),
             Channels.ALERT_DISPATCHED.format(symbol="*"),
-            Channels.ML_PREDICTED.format(symbol="*"),
         ]
 
         await pubsub.psubscribe(*patterns)

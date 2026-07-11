@@ -105,7 +105,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         """Fetches latest price info from Groww. Falls back to yfinance on failure."""
         token = await self._get_token()
         if not token:
-            logger.warning("[%s] No Groww access token. Falling back to yfinance.", symbol)
+            logger.debug("[%s] No Groww access token. Falling back to yfinance.", symbol)
             return await self._fallback_adapter.fetch_price(symbol)
 
         clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
@@ -167,11 +167,11 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                             "last_updated": datetime.now(timezone.utc).date().isoformat(),
                         }
                     else:
-                        logger.warning("[%s] Groww API returned status: %s. Falling back to yfinance.", symbol, data.get("status"))
+                        logger.debug("[%s] Groww API returned status: %s. Falling back to yfinance.", symbol, data.get("status"))
                 else:
-                    logger.warning("[%s] Groww API quote request failed (status %d). Falling back to yfinance.", symbol, resp.status)
+                    logger.debug("[%s] Groww API quote request failed (status %d). Falling back to yfinance.", symbol, resp.status)
         except Exception as e:
-            logger.error("[%s] Groww API quote fetch exception: %s. Falling back to yfinance.", symbol, e)
+            logger.debug("[%s] Groww API quote fetch exception: %s. Falling back to yfinance.", symbol, e)
 
         return await self._fallback_adapter.fetch_price(symbol)
 
@@ -181,7 +181,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         """Fetches full option chain from Groww. Falls back to NSE proxy/synthetic on failure."""
         token = await self._get_token()
         if not token:
-            logger.warning("[%s] No Groww access token. Falling back to NSE option chain.", symbol)
+            logger.debug("[%s] No Groww access token. Falling back to NSE option chain.", symbol)
             return await self._fallback_adapter.fetch_option_chain(symbol)
 
         clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
@@ -299,13 +299,13 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                                     timestamp=datetime.now(timezone.utc)
                                 ))
                     else:
-                        logger.warning("[%s] Groww option chain fetch failed for expiry %s.", symbol, expiry)
+                        logger.debug("[%s] Groww option chain fetch failed for expiry %s.", symbol, expiry)
 
 
             if dtos:
                 return dtos
             
-            logger.warning("[%s] Groww option chain parsing returned no ticks. Falling back.", symbol)
+            logger.debug("[%s] Groww option chain parsing returned no ticks. Falling back.", symbol)
 
         except Exception as e:
             logger.error("[%s] Groww option chain fetch exception: %s. Falling back.", symbol, e)

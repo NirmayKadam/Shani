@@ -25,13 +25,6 @@ class PredictionEntity:
     predicted_at: datetime
 
 @dataclass
-class SentimentScoreEntity:
-    symbol: str
-    label: str
-    score: float
-    confidence: float
-
-@dataclass
 class SignalEntity:
     symbol: str
     signal_type: str
@@ -55,21 +48,3 @@ class OptionsChainAggregate:
             pass # TODO: EWM logic
         return anomalies
 
-class SentimentAggregate:
-    def __init__(self, limit: int = 20):
-        self.scores: List[SentimentScoreEntity] = []
-        self.limit = limit
-        
-    def add_score(self, score: SentimentScoreEntity) -> Optional[SignalFiredEvent]:
-        self.scores.append(score)
-        if len(self.scores) > self.limit:
-            self.scores.pop(0)
-        return self.compute_sma_and_check()
-        
-    def compute_sma_and_check(self) -> Optional[SignalFiredEvent]:
-        if not self.scores:
-            return None
-        sma = sum(s.score for s in self.scores) / len(self.scores)
-        if sma > 0.5:
-            return SignalFiredEvent(payload={"symbol": self.scores[-1].symbol, "signal_type": "BULL_SMA", "sma": sma, "crossover_direction": "UP"})
-        return None

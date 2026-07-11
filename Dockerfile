@@ -28,7 +28,6 @@ ENV LANGUAGE=en_US.UTF-8
 # Install python deps sequentially to save RAM/Space
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy source and configs

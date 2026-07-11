@@ -67,10 +67,9 @@ async def _handle_refresh(stream_bus: DurableEventStream, message: StreamMessage
         await redis.setex(cooldown_key, _COOLDOWN_SECONDS, "1")
 
         # Dispatch Celery tasks
-        from domains.ingestion.tasks.ingestion_tasks import poll_news, poll_prices, poll_options
+        from domains.ingestion.tasks.ingestion_tasks import poll_prices, poll_options
         from domains.ingestion.tasks.market_tasks import fetch_and_publish_options
         
-        poll_news.delay(symbol)
         poll_prices.delay(symbol)
         poll_options.delay(symbol)
         fetch_and_publish_options.delay(symbol)

@@ -4,12 +4,8 @@ File Overview: Pydantic response models and schemas for the analytics API.
 All Functions/Classes:
 - ResponseMetadata: Base schema for all API responses. Take status/source and send to validated JSON response.
 - MarketDataResponse: Stores price and volume metrics. Take raw data and send to validated object.
-- HeadlineItem: Stores single news items with sentiment scoring. Take raw headline data and send to validated object.
-- SentimentTimeframeData: Stores aggregated sentiment metrics for a specific timeframe. Take aggregation data and send to validated object.
-- SentimentResponse: Compiles multi-timeframe sentiment data. Take intraday/daily/weekly/monthly payloads and send to validated object.
 - OptionsSummaryResponse: Stores PCR and option volume/OI stats. Take calculation results and send to validated object.
-- TechnicalForecastResponse: Stores ML inference results. Take prediction metrics and send to validated object.
-- AnalysisResponse: Final unified response schema. Take all analytical components and send to client.
+- DerivativesResponse: Final unified response schema. Take all analytical components and send to client.
 - SymbolsResponse: Returns recommended symbols. Take list from settings and send to client.
 - ErrorEnvelope: Standardized error response. Take error details and send to validated error object.
 
@@ -48,36 +44,6 @@ class MarketDataResponse(BaseModel):
     last_updated: str
 
 
-# ── Headlines ──────────────────────────────────────────────────
-
-class HeadlineItem(BaseModel):
-    headline: str
-    source_name: str
-    published_at: str
-    sentiment_label: str
-    sentiment_score: float
-    confidence: float
-
-
-# ── Sentiment Aggregation ──────────────────────────────────────
-
-class SentimentTimeframeData(BaseModel):
-    label: str
-    avg_score: float
-    bullish_pct: float
-    bearish_pct: float
-    neutral_pct: float
-    count: int
-    trend: str = "STABLE"
-
-
-class SentimentResponse(BaseModel):
-    intraday: SentimentTimeframeData
-    daily: SentimentTimeframeData
-    weekly: SentimentTimeframeData
-    monthly: SentimentTimeframeData
-
-
 # ── Options Summary ────────────────────────────────────────────
 
 class OptionTick(BaseModel):
@@ -100,32 +66,6 @@ class OptionsSummaryResponse(BaseModel):
     chain: list[OptionTick] = Field(default_factory=list)
     available: bool = False
     last_updated: str = ""
-
-
-# ── Technical Forecast ──────────────────────────────────────────
-
-class TechnicalForecastResponse(BaseModel):
-    strategy: str
-    prediction: str
-    confidence: float
-    confluence_status: str
-
-
-# ── Signal Response ────────────────────────────────────────────
-
-class SignalMetadata(BaseModel):
-    daily_count: int = 0
-    pred_confidence: float = 0.0
-
-
-class SignalResponse(ResponseMetadata):
-    symbol: str
-    composite_label: str
-    strength: float
-    sentiment_avg: float
-    prediction: str
-    composed_at: str
-    metadata: SignalMetadata = Field(default_factory=SignalMetadata)
 
 
 # ── Derivatives Response ────────────────────────────────────────
@@ -248,4 +188,3 @@ class BSMCalculateResponse(BaseModel):
     fair_value: float
     market_mid: Optional[float] = None
     edge: Optional[float] = None
-

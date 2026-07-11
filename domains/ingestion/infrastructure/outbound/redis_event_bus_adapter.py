@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 # Stream name mapping: event_type → Redis Stream
 _EVENT_STREAM_MAP = {
-    "ingestion.news": Streams.HEADLINE_FETCHED,
     "ingestion.mkt": Streams.PRICE_TRIGGER,
 }
 

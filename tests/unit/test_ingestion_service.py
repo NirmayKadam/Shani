@@ -8,14 +8,13 @@ from shared.constants import Channels
 
 @pytest.mark.unit
 async def test_ingest_market_data_publishes_pubsub():
-    mock_news = MagicMock()
     mock_price = AsyncMock()
     mock_option = AsyncMock()
     mock_dedup = AsyncMock()
     mock_bus = AsyncMock()
     mock_redis = AsyncMock()
     
-    svc = IngestionService(mock_news, mock_price, mock_option, mock_dedup, mock_bus, mock_redis)
+    svc = IngestionService(mock_price, mock_option, mock_dedup, mock_bus, mock_redis)
     
     # Mock return value of fetch_price
     mock_price.fetch_price.return_value = {
@@ -46,14 +45,13 @@ async def test_ingest_market_data_publishes_pubsub():
 
 @pytest.mark.unit
 async def test_ingest_options_publishes_pubsub():
-    mock_news = MagicMock()
     mock_price = AsyncMock()
     mock_option = AsyncMock()
     mock_dedup = AsyncMock()
     mock_bus = MagicMock()  # Changed to MagicMock since not used directly
     mock_redis = AsyncMock()
     
-    svc = IngestionService(mock_news, mock_price, mock_option, mock_dedup, mock_bus, mock_redis)
+    svc = IngestionService(mock_price, mock_option, mock_dedup, mock_bus, mock_redis)
     
     # Mock return value of fetch_option_chain
     mock_option.fetch_option_chain.return_value = [

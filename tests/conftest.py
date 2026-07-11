@@ -92,18 +92,6 @@ def sample_parsed_chain():
     }
 
 
-@pytest.fixture
-def sample_scored_headlines():
-    """Sample scored headlines for sentiment analysis tests."""
-    return [
-        {"headline": "Market rallies", "sentiment_label": "BULLISH", "sentiment_score": 0.85, "confidence": 0.92},
-        {"headline": "Profit booking seen", "sentiment_label": "BEARISH", "sentiment_score": -0.65, "confidence": 0.88},
-        {"headline": "RBI holds rates", "sentiment_label": "NEUTRAL", "sentiment_score": 0.05, "confidence": 0.75},
-        {"headline": "FII buying continues", "sentiment_label": "BULLISH", "sentiment_score": 0.72, "confidence": 0.90},
-        {"headline": "Weak Q4 results", "sentiment_label": "BEARISH", "sentiment_score": -0.80, "confidence": 0.85},
-    ]
-
-
 # ── Mock Fixtures ───────────────────────────────────────────────
 
 @pytest.fixture
@@ -117,15 +105,6 @@ def mock_redis():
     redis.xadd.return_value = b"1234567890-0"
     redis.publish.return_value = 1
     return redis
-
-
-@pytest.fixture
-def mock_store():
-    """AsyncMock for ISentimentStorePort."""
-    store = AsyncMock()
-    store.save_score.return_value = None
-    store.get_last_n.return_value = []
-    return store
 
 
 @pytest.fixture

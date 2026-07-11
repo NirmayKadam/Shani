@@ -8,10 +8,8 @@ All Functions/Classes:
 
 Endpoints/APIs:
 - /: root (health check)
-- /v1/signals: signals_router
 - /ws/{symbol}: events_router (WebSocket)
 - /v1/derivatives: derivatives_router
-- /v1/predictions: predictions_router
 - /v1/symbols: symbols_router
 - /v1/ingestion/nse: nse_options_router
 
@@ -29,10 +27,8 @@ from shared.logging import setup_logging
 setup_logging()
 
 # Domain routers
-from domains.analytics.api.signals_router_api import router as signals_router
 from domains.analytics.api.events_router_api import router as events_router
 from domains.analytics.api.derivatives_router_api import router as derivatives_router
-from domains.analytics.api.predictions_router_api import router as predictions_router
 from domains.analytics.api.symbols_router_api import router as symbols_router
 from domains.analytics.api.pricer_router_api import router as pricer_router
 from domains.ingestion.api.nse_options_router_api import nse_options_router_api
@@ -61,15 +57,6 @@ async def lifespan(application: FastAPI):
         logger.info("NSE httpx client initialized during startup")
     except Exception as exc:
         logger.warning("NSE client startup failed (will lazy-init on first use): %s", exc)
-
-    # Startup: Warm CNN Volatility Predictor Model
-    try:
-        import asyncio
-        from domains.analytics.api.predictions_router_api import _get_predictor
-        await asyncio.to_thread(_get_predictor)
-        logger.info("CNN Volatility Predictor warmed during startup")
-    except Exception as exc:
-        logger.warning("CNN Volatility Predictor warmup failed: %s", exc)
 
     yield
 
@@ -111,10 +98,8 @@ app.add_middleware(
 )
 
 
-app.include_router(signals_router, prefix="/v1")
 app.include_router(events_router, prefix="/v1")
 app.include_router(derivatives_router, prefix="/v1")
-app.include_router(predictions_router, prefix="/v1")
 app.include_router(symbols_router, prefix="/v1")
 app.include_router(pricer_router, prefix="/v1")
 app.include_router(nse_options_router_api, prefix="/v1/ingestion")
