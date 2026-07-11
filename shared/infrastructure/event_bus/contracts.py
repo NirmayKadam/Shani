@@ -3,7 +3,7 @@ File Overview: Versioned domain event schemas and dataclasses for cross-domain c
 
 All Functions/Classes:
 - VersionedEvent (base class): Shared schema fields.
-- HeadlineFetchedV1, PriceUpdatedV1, OptionsUpdatedV1, PriceTriggerV1, SentimentScoredV1, AggregateUpdatedV1, AnalysisRefreshRequestedV1: Specific event payload schemas. Data: Domain Events -> Serialized JSON.
+- PriceUpdatedV1, OptionsUpdatedV1, PriceTriggerV1, AnalysisRefreshRequestedV1: Specific event payload schemas. Data: Domain Events -> Serialized JSON.
 
 Endpoints/APIs:
 - None.
@@ -30,20 +30,6 @@ class VersionedEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-
-
-@dataclass(slots=True)
-class HeadlineFetchedV1(VersionedEvent):
-    symbol: str = ""
-    headline: str = ""
-    content: str = ""
-    source_url: str = ""
-    source_name: str = ""
-    published_at: str = ""
-    fetched_at: str = field(default_factory=_utc_now_iso)
-
-    def __post_init__(self) -> None:
-        self.event_type = "headline.fetched"
 
 
 @dataclass(slots=True)
@@ -104,56 +90,6 @@ class PriceTriggerV1(VersionedEvent):
 
 
 @dataclass(slots=True)
-class SentimentScoredV1(VersionedEvent):
-    symbol: str = ""
-    headline: str = ""
-    content: str = ""
-    source_url: str = ""
-    source_name: str = ""
-    published_at: str = ""
-    sentiment_label: str = ""
-    sentiment_score: float = 0.0
-    confidence: float = 0.0
-    scored_at: str = field(default_factory=_utc_now_iso)
-
-    def __post_init__(self) -> None:
-        self.event_type = "sentiment.scored"
-
-
-@dataclass(slots=True)
-class AggregateUpdatedV1(VersionedEvent):
-    symbol: str = ""
-    timeframe: str = ""
-    label: str = ""
-    avg_score: float = 0.0
-    bullish_pct: float = 0.0
-    bearish_pct: float = 0.0
-    neutral_pct: float = 0.0
-    count: int = 0
-    trend: str = ""
-    computed_at: str = field(default_factory=_utc_now_iso)
-
-    def __post_init__(self) -> None:
-        self.event_type = "sentiment.aggregate_updated"
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "AggregateUpdatedV1":
-        return cls(
-            schema_version="v1",
-            symbol=str(payload.get("symbol", "")),
-            timeframe=str(payload.get("timeframe", "")),
-            label=str(payload.get("label", "NEUTRAL")),
-            avg_score=float(payload.get("avg_score", 0.0)),
-            bullish_pct=float(payload.get("bullish_pct", 0.0)),
-            bearish_pct=float(payload.get("bearish_pct", 0.0)),
-            neutral_pct=float(payload.get("neutral_pct", 0.0)),
-            count=int(payload.get("count", 0)),
-            trend=str(payload.get("trend", "")),
-            computed_at=str(payload.get("computed_at", _utc_now_iso())),
-        )
-
-
-@dataclass(slots=True)
 class AnalysisRefreshRequestedV1(VersionedEvent):
     symbol: str = ""
     reason: str = "stale_or_partial_read_model"
@@ -164,29 +100,20 @@ class AnalysisRefreshRequestedV1(VersionedEvent):
 
 
 # Backward-compatible aliases (existing callers import these names).
-HeadlineFetchedEvent = HeadlineFetchedV1
 PriceUpdatedEvent = PriceUpdatedV1
 OptionsUpdatedEvent = OptionsUpdatedV1
 PriceTriggerEvent = PriceTriggerV1
-SentimentScoredEvent = SentimentScoredV1
-AggregateUpdatedEvent = AggregateUpdatedV1
 AnalysisRefreshRequestedEvent = AnalysisRefreshRequestedV1
 
 
 __all__ = [
     "VersionedEvent",
-    "HeadlineFetchedV1",
     "PriceUpdatedV1",
     "OptionsUpdatedV1",
     "PriceTriggerV1",
-    "SentimentScoredV1",
-    "AggregateUpdatedV1",
     "AnalysisRefreshRequestedV1",
-    "HeadlineFetchedEvent",
     "PriceUpdatedEvent",
     "OptionsUpdatedEvent",
     "PriceTriggerEvent",
-    "SentimentScoredEvent",
-    "AggregateUpdatedEvent",
     "AnalysisRefreshRequestedEvent",
 ]

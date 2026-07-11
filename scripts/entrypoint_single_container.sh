@@ -43,10 +43,7 @@ trap shutdown SIGINT SIGTERM
 start_process "uvicorn-api" uvicorn Main:App --host 0.0.0.0 --port 8000
 start_process "ingestion-worker" celery -A shared.infrastructure.CeleryApp worker -Q ingestion -c 2 --loglevel=info
 start_process "beat-scheduler" celery -A shared.infrastructure.CeleryApp beat --loglevel=info
-start_process "nlp-subscriber" python -m domains.analytics.application.services.nlp.SentimentOrchestrator
-start_process "read-model-updater" python -m domains.analytics.api.read_model_updater
 start_process "options-subscriber" python -m domains.analytics.infrastructure.options_subscriber
-
 
 set +e
 wait -n

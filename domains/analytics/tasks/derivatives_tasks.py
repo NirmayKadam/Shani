@@ -12,12 +12,12 @@ def process_tick_batch(symbol: str) -> bool:
     """
     Celery task to run Crank-Nicolson/BSM options pricing for a symbol.
     """
-    logger.info("[%s] Celery task process_tick_batch started", symbol)
+    logger.debug("[%s] Celery task process_tick_batch started", symbol)
     try:
         from domains.analytics.application.services.derivatives.derivatives_orchestrator_service import DerivativesOrchestratorService
         orchestrator = DerivativesOrchestratorService()
         success = asyncio.run(orchestrator.price_options_chain(symbol))
-        logger.info("[%s] Celery task process_tick_batch finished with success=%s", symbol, success)
+        logger.debug("[%s] Celery task process_tick_batch finished with success=%s", symbol, success)
         return success
     except Exception as exc:
         logger.error("[%s] Celery task process_tick_batch failed: %s", symbol, exc)

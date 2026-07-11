@@ -10,7 +10,6 @@ celery_app = Celery(
     include=[
         "domains.ingestion.tasks.ingestion_tasks",
         "domains.ingestion.tasks.market_tasks",
-        "domains.analytics.tasks.ml_tasks",
         "domains.analytics.tasks.alert_tasks",
     ],
 )
@@ -33,10 +32,6 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
-    "poll_news_headlines": {
-        "task": "ingestion.poll_news",
-        "schedule": float(settings.NewsPollIntervalSeconds),
-    },
     "poll_market_prices": {
         "task": "ingestion.poll_prices",
         "schedule": float(settings.PricePollIntervalSeconds),
