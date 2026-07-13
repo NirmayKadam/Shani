@@ -1,8 +1,8 @@
-# AlphaStreams V2 — Event-Driven Quant Analytics (Indian Market Focus)
+# AlphaStreams V2 — Event-Driven Options Analytics (Indian Market Focus)
 
-A Python-based **Event-Driven Modular Monolith** combining **FinBERT-powered Sentiment Analysis**, **Real-Time NSE/BSE Analytics**, and an **Interactive Option Chain Dashboard** to generate actionable market overviews.
+A Python-based **Event-Driven Modular Monolith** combining **Real-Time NSE/BSE Options Chain Analytics** and an **Interactive Options Dashboard** to generate actionable market overviews.
 
-Built with **FastAPI, Celery, Redis Streams, TimescaleDB, PyTorch**, and a **production-grade web UI** modelled after the NSE India option chain interface.
+Built with **FastAPI, Celery, Redis Streams, and TimescaleDB**, and a **production-grade web UI** modelled after the NSE India option chain interface.
 
 ---
 
@@ -21,11 +21,9 @@ To read the detailed system documentation, please refer to the following guides:
 - **NSE Option Chain Dashboard** — interactive web UI cloning the NSE India option chain layout, with Calls / Strikes / Puts dual-column table.
 - **Client-Side BSM Calculator** — real-time Black-Scholes-Merton pricing, full Greeks (Δ, Γ, ν, θ, ρ), and theoretical edge overlays.
 - **Dynamic Instrument Search** — autocomplete search across 2,000+ NSE equities and indices via a live instrument catalog.
-- **Real-Time WebSocket Push** — live price ticks, scored sentiment, and options data streamed to the UI.
-- **FinBERT NLP Sentiment** — automatic financial headline scoring (BULLISH / BEARISH / NEUTRAL) using ProsusAI/FinBERT.
-- **MTF-CNN-LSTM Volatility Prediction** — 5-day forward volatility forecasting (VOL_CRUSH / NEUTRAL / VOL_EXPAND).
+- **Real-Time WebSocket Push** — live price ticks and options data streamed to the UI.
 - **Crank-Nicolson PDE Fair Pricing** — numerical PDE solver for European-style option fair values.
-- **Single-Container Deployment** — everything (FastAPI, Celery, Redis, TimescaleDB, ML models) runs in one Docker container via `supervisord`.
+- **Single-Container Deployment** — everything (FastAPI, Celery, Redis, and TimescaleDB) runs in one Docker container via `supervisord`.
 
 ---
 
@@ -40,7 +38,7 @@ cp .env.template .env
 ```
 
 Edit `.env` and configure:
-- **`NEWS_API_KEY`** — required for headline ingestion (free tier works).
+
 - **`MARKET_DATA_PROVIDER`** — set to `groww` for Groww API or `nse` (default) for yfinance/NSE proxy.
 
 ### 2. Start the System

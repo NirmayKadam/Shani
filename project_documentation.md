@@ -41,7 +41,7 @@ AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principl
 ### Active Bounded Contexts
 
 1. **Ingestion Context (`domains/ingestion`)**: Responsible for establishing connections to external financial market APIs, maintaining stateful sessions, managing HTTP cookie rotation, parsing market-specific payloads, and publishing validated raw data structures to the messaging layer.
-2. **Analytics Context (`domains/analytics`)**: The mathematical and forecasting engine. It consumes ingestion event streams, executes analytical and numerical options solvers (BSM & Crank-Nicolson PDE), runs PyTorch-based volatility predictions, evaluates headline sentiments using transformer models, and updates read-optimized caches.
+2. **Analytics Context (`domains/analytics`)**: The mathematical engine. It consumes ingestion event streams, executes analytical and numerical options solvers (BSM & Crank-Nicolson PDE), and updates read-optimized caches.
 3. **Application & API Context (`app/` / `static/`)**: Exposes REST and WebSocket gateways using FastAPI to interface with the web client. It serves static assets, provides caching mechanisms for endpoints, and manages low-latency pub/sub streaming to active web connections.
 4. **Shared Infrastructure (`shared/`)**: Provides cross-cutting facilities including database adapters, caching client configuration, global constants, symbol validation rules, and the Celery task scheduler application context.
 
@@ -59,10 +59,10 @@ MarketSentimentAnalysis2/
 │   │   ├── application/               # Orchestrators and Celery tasks
 │   │   ├── dto/                       # Data Transfer Objects (DTOs)
 │   │   ├── domain/                    # Ingestion domain entities
-│   │   └── infrastructure/            # Outbound adapters (NSE, Groww, NewsAPI)
+│   │   └── infrastructure/            # Outbound adapters (NSE, Groww)
 │   └── analytics/                     # Analytics Context
 │       ├── api/                       # REST and WebSocket entry adapters
-│       ├── application/               # Pricing solvers and ML estimators
+│       ├── application/               # Pricing solvers
 │       ├── domain/                    # Quantitative domain models
 │       └── infrastructure/            # Database and read-model subscribers
 ├── shared/                            # Shared Kernel
@@ -70,7 +70,7 @@ MarketSentimentAnalysis2/
 │   ├── constants.py                   # Stream names, TTLs, and keys
 │   └── utils/                         # Symbol and timezone utilities
 ├── static/                            # Client assets (HTML, CSS, JS)
-├── scripts/                           # Schema migrations and ML training scripts
+├── scripts/                           # Schema migrations
 ├── tests/                             # Unit and integration test suites
 ├── supervisord.conf                   # Multi-process configuration
 ├── start.sh                           # Container startup script
@@ -139,7 +139,6 @@ High-frequency market snapshot storage is optimized using TimescaleDB **hypertab
 | Table Name | Partitioning Style | Primary Columns / Types | Purpose |
 |---|---|---|---|
 | `TickData` | Hypertable (Time-series) | `Timestamp` (TIMESTAMPTZ), `Symbol` (VARCHAR), `StrikePrice` (NUMERIC), `OptionType` (VARCHAR(2)), `LastPrice` (NUMERIC), `OpenInterest` (BIGINT), `Volume` (BIGINT), `ImpliedVolatility` (NUMERIC) | Options tick record database. |
-| `SentimentScores` | Standard Relational | `id` (UUID), `Timestamp` (TIMESTAMPTZ), `Symbol` (VARCHAR), `Headline` (TEXT), `SentimentLabel` (VARCHAR), `SentimentScore` (NUMERIC), `SourceUrl` (TEXT) | NLP FinBERT model output repository. |
 | `DetectedEvents` | Standard Relational | `id` (UUID), `Timestamp` (TIMESTAMPTZ), `EventType` (VARCHAR), `Payload` (JSONB) | Logs structural anomalies or macro events. |
 | `AlertRules` | Standard Relational | `id` (UUID), `Symbol` (VARCHAR), `ConditionType` (VARCHAR), `Threshold` (NUMERIC), `WebhookUrl` (TEXT) | Stores user-defined notification triggers. |
 | `DomainEvents` | Standard Relational | `id` (UUID), `EventName` (VARCHAR), `OccurredAt` (TIMESTAMPTZ), `Payload` (JSONB) | Audit trail of major domain events. |
@@ -165,14 +164,12 @@ The system uses **Redis Streams** for asynchronous cross-domain communication, a
 1.  **Durable Processing Pipeline**:
     *   **Raw Options Streaming**: Ingestion services publish raw options data blocks directly into the `stream:options.raw_fetched` stream.
     *   **Pricer Processing**: The `OptionsPricingSubscriber` daemon consumes raw ticks, runs Black-Scholes-Merton (BSM) and Crank-Nicolson solvers, and pushes structured results to the `stream:options.priced` stream.
-    *   **Cache Synchronization**: The `ReadModelUpdater` process reads priced events and updates Redis keys for immediate API consumption.
+    *   **Cache Synchronization**: The subscriber updates Redis keys for immediate API consumption.
 2.  **Durable Stream Definitions**:
-    *   `stream:headlines.fetched`: Raw text headlines parsed by news adapters.
-    *   `stream:sentiment.scored`: Enriches headlines with target sentiments.
     *   `stream:options.raw_fetched`: Raw option chain ticks.
     *   `stream:options.priced`: Volatility and PDE fair price calculations.
 3.  **Dead-Letter Queue (DLQ) Strategy**:
-    If a consumer fails to process a stream event (due to JSON syntax issues, DB connection loss, etc.) after 3 retries, the event is acknowledged in the main stream and forwarded to a specialized dead-letter queue (e.g., `stream:dlq:ingestion_to_nlp` or `stream:dlq:refresh_request`) via the `stream_bus.retry_or_dead_letter(...)` interface to prevent consumer group starvation and PEL leakage.
+    If a consumer fails to process a stream event (due to JSON syntax issues, DB connection loss, etc.) after 3 retries, the event is acknowledged in the main stream and forwarded to a specialized dead-letter queue (`stream:dlq:refresh_request`) via the `stream_bus.retry_or_dead_letter(...)` interface to prevent consumer group starvation and PEL leakage.
 4.  **Consumer Loop Fault-Tolerance**:
     The raw option pricing subscriber (`options_subscriber.py`) wraps event processing within active try-except guards. This protects the primary daemon process against crashes caused by malformed ticks or downstream database write exceptions.
 5.  **Ephemeral Pub/Sub Mirroring**:
@@ -258,113 +255,9 @@ Where:
     *   RHS correction at node $1$: $\text{rhs}[0] \mathrel{+}= \alpha_1 (V_0^j + V_0^{j+1})$
 
 #### SciPy Sparse Solver Integration
-Because $\mathbf{A}$ is a static, time-invariant tridiagonal matrix, the engine optimizes the solution by pre-factorizing it using the SuperLU direct solver (`scipy.sparse.linalg.splu`) outside the temporal loop. During each backward step, the pre-factorized solver resolves the system in linear $O(M)$ time using `A_solver.solve(rhs)`. This bypasses the overhead of recalculating sparse LU decompositions inside the loop (shifting execution complexity from $O(N \cdot \text{factorization})$ to a single factorization and $N$ back-solves), and the final value is obtained via linear interpolation at the spot price $S_0$.
+Because $\mathbf{A}$ is a static, time-invariant tridiagonal matrix, the engine optimizes the solution by pre-factorizing it using the SuperLU direct solver (`scipy.sparse.linalg.splu`) outside the temporal loop. During each backward step, the pre-factorized solver resolves the system in linear $O(M)$ time using `A_solver.solve(rhs)`. This bypasses the overhead of recalculating sparse LU decompositions inside the loop (sh---
 
----
-
-## 5. Machine Learning & Volatility Prediction
-
-The analytics context hosts a pre-trained PyTorch network predicting volatility trend transitions over a 5-day horizon, classifying them into `VOL_CRUSH`, `NEUTRAL`, or `VOL_EXPAND`.
-
-```
-                                     [Input Sequence]
-                                     /      |       \
-                                    /       |        \
-                              Daily(21)  Weekly(12)  Monthly(6)
-                                  |         |            |
-                            Conv1D(3,5,7) Conv1D(3,5,7) Conv1D(3,5,7)
-                                  |         |            |
-                             ResBlock1D  ResBlock1D  ResBlock1D
-                                  |         |            |
-                                LSTM       LSTM         LSTM
-                                  \         |          /
-                                   \        |         /
-                                    [Concatenate (288)]
-                                            |
-                                      Linear (128)
-                                            |
-                                      Linear (32)
-                                            |
-                                       Output (3) --> [Vol Trend Probabilities]
-```
-
-### Multi-Timeframe CNN-LSTM Volatility Model
-
-The model processes spatial patterns and temporal sequences by feeding features into three separate structural paths representing daily, weekly, and monthly observations.
-
-*   **Temporal Scaling Paths**:
-    *   **Daily path**: Evaluates the trailing 21 trading days (1 month).
-    *   **Weekly path**: Evaluates the trailing 12 trading weeks (3 months).
-    *   **Monthly path**: Evaluates the trailing 6 trading months (2 quarters).
-*   **Engineered Feature Set (22 Inputs)**:
-    1.  `RSI_14`: Normalized 14-period Relative Strength Index.
-    2.  `MACD`, `MACD_Signal`, `MACD_Hist`: Normalized trend indicators.
-    3.  `Stoch_K`, `Stoch_D`: Stochastic Oscillator indices.
-    4.  `Williams_R`: Williams %R value.
-    5.  `EMA9_Dist`, `EMA21_Dist`, `EMA50_Dist`: Distance metrics between spot price and EMAs.
-    6.  `ADX`: Average Directional Index.
-    7.  `BB_Width`, `BB_Position`: Bollinger Band width and price positioning.
-    8.  `ATR_Norm`: Average True Range normalized by the asset price.
-    9.  `ret_1d`, `ret_5d`, `ret_10d`: Multi-horizon log returns.
-    10. `HL_Ratio`, `OC_Ratio`: High-Low ratio and Open-Close spread ratio.
-    11. `Gap`: Gap opening percentages.
-    12. `vol_momentum`: Trailing trading volume normalized by its 10-day SMA.
-    13. `OBV_Norm`: Normalized On-Balance Volume.
-    14. **Macro Confluences**: Local VIX momentum, 10-year Treasury Yield momentum (TNX), and US Dollar index momentum (DXY).
-
-### Model Architecture and Layers
-*   **Multi-Kernel Conv1D Layers**: Each path passes inputs through 1D convolutional layers with kernel sizes of 3, 5, and 7 to capture short-term, medium-term, and long-term momentum structures.
-*   **Residual Blocks (`ResBlock1D`)**: Skip connections with Batch Normalization and GELU activation bypass deep layers to avoid vanishing gradients.
-*   **LSTM Cells**: Process sequential dependencies along each temporal path.
-*   **Dense Projection Head**: Concatenates output vectors, applies a 20% Dropout regularization layer, and projects values into a softmax layer to output probabilities for the three target classes.
-
-### Async Thread Pool Offloading
-Running deep learning models like PyTorch CNN-LSTM directly inside asynchronous coroutines can cause performance degradation because CPU-bound tensor arithmetic blocks the cooperative FastAPI event loop. To prevent this, model prediction is executed inside a background thread pool executor via `asyncio.to_thread(_run_forward, ...)` inside `CnnPredictorService.predict`. This ensures the web server remains responsive to simultaneous WebSocket and HTTP clients.
-
----
-
-## 6. NLP Headline Sentiment Engine
-
-Headline sentiment analysis uses the **ProsusAI/FinBERT` model, a BERT architecture pre-trained on financial text.
-
-```
-                              +---------------------------------------+
-                              |          FastAPI Request Thread       |
-                              +-------------------+-------------------+
-                                                  |
-                                                  | (Submit Text Task)
-                                                  v
-                              +-------------------+-------------------+
-                              |          ThreadPoolExecutor           |
-                              |             (max_workers=1)           |
-                              |                                       |
-                              |   +-------------------------------+   |
-                              |   |    FinBERT Transformer Model  |   |
-                              |   |     (Tokenize & Run Logits)   |   |
-                              |   +-------------------------------+   |
-                              +-------------------+-------------------+
-                                                  |
-                                                  | (Return Sentiment DTO)
-                                                  v
-                              +-------------------+-------------------+
-                              |          FastAPI Response Path        |
-                              +---------------------------------------+
-```
-
-### Thread Pool Isolation for Concurrency
-
-*   **Problem Statement**: FinBERT transformer inferences are CPU/GPU intensive. Executing them directly in FastAPI's cooperative multitasking loop (`async/await`) would block the single-threaded event loop, delaying WebSocket transmissions and API requests.
-*   **Solution**: The sentiment system isolates the model instantiation inside a singleton wrapper, executing all tokenization and inference steps inside a `ThreadPoolExecutor` limited to a single worker thread (`max_workers=1`). This setup avoids GPU memory thrashing and keeps the FastAPI event loop responsive.
-*   **Pipeline Logic**:
-    1.  Headline strings are pushed to the executor's queue.
-    2.  Inputs are tokenized with truncation ($512$ max tokens) and dynamic padding.
-    3.  The model evaluates inputs and outputs logits: `outputs = Model(**inputs).logits`.
-    4.  Softmax normalization converts logits into probability scores for positive, negative, and neutral classes.
-    5.  Scores are mapped to classification labels: `positive` $\rightarrow$ `BULLISH`, `negative` $\rightarrow$ `BEARISH`, `neutral` $\rightarrow$ `NEUTRAL`.
-
----
-
-## 7. Frontend User Interface Architecture
+## 5. Frontend User Interface Architecture
 
 The front-end is designed as a high-density, interactive Single-Page Application (SPA) built using vanilla HTML5, CSS3, and JavaScript, modeled after professional trading terminals.
 
@@ -394,7 +287,7 @@ This math engine calculates options greeks dynamically inside the client browser
 
 ---
 
-## 8. Deployment, Orchestration & Process Management
+## 6. Deployment, Orchestration & Process Management
 
 AlphaStreams V2 is packaged inside a single Docker image designed to run both the core backend and its dependency services concurrently.
 
@@ -420,11 +313,10 @@ AlphaStreams V2 is packaged inside a single Docker image designed to run both th
 |   |  |   (40)  |   |   (45)   |   |   (60)   |          |   |
 |   |  +---------+   +----------+   +----------+          |   |
 |   |                                                     |   |
-|   |  +-------------+   +---------------+                |   |
-|   |  | Sentiment   |   | Read-Model    |                |   |
-|   |  | Orchestrator|   | Updater       |                |   |
-|   |  |   (50)  |   |   (55)   |                |   |
-|   |  +-------------+   +---------------+                |   |
+|   |  +----------------------+                           |   |
+|   |  |Ingestion-Orchestrator|                           |   |
+|   |  |         (56)         |                           |   |
+|   |  +----------------------+                           |   |
 |   +-----------------------------------------------------+   |
 +-------------------------------------------------------------+
 ```
@@ -433,8 +325,6 @@ AlphaStreams V2 is packaged inside a single Docker image designed to run both th
 *   **`postgresql`** (Priority 20): Initializes the database storage engine.
 *   **`app`** (Priority 30): Launches the FastAPI ASGI worker (`uvicorn app.main:app`).
 *   **`celery` / `celery-beat`** (Priority 40/45): Initializes background task scheduling.
-*   **`sentiment-orchestrator`** (Priority 50): Starts the NLP headline scoring service.
-*   **`read-model-updater`** (Priority 55): Coordinates read cache updates from streams.
 *   **`ingestion-orchestrator`** (Priority 56): Manages data ingestion pipelines.
 *   **`options-subscriber`** (Priority 60): Activates the Crank-Nicolson PDE option pricer.
 
@@ -451,11 +341,11 @@ When the Docker container starts, `start.sh` executes the following initializati
 4.  **Process Handover**: Handover control to `supervisord` to manage the lifecycle of all services.
 
 ### High-Performance Event Loops (`uvloop`)
-To maximize networking performance on Unix platforms inside the Docker container, standalone Python entry point processes (`options_subscriber` and `sentiment_orchestrator`) conditionally import and install `uvloop` upon startup. This drops overheads associated with standard `asyncio` event loops by leveraging `libuv` under the hood.
+To maximize networking performance on Unix platforms inside the Docker container, the standalone Python entry point process `options_subscriber` conditionally imports and install `uvloop` upon startup. This drops overheads associated with standard `asyncio` event loops by leveraging `libuv` under the hood.
 
 ---
 
-## 9. Regulatory Compliance & Disclaimers
+## 7. Regulatory Compliance & Disclaimers
 
 ### SEBI Risk Disclosure Mandate
 In compliance with the Securities and Exchange Board of India (SEBI) guidelines on trading in equity derivatives, the system displays the following warning on the user dashboard:
@@ -463,4 +353,4 @@ In compliance with the Securities and Exchange Board of India (SEBI) guidelines 
 > "9 out of 10 individual traders in equity derivatives segment incurred net losses, averaging ₹50,000 loss per year, with an additional 28% in transaction costs."
 
 ### Research & Investment Disclaimer
-All analytical metrics, BSM theoretical prices, Crank-Nicolson PDE solutions, and PyTorch volatility forecasts generated by this platform are for educational and research purposes only. This system does not provide investment advice, and the platform operators are not registered SEBI Investment Advisers (IA) or Research Analysts (RA). Users are advised to verify all pricing outputs independently before executing trades in active financial markets.
+All analytical metrics, BSM theoretical prices, and Crank-Nicolson PDE solutions generated by this platform are for educational and research purposes only. This system does not provide investment advice, and the platform operators are not registered SEBI Investment Advisers (IA) or Research Analysts (RA). Users are advised to verify all pricing outputs independently before executing trades in active financial markets.

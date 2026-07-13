@@ -1,29 +1,24 @@
 # AlphaStreams V2: Interview Preparation Guide
 
-This guide will help you showcase your **AlphaStreams V2 (Market Sentiment & Option Chain Analytics Engine)** project on your resume and during interviews. The project is highly complex, blending Software Architecture, Quantitative Finance, and Machine Learning, making it an exceptional portfolio piece.
+This guide will help you showcase your **AlphaStreams V2 (Option Chain Analytics Engine)** project on your resume and during interviews. The project is highly complex, blending Software Architecture and Quantitative Finance, making it an exceptional portfolio piece.
 
 ---
 
 ## 1. Resume Bullet Points
 
-Tailor these bullets based on the specific role you are applying for (e.g., Backend Developer, Data Engineer, Quant Developer, or ML Engineer). Choose 3-4 bullet points that best fit your target role.
+Tailor these bullets based on the specific role you are applying for (e.g., Backend Developer, Data Engineer, or Quant Developer). Choose 3-4 bullet points that best fit your target role.
 
 ### **Option A: Software Engineering / Backend Focus**
 * **Architected a high-throughput options analytics engine** using FastAPI, Domain-Driven Design (DDD), and Hexagonal Architecture to decouple domains and manage real-time financial data pipelines.
 * **Built an asynchronous, event-driven data pipeline** utilizing Redis Streams and Celery to process live market data, seamlessly handling ingestion, dead-letter queues, and pub/sub WebSocket broadcasting to a vanilla JS frontend.
 * **Implemented resilient external API integrations** with stateful session management, automatic cookie rotation, and a tiered fallback chain (Groww API → NSE Scraper → yfinance) to ensure zero-downtime market data feeds.
 * **Engineered a scalable data storage layer** using PostgreSQL and TimescaleDB hypertables with automated retention policies to efficiently manage high-frequency tick data.
-* **Containerized the application** using Docker and Supervisord to orchestrate concurrent backend processes (FastAPI, Postgres, Redis, Celery workers, ML orchestrators) within a single deployment environment.
+* **Containerized the application** using Docker and Supervisord to orchestrate concurrent backend processes (FastAPI, Postgres, Redis, Celery workers) within a single deployment environment.
 
 ### **Option B: Quantitative / Mathematical Developer Focus**
 * **Developed a dual-engine live options pricing framework** executing analytical European Black-Scholes-Merton (BSM) models on the client and discretized Crank-Nicolson Partial Differential Equation (PDE) solvers on the backend.
 * **Optimized client-side option pricing in pure JavaScript** using the **Hastings Approximation algorithm** for the cumulative normal distribution function ($N(x)$), delivering zero-latency Greek recalculations ($\Delta, \Gamma, \nu, \Theta, \rho$) directly in the user browser.
 * **Optimized backend PDE numerical computations** by pre-factorizing the tridiagonal matrix $A$ using SciPy's SuperLU direct solver (`splu`) outside the temporal loop, reducing backward sweep iteration solves to linear $O(M)$ time for early-exercise American options.
-
-### **Option C: Machine Learning / Data Science Focus**
-* **Designed a multi-timeframe CNN-LSTM deep learning model** in PyTorch to forecast multi-day volatility trends, utilizing 22 engineered technical and macroeconomic features across daily, weekly, and monthly time horizons.
-* **Integrated FinBERT and custom PyTorch models** for real-time news scoring and volatility predictions, isolating blocking neural network execution using thread pool executors (`ThreadPoolExecutor` and `asyncio.to_thread`) to preserve FastAPI event loop responsiveness.
-* **Built a real-time data ingestion and aggregation pipeline** merging market tick data with alternative data (news sentiment, macro indicators) to power predictive models.
 
 ---
 
@@ -131,7 +126,7 @@ sequenceDiagram
 * **A:** I used DDD to strictly separate concerns. Financial ingestion APIs, complex mathematical analytics, and the web layer all scale and evolve differently. By using ports and adapters, I decoupled the business logic (like option pricing) from the infrastructure (like Groww/NSE APIs or TimescaleDB). If I want to swap data providers, I only write a new adapter without touching the core math engine.
 
 **Q: How did you handle real-time data streaming without crashing the application?**
-* **A:** I implemented an event-driven architecture using **Redis Streams**. The ingestion tasks publish raw data to a stream, which is durably consumed by pricing and ML subscribers. Once processed, the data is pushed to a Redis Pub/Sub channel, and the FastAPI application broadcasts it to the frontend via WebSockets. I also implemented Dead-Letter Queues (DLQ) to catch and isolate failed processing events so they don't starve the consumer groups.
+* **A:** I implemented an event-driven architecture using **Redis Streams**. The ingestion tasks publish raw data to a stream, which is durably consumed by pricing subscribers. Once processed, the data is pushed to a Redis Pub/Sub channel, and the FastAPI application broadcasts it to the frontend via WebSockets. I also implemented Dead-Letter Queues (DLQ) to catch and isolate failed processing events so they don't starve the consumer groups.
 
 ### Real-Time Data & Resilience
 **Q: What happens if external market APIs go down?**

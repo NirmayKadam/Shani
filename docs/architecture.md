@@ -10,8 +10,7 @@ This diagram shows how processes are orchestrated inside the single Docker conta
 
 ```mermaid
 graph TD
-    subgraph External [External Market & News Sources]
-        NewsAPI([News API - External RSS/News])
+    subgraph External [External Market Sources]
         GrowwAPI([Groww API - Primary Quotes])
         NseAPI([NSE India API - Market Fallback])
     end
@@ -22,33 +21,18 @@ graph TD
             AdapterFactory[Adapter Factory - Pluggable Outbound Ports]
             GrowwAdapter[GrowwApiAdapter - Outbound Client]
             NseAdapter[NseApiAdapter - Stateful Client / Session Cache]
-            NewsAdapter[NewsApiAdapter - News Fetcher Client]
         end
 
-        %% Left Branch of Binary Tree
         subgraph OptionsPipeline [Options Analytics Pipeline]
             RawTicks["stream:options.raw_fetched"]
             OptionsSub[Options Pricing Sub - Core Subscriber Daemon]
             CNPricer[Crank-Nicolson PDE Numerical Solver]
             BSMPricer[Black-Scholes-Merton Analytical Engine]
-            MLPredictor[MTF-CNN-LSTM Volatility Predictor]
             PricedTicks["stream:options.priced"]
-        end
-
-        %% Right Branch of Binary Tree
-        subgraph SentimentPipeline [News Sentiment Pipeline]
-            RawNews["stream:headlines.fetched"]
-            SentimentSub[Sentiment Orchestrator - NLP Subscriber Daemon]
-            FinBERT[FinBERT Transformer NLP Classifier]
-            ScoredNews["stream:sentiment.scored"]
         end
 
         subgraph Database [Historical Store]
             TimescaleDB[(TimescaleDB - PostgreSQL Hypertable)]
-        end
-
-        subgraph ReadModel [Read-Model Layer]
-            ReadModelUpdater[Read-Model Updater - Daemon Process]
         end
 
         subgraph CachePubSub [Cache & Live Broadcast]
@@ -68,7 +52,6 @@ graph TD
 
     %% Flow lines
     %% External to Ingestion adapters
-    NewsAPI -.->|HTTP GET| NewsAdapter
     GrowwAPI -.->|HTTP POST/GET| GrowwAdapter
     NseAPI -.->|HTTP GET / Session Cookies| NseAdapter
 
@@ -76,32 +59,19 @@ graph TD
     CeleryTasks -->|Invoke via Port| AdapterFactory
     AdapterFactory --> GrowwAdapter
     AdapterFactory --> NseAdapter
-    AdapterFactory --> NewsAdapter
     GrowwAdapter -.->|Fallback on fail| NseAdapter
 
-    %% Left Branch Flow (Options)
+    %% Process flow
     CeleryTasks ==|Publish raw ticks|==> RawTicks
+    CeleryTasks -->|Save raw options ticks| TimescaleDB
     RawTicks ==|Consume raw ticks|==> OptionsSub
     OptionsSub -->|Evaluate PDE| CNPricer
     OptionsSub -->|Evaluate Greeks| BSMPricer
-    OptionsSub -->|Predict Vol Trend| MLPredictor
-    OptionsSub -->|Save option ticks| TimescaleDB
+    
+    %% Output and updates
+    OptionsSub ==|Update cache read model|==> RedisCache
     OptionsSub ==|Publish priced ticks|==> PricedTicks
-
-    %% Right Branch Flow (Sentiment)
-    CeleryTasks ==|Publish raw headlines|==> RawNews
-    RawNews ==|Consume raw headlines|==> SentimentSub
-    SentimentSub -->|Score Text| FinBERT
-    SentimentSub -->|Save sentiment scores| TimescaleDB
-    SentimentSub ==|Publish scored events|==> ScoredNews
-
-    %% Re-merging at Read Model Layer
-    PricedTicks ==|Consume priced ticks|==> ReadModelUpdater
-    ScoredNews ==|Consume scored news|==> ReadModelUpdater
-
-    %% Read-Model to Cache & PubSub
-    ReadModelUpdater ==|Update state|==> RedisCache
-    ReadModelUpdater ==|Broadcast updates|==> RedisPubSub
+    OptionsSub ==|Broadcast updates|==> RedisPubSub
 
     %% Serving
     RedisCache <-->|Read cache| FastAPI
@@ -114,11 +84,8 @@ graph TD
     %% Force vertical ranking to align like a tree
     External ~~~ Ingestion
     Ingestion ~~~ OptionsPipeline
-    Ingestion ~~~ SentimentPipeline
     OptionsPipeline ~~~ Database
-    SentimentPipeline ~~~ Database
-    Database ~~~ ReadModel
-    ReadModel ~~~ CachePubSub
+    Database ~~~ CachePubSub
     CachePubSub ~~~ Serving
     Serving ~~~ UserClient
 ```
@@ -161,7 +128,6 @@ graph TD
     subgraph SecondaryAdapters [Secondary Adapters - Driven]
         NseAdapter["NseApiAdapter"]
         GrowwAdapter["GrowwApiAdapter"]
-        NewsAdapter["NewsApiAdapter"]
         RedisBus["Redis Event Bus Adapter"]
         TimescaleDB["TimescaleDB Database Adapter"]
         RedisCache["Redis Cache / DB Read Model"]
@@ -194,53 +160,44 @@ graph TD
 ## 3. Domain Component Architectures
 
 ### A. Ingestion Domain Context
-Responsible for task scheduling, pulling market metrics/headlines from third-party endpoints using appropriate protocol-level adapters, caching static values (e.g. dividends) to reduce HTTP request volume, and staging raw records onto durable Redis Streams.
+Responsible for task scheduling, pulling market metrics from third-party endpoints using appropriate protocol-level adapters, caching static values (e.g. dividends) to reduce HTTP request volume, and staging raw records onto durable Redis Streams.
 
 ```mermaid
 graph TD
     CeleryBeat[Celery Beat Scheduler] -->|Triggers periodic tasks| CeleryWorker[Celery Tasks Worker]
     
     subgraph Ingestion_Domain [Ingestion Bounded Context]
-        CeleryWorker -->|Fetch Option Chain / News| AdapterFactory[Adapter Factory]
+        CeleryWorker -->|Fetch Option Chain| AdapterFactory[Adapter Factory]
         AdapterFactory -->|Instantiate adapter| GrowwAdapter[GrowwApiAdapter]
         AdapterFactory -->|Instantiate adapter| NseAdapter[NseApiAdapter]
-        AdapterFactory -->|Instantiate adapter| NewsAdapter[NewsApiAdapter]
         GrowwAdapter -.->|Failover Fallback| NseAdapter
     end
 
     subgraph Infrastructure [Shared Infrastructure]
         RedisCache[(Redis Cache - Dividend Cache)]
         RawTicksStream["stream:options.raw_fetched"]
-        RawNewsStream["stream:headlines.fetched"]
     end
 
     GrowwAdapter -->|Check / Populate Cache| RedisCache
     CeleryWorker ==|Publish raw option ticks|==> RawTicksStream
-    CeleryWorker ==|Publish raw news headlines|==> RawNewsStream
 ```
 
 ### B. Analytics Domain Context
-Consumes raw streams asynchronously using subscriber daemons, routes data through numerical/NLP evaluation engines, persists results in TimescaleDB, and publishes priced/scored records onto processed streams to update cache layers.
+Consumes raw streams asynchronously using subscriber daemons, routes data through numerical evaluation engines, persists results in TimescaleDB, and publishes priced records onto processed streams to update cache layers.
 
 ```mermaid
 graph TD
     subgraph Streams [Redis Streams - Messaging Bus]
         RawTicks["stream:options.raw_fetched"]
-        RawNews["stream:headlines.fetched"]
         PricedTicks["stream:options.priced"]
-        ScoredNews["stream:sentiment.scored"]
     end
 
     subgraph Analytics_Domain [Analytics Bounded Context]
         OptionsSub[Options Pricing Sub]
-        SentimentSub[Sentiment Subscriber]
-        ReadModelUpdater[Read-Model Updater]
 
-        subgraph Core_Engines [Mathematical & NLP Engines]
+        subgraph Core_Engines [Mathematical Engines]
             CNPricer[Crank-Nicolson PDE Solver]
             BSMPricer[Black-Scholes-Merton Engine]
-            MLPredictor[MTF-CNN-LSTM Volatility Predictor]
-            FinBERT[FinBERT NLP Model]
         end
     end
 
@@ -254,21 +211,10 @@ graph TD
     RawTicks ==|Consume raw ticks|==> OptionsSub
     OptionsSub -->|Evaluate PDE| CNPricer
     OptionsSub -->|Evaluate Greeks| BSMPricer
-    OptionsSub -->|Predict forward volatility| MLPredictor
     OptionsSub -->|Save option ticks| TimescaleDB
+    OptionsSub ==|Update cache read model|==> RedisCache
     OptionsSub ==|Publish priced options|==> PricedTicks
-
-    %% Flow Sentiment
-    RawNews ==|Consume raw headlines|==> SentimentSub
-    SentimentSub -->|NLP Classify text| FinBERT
-    SentimentSub -->|Save sentiment scores| TimescaleDB
-    SentimentSub ==|Publish scored headlines|==> ScoredNews
-
-    %% Read Model Updating
-    PricedTicks ==|Consume priced ticks|==> ReadModelUpdater
-    ScoredNews ==|Consume scored news|==> ReadModelUpdater
-    ReadModelUpdater -->|Update read models| RedisCache
-    ReadModelUpdater ==|Broadcast updates|==> RedisPubSub
+    OptionsSub ==|Broadcast updates|==> RedisPubSub
 ```
 
 ### C. App / Serving Domain Context
@@ -309,12 +255,9 @@ Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-g
 
 | Stream | Producer domain | Consumer domain | Notes |
 |---|---|---|---|
-*   `stream:headlines.fetched` | Ingestion | Analytics | Canonical fetched headlines.
 *   `stream:market.price_trigger` | Ingestion | Analytics | Triggered market anomalies.
 *   `stream:options.raw_fetched` | Ingestion | Analytics | Raw option chain ticks for PDE solver.
 *   `stream:options.priced` | Analytics | App | Fair-priced option chain output.
-*   `stream:sentiment.scored` | Analytics | Downstream consumers | Per-headline sentiment result.
-*   `stream:sentiment.aggregate_updated` | Analytics | App read-model | Timeframe aggregates.
 *   `stream:analysis.completed` | Analytics | App | Analysis completion signal.
 *   `stream:analysis.refresh_requested` | App | Ingestion | Async refresh command path.
 
@@ -322,18 +265,13 @@ Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-g
 
 | Stream | Purpose |
 |---|---|
-*   `stream:dlq:ingestion_to_nlp` | Failed Ingestion → NLP events.
-*   `stream:dlq:nlp_to_api` | Failed NLP → API events.
 *   `stream:dlq:refresh_request` | Failed refresh request events.
 
 ### Ephemeral Pub/Sub mirrors (UX-only)
 
 | Channel pattern | Purpose |
 |---|---|
-*   `headlines.fetched.{symbol}` | Live headline notifications.
 *   `market.price_updated.{symbol}` | Live price updates.
 *   `market.options_updated.{symbol}` | Live options summary updates.
 *   `market.price_trigger.{symbol}` | Live trigger notifications.
-*   `sentiment.scored.{symbol}` | Live scored-sentiment fan-out.
-*   `sentiment.aggregate_updated.{symbol}` | Live aggregate fan-out.
 *   `alerts.dispatched.{symbol}` | Live alert dispatch notifications.
