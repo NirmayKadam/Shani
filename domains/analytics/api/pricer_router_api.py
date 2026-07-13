@@ -38,216 +38,7 @@ def _generated_at() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _get_deterministic_mocks(symbol: str) -> dict:
-    """Generate realistic, deterministic mocks based on hash of symbol."""
-    h = int(hashlib.md5(symbol.encode()).hexdigest(), 16)
-    
-    # AAPL spec mock
-    if symbol == "AAPL":
-        return {
-            "stock_price": 182.45,
-            "implied_volatility": 28.4,
-            "historical_volatility": 25.2,
-            "bid_price": 6.70,
-            "ask_price": 7.10, # bid 6.70, mid 6.90, ask 7.10 (midpoint midpoint)
-            "open_interest": 14200,
-            "volume": 5800,
-            "strike_price": 185.00,
-            "expiry_days": 60,
-            "risk_free_rate": 5.25,
-            "dividend_yield": 0.55,
-        }
-    # TSLA spec mock
-    elif symbol == "TSLA":
-        return {
-            "stock_price": 177.40,
-            "implied_volatility": 48.6,
-            "historical_volatility": 44.5,
-            "bid_price": 11.20,
-            "ask_price": 11.80,
-            "open_interest": 22400,
-            "volume": 12800,
-            "strike_price": 180.00,
-            "expiry_days": 30,
-            "risk_free_rate": 5.25,
-            "dividend_yield": 0.0,
-        }
-    # NIFTY Index mock
-    elif symbol == "NIFTY":
-        return {
-            "stock_price": 22450.00,
-            "implied_volatility": 12.80,
-            "historical_volatility": 11.50,
-            "bid_price": 155.20,
-            "ask_price": 157.60,
-            "open_interest": 85000,
-            "volume": 142000,
-            "strike_price": 22500.00,
-            "expiry_days": 5,
-            "risk_free_rate": 6.50,
-            "dividend_yield": 1.20,
-        }
 
-    # Deterministic general formula
-    base_price = 100.0 + (h % 300)  # $100 - $400
-    iv = 15.0 + (h % 45)  # 15% - 60%
-    hv = iv * 0.9
-    bid = base_price * 0.05
-    ask = bid * 1.05
-
-    return {
-        "stock_price": round(base_price, 2),
-        "implied_volatility": round(iv, 2),
-        "historical_volatility": round(hv, 2),
-        "bid_price": round(bid, 2),
-        "ask_price": round(ask, 2),
-        "open_interest": int(1000 + (h % 15000)),
-        "volume": int(100 + (h % 4000)),
-        "strike_price": round(base_price * 1.02, 2),
-        "expiry_days": int(10 + (h % 80)),
-        "risk_free_rate": 5.25,
-        "dividend_yield": 0.50,
-    }
-
-
-def bsm_price(S, K, T_days, r, q, iv_pct, option_type):
-    T_years = max(T_days, 0.001) / 365.0
-    r_frac = r / 100.0
-    q_frac = q / 100.0
-    sigma_frac = iv_pct / 100.0
-    
-    try:
-        d1 = (math.log(S / K) + (r_frac - q_frac + 0.5 * sigma_frac ** 2) * T_years) / (sigma_frac * math.sqrt(T_years))
-        d2 = d1 - sigma_frac * math.sqrt(T_years)
-        
-        if option_type == "call":
-            val = S * math.exp(-q_frac * T_years) * norm.cdf(d1) - K * math.exp(-r_frac * T_years) * norm.cdf(d2)
-        else:
-            val = K * math.exp(-r_frac * T_years) * norm.cdf(-d2) - S * math.exp(-q_frac * T_years) * norm.cdf(-d1)
-        return max(val, 0.01)
-    except Exception:
-        return 0.01
-
-
-def _get_mock_expiry_dates() -> list[str]:
-    today = datetime.now(timezone.utc).date()
-    expiries = []
-    days_ahead = 3 - today.weekday()
-    if days_ahead < 0:
-        days_ahead += 7
-    if days_ahead == 0:
-        days_ahead = 7
-    next_thurs = today + timedelta(days=days_ahead)
-    expiries.append(next_thurs.isoformat())
-    for i in range(1, 4):
-        expiries.append((next_thurs + timedelta(weeks=i)).isoformat())
-    return expiries
-
-
-def _generate_mock_option_chain(
-    symbol: str,
-    stock_price: float,
-    implied_volatility: float,
-    risk_free_rate: float,
-    dividend_yield: float,
-    open_interest: int,
-    volume: int,
-    expiry_dates: list[str]
-) -> dict[str, list[OptionChainRow]]:
-    option_chains = {}
-    is_index = symbol.upper() in {"NIFTY"} or "INDEX" in symbol.upper() or stock_price > 5000
-    spacing = 50.0 if is_index else 10.0
-    atm_strike = round(stock_price / spacing) * spacing
-    today = datetime.now(timezone.utc).date()
-    
-    for exp_date in expiry_dates:
-        try:
-            exp_dt = datetime.strptime(exp_date, "%Y-%m-%d").date()
-            T_days = max((exp_dt - today).days, 1)
-        except Exception:
-            T_days = 30
-            
-        rows = []
-        for i in range(-20, 21):
-            strike = float(atm_strike + i * spacing)
-            if strike <= 0:
-                continue
-                
-            d = (strike - stock_price) / stock_price
-            iv_smile = implied_volatility * (1.0 + 1.5 * (d ** 2))
-            
-            call_ltp = bsm_price(stock_price, strike, T_days, risk_free_rate, dividend_yield, iv_smile, "call")
-            put_ltp = bsm_price(stock_price, strike, T_days, risk_free_rate, dividend_yield, iv_smile, "put")
-            
-            call_spread = max(0.05, call_ltp * 0.02)
-            put_spread = max(0.05, put_ltp * 0.02)
-            
-            call_bid = max(0.05, round(call_ltp - call_spread / 2, 2))
-            call_ask = max(0.05, round(call_ltp + call_spread / 2, 2))
-            put_bid = max(0.05, round(put_ltp - put_spread / 2, 2))
-            put_ask = max(0.05, round(put_ltp + put_spread / 2, 2))
-            
-            strike_hash = int(hashlib.md5(f"{symbol}-{exp_date}-{strike}".encode()).hexdigest(), 16)
-            
-            call_bid_qty = int(100 + (strike_hash % 20) * 50) * (2 if abs(d) < 0.05 else 1)
-            call_ask_qty = int(((strike_hash >> 1) % 20) * 50 + 100) * (2 if abs(d) < 0.05 else 1)
-            put_bid_qty = int(((strike_hash >> 2) % 20) * 50 + 100) * (2 if abs(d) < 0.05 else 1)
-            put_ask_qty = int(((strike_hash >> 3) % 20) * 50 + 100) * (2 if abs(d) < 0.05 else 1)
-            
-            factor = math.exp(-25.0 * (d ** 2))
-            call_oi = int(open_interest * factor * (1.2 if strike > stock_price else 0.8))
-            put_oi = int(open_interest * factor * (1.2 if strike < stock_price else 0.8))
-            
-            call_volume = int(volume * factor * (1.1 if strike > stock_price else 0.9))
-            put_volume = int(volume * factor * (1.1 if strike < stock_price else 0.9))
-            
-            noise_call_oi = 0.8 + 0.4 * ((strike_hash % 100) / 100.0)
-            noise_call_vol = 0.8 + 0.4 * (((strike_hash >> 4) % 100) / 100.0)
-            noise_put_oi = 0.8 + 0.4 * (((strike_hash >> 8) % 100) / 100.0)
-            noise_put_vol = 0.8 + 0.4 * (((strike_hash >> 12) % 100) / 100.0)
-            
-            call_oi = int(call_oi * noise_call_oi)
-            call_volume = int(call_volume * noise_call_vol)
-            put_oi = int(put_oi * noise_put_oi)
-            put_volume = int(put_volume * noise_put_vol)
-            
-            call_chng_in_oi = int(call_oi * 0.1 * (((strike_hash >> 16) % 200 - 100) / 100.0))
-            put_chng_in_oi = int(put_oi * 0.1 * (((strike_hash >> 20) % 200 - 100) / 100.0))
-            
-            call_chng = round(call_ltp * 0.05 * (((strike_hash >> 24) % 200 - 100) / 100.0), 2)
-            put_chng = round(put_ltp * 0.05 * (((strike_hash >> 28) % 200 - 100) / 100.0), 2)
-            
-            rows.append(OptionChainRow(
-                strike_price=strike,
-                call=OptionChainSide(
-                    oi=max(call_oi, 0),
-                    chng_in_oi=call_chng_in_oi,
-                    volume=max(call_volume, 0),
-                    iv=round(iv_smile, 2),
-                    ltp=round(call_ltp, 2),
-                    chng=call_chng,
-                    bid_qty=call_bid_qty,
-                    bid=call_bid,
-                    ask=call_ask,
-                    ask_qty=call_ask_qty
-                ),
-                put=OptionChainSide(
-                    oi=max(put_oi, 0),
-                    chng_in_oi=put_chng_in_oi,
-                    volume=max(put_volume, 0),
-                    iv=round(iv_smile, 2),
-                    ltp=round(put_ltp, 2),
-                    chng=put_chng,
-                    bid_qty=put_bid_qty,
-                    bid=put_bid,
-                    ask=put_ask,
-                    ask_qty=put_ask_qty
-                )
-            ))
-            
-        option_chains[exp_date] = rows
-        
-    return option_chains
 
 
 
@@ -376,15 +167,7 @@ async def get_ticker_parameters(symbol: str):
             
             raw_cached = json.dumps(data, default=str)
         else:
-            data = {
-                "symbol": symbol_clean,
-                "spot_price": 0.0,
-                "expiry_dates": [],
-                "chains": {},
-                "fetched_at": datetime.now(timezone.utc).isoformat(),
-                "summary": {"total_strikes": 0}
-            }
-            raw_cached = json.dumps(data, default=str)
+            raw_cached = None
 
     if raw_cached:
         try:
@@ -414,7 +197,7 @@ async def get_ticker_parameters(symbol: str):
                     expiry_dates=[],
                     option_chains={},
                     generated_at=_generated_at(),
-                    source="live_market_fetch" if spot > 0 else "deterministic_mock",
+                    source="live_market_fetch" if spot > 0 else "market_data_unavailable",
                     stale=False,
                     partial=False,
                     status="COMPLETED",
@@ -530,39 +313,10 @@ async def get_ticker_parameters(symbol: str):
         except Exception as exc:
             logger.warning("[%s] Failed fetching real-time pricer options params from Redis: %s", symbol_clean, exc)
 
-    # Fallback to deterministic clean mock parameters
-    mocks = _get_deterministic_mocks(symbol_clean)
-    expiry_dates = _get_mock_expiry_dates()
-    option_chains = _generate_mock_option_chain(
-        symbol_clean,
-        mocks["stock_price"],
-        mocks["implied_volatility"],
-        mocks["risk_free_rate"],
-        mocks["dividend_yield"],
-        mocks["open_interest"],
-        mocks["volume"],
-        expiry_dates
-    )
-    return PricerTickerDataResponse(
-        symbol=symbol_clean,
-        stock_price=mocks["stock_price"],
-        implied_volatility=mocks["implied_volatility"],
-        historical_volatility=mocks["historical_volatility"],
-        bid_price=mocks["bid_price"],
-        ask_price=mocks["ask_price"],
-        open_interest=mocks["open_interest"],
-        volume=mocks["volume"],
-        strike_price=mocks["strike_price"],
-        expiry_days=mocks["expiry_days"],
-        risk_free_rate=mocks["risk_free_rate"],
-        dividend_yield=mocks["dividend_yield"],
-        expiry_dates=expiry_dates,
-        option_chains=option_chains,
-        generated_at=_generated_at(),
-        source="deterministic_mock",
-        stale=True,
-        partial=False,
-        status="COMPLETED",
+    # Real market data unavailable across all sources (Groww, yfinance, NSE)
+    raise HTTPException(
+        status_code=503,
+        detail=f"Live market data is currently unavailable for '{symbol_clean}' across all market sources."
     )
 
 

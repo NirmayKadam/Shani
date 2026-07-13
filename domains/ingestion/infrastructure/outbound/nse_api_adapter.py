@@ -217,21 +217,10 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         return []
 
     async def fetch_option_chain(self, symbol: str) -> List[RawTickDTO]:
-        """Fetches full option chain and returns list of RawTickDTOs."""
+        """Fetches full option chain and returns list of RawTickDTOs using real market data."""
         data = await self._fetch_option_chain_raw(symbol)
         if not data:
-            # Check if this is a primary fallback symbol (Index or standard watchlist)
-            clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
-            is_fallback = clean_sym in SymbolValidator._LOCAL_NSE_MAP or clean_sym in INDEX_SYMBOLS
-            
-            if is_fallback:
-                logger.warning("[%s] Live option chain fetch failed, generating synthetic option chain fallback", symbol)
-                data = await self._generate_synthetic_options(symbol)
-            else:
-                logger.warning("[%s] Options are not available for this symbol and not in fallbacks", symbol)
-                return []
-
-        if not data:
+            logger.warning("[%s] Options data is unavailable across all market sources", symbol)
             return []
 
         dtos = []
@@ -253,105 +242,18 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 ))
         return dtos
 
-    async def _generate_synthetic_options(self, symbol: str) -> Optional[dict]:
-        try:
-            price_data = await self.fetch_price(symbol)
-            if not price_data:
-                logger.warning("[%s] Synthetic option generation failed: could not fetch spot price", symbol)
-                return None
-            
-            spot = float(price_data.get("last_price", 0.0))
-            if spot <= 0:
-                logger.warning("[%s] Synthetic option generation failed: invalid spot price %.2f", symbol, spot)
-                return None
-            
-            clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
-            if "NIFTY" in clean_sym:
-                step = 50.0
-            elif "BANKNIFTY" in clean_sym:
-                step = 100.0
-            else:
-                step = 10.0 if spot < 500 else (50.0 if spot < 2000 else 100.0)
+    async def _fetch_option_chain_raw(self, symbol: str) -> Optional[dict]:
+        # Precedence 1: Yahoo Finance
+        yf_data = await self._fetch_yfinance_options_fallback(symbol)
+        if yf_data and yf_data.get("chains"):
+            logger.info("[%s] Option chain retrieved via Yahoo Finance", symbol)
+            return yf_data
 
-            # Generate next 2 Thursdays for expiries
-            expiries = []
-            today = datetime.now(timezone.utc)
-            days_ahead = (3 - today.weekday()) % 7
-            if days_ahead == 0:
-                days_ahead = 7
-            next_thursday = today + timedelta(days=days_ahead)
-            expiries.append(next_thursday.strftime("%Y-%m-%d"))
-            expiries.append((next_thursday + timedelta(days=7)).strftime("%Y-%m-%d"))
+        # Precedence 2: NSE Webscraper API
+        logger.info("[%s] Fallback: Attempting option chain retrieval via NSE Webscraper", symbol)
+        return await self._fetch_nse_webscraper_options(symbol)
 
-            chains = {}
-            base_strike = round(spot / step) * step
-            
-            for exp in expiries:
-                ticks = []
-                for i in range(-15, 16):
-                    strike = base_strike + i * step
-                    if strike <= 0:
-                        continue
-                    
-                    # CE Price (intrinsic + time value)
-                    ce_intrinsic = max(spot - strike, 0)
-                    ce_time_value = (spot * 0.02) * np.exp(-abs(strike - spot) / (spot * 0.05))
-                    ce_price = round(max(ce_intrinsic + ce_time_value, 0.05), 2)
-
-                    # PE Price (intrinsic + time value)
-                    pe_intrinsic = max(strike - spot, 0)
-                    pe_time_value = (spot * 0.02) * np.exp(-abs(strike - spot) / (spot * 0.05))
-                    pe_price = round(max(pe_intrinsic + pe_time_value, 0.05), 2)
-
-                    # Implied Volatility
-                    iv = round(0.12 + 0.05 * (strike - spot) / spot, 4)
-                    iv = max(0.05, min(0.60, iv))
-
-                    # Open Interest
-                    oi_ce = int(15000 * np.exp(-abs(strike - spot) / (spot * 0.03))) + 100
-                    oi_pe = int(14000 * np.exp(-abs(strike - spot) / (spot * 0.03))) + 100
-                    
-                    # Deterministic noise based on symbol+expiry+strike hash
-                    # (avoids flickering data between calls)
-                    noise_hash = int(hashlib.md5(f"{symbol}-{exp}-{strike}".encode()).hexdigest(), 16)
-                    noise_ce = 1.2 + 0.5 * ((noise_hash % 1000) / 1000.0)
-                    noise_pe = 1.2 + 0.5 * (((noise_hash >> 10) % 1000) / 1000.0)
-                    vol_ce = int(oi_ce * noise_ce)
-                    vol_pe = int(oi_pe * noise_pe)
-
-                    ticks.append({
-                        "strike": float(strike),
-                        "type": "CE",
-                        "last_price": float(ce_price),
-                        "oi": oi_ce,
-                        "volume": vol_ce,
-                        "iv": float(iv),
-                        "expiry": exp
-                    })
-                    
-                    ticks.append({
-                        "strike": float(strike),
-                        "type": "PE",
-                        "last_price": float(pe_price),
-                        "oi": oi_pe,
-                        "volume": vol_pe,
-                        "iv": float(iv),
-                        "expiry": exp
-                    })
-                
-                chains[exp] = ticks
-
-            return {
-                "symbol": symbol.upper(),
-                "spot_price": spot,
-                "expiry_dates": expiries,
-                "chains": chains
-            }
-        except Exception as exc:
-            logger.error("[%s] Failed to generate synthetic option chain: %s", symbol, exc, exc_info=True)
-            return None
-
-    async def _fetch_option_chain_raw(self, symbol: str, retry_count: int = 0) -> Optional[dict]:
+    async def _fetch_nse_webscraper_options(self, symbol: str, retry_count: int = 0) -> Optional[dict]:
         session = await self._ensure_session()
         await self._soft_initialise(symbol)
 
@@ -359,7 +261,7 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         is_nse = clean_sym in INDEX_SYMBOLS or clean_sym.endswith(".NS") or clean_sym.endswith(".BO")
 
         if not is_nse:
-            return await self._fetch_yfinance_options_fallback(symbol)
+            return None
 
         clean_name = symbol.upper().replace(".NS", "").replace(".BO", "")
         m_type = "Indices" if clean_name in INDEX_SYMBOLS else "Equity"
@@ -370,16 +272,16 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             async with session.get(info_url, headers=_NSE_API_HEADERS) as resp:
                 if resp.status == 401 and retry_count < 2:
                     await self._soft_initialise(symbol, force=True)
-                    return await self._fetch_option_chain_raw(symbol, retry_count + 1)
+                    return await self._fetch_nse_webscraper_options(symbol, retry_count + 1)
                 
                 if resp.status != 200:
-                    return await self._fetch_yfinance_options_fallback(symbol)
+                    return None
                 
                 info_data = await resp.json()
                 expiries = info_data.get("expiryDates") or info_data.get("metadata", {}).get("expiryDates", [])
                 
             if not expiries:
-                return await self._fetch_yfinance_options_fallback(symbol)
+                return None
 
             # 2. Fetch v3 chain for the first 2 expiries
             combined_data = {"records": {"underlyingValue": 0, "expiryDates": expiries, "data": []}}
@@ -395,11 +297,12 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                             if spot: combined_data["records"]["underlyingValue"] = spot
 
             if not combined_data["records"]["data"]:
-                return await self._fetch_yfinance_options_fallback(symbol)
+                return None
 
             return self._parse_option_chain(symbol, combined_data)
-        except Exception:
-            return await self._fetch_yfinance_options_fallback(symbol)
+        except Exception as exc:
+            logger.warning("[%s] NSE Webscraper fetch error: %s", symbol, exc)
+            return None
 
     async def _soft_initialise(self, symbol: str, force: bool = False) -> None:
         session = await self._ensure_session()
