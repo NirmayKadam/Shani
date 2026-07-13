@@ -115,19 +115,13 @@ To prevent service denials due to rate limits or invalid sessions, `NseApiAdapte
 3.  **Cookie Lifetime Monitoring**: Cookies are audited and programmatically refreshed every 10 minutes (600 seconds) to ensure continuous, uninterrupted API connectivity.
 4.  **Event Loop Safety**: To avoid cross-thread event loop conflicts within the Celery worker threads, the underlying `aiohttp.ClientSession` singleton is automatically validated against the active event loop (`asyncio.get_running_loop()`). If a boundary crossing is detected, the adapter transparently closes and re-initializes the session.
 
-### Robust Synthetic Option Chain Generator
+### Tiered Market Data Fallback Strategy
 
-When the market is closed (outside 9:15 AM – 3:30 PM IST), during API rate-limiting blockages, or for unsupported symbols, the system activates a synthetic option surface generator within `NseApiAdapter` to provide a realistic mathematical representation of option surfaces:
-*   **Base Spot Price Estimation**: Retrieves the latest closing price via the `yfinance` adapter.
-*   **Strike Range Definition**: Generates a symmetrical grid of 31 strikes centered around the ATM strike. The strike interval $dS$ adjusts dynamically depending on the security's spot price ($50.0$ for `NIFTY`, $100.0$ for `BANKNIFTY`, and scales log-linearly for individual equities).
-*   **Intrinsic & Time-Decay Value Computation**:
-    *   **Call Theoretical Mid-Price ($CE$):** $\max(S_0 - K, 0) + (S_0 \times 0.02) \times e^{-\frac{|K - S_0|}{S_0 \times 0.05}}$
-    *   **Put Theoretical Mid-Price ($PE$):** $\max(K - S_0, 0) + (S_0 \times 0.02) \times e^{-\frac{|K - S_0|}{S_0 \times 0.05}}$
-*   **Implied Volatility Curve (Skew Model)**: Simulates a classic volatility smile/skew profile:
-    $$\sigma_{implied} = 0.12 + 0.05 \times \left( \frac{K - S_0}{S_0} \right)^2 - 0.02 \times \left( \frac{K - S_0}{S_0} \right)$$
-*   **Open Interest & Volume Distribution**: Simulates exponential decay of liquidity and participant interest moving away from the At-The-Money (ATM) region:
-    $$OI = \lfloor 15000 \times e^{-\frac{|K - S_0|}{S_0 \times 0.03}} \rfloor + 100$$
-*   **Deterministic Noise Integration**: The generator computes an MD5 hash of the composite string `"{symbol}-{expiry}-{strike}"` to inject localized pseudo-random perturbations to volume and bid/ask spreads. This approach avoids rapid UI flickering while maintaining the appearance of live market activity.
+To ensure zero downtime and strict financial accuracy without outputting misleading data, `NseApiAdapter` and `AdapterFactory` enforce a hierarchical real-time market data fallback chain:
+1.  **Redis In-Memory Cache**: Checked first for pre-fetched option chain grids and underlying spot quotes.
+2.  **Primary Outbound Adapters (Groww API / Yahoo Finance `yfinance`)**: Queries real-time tick feeds and underlying asset prices.
+3.  **NSE India Web Scraper**: Acts as the secondary real-time fallback by scraping options tables directly from NSE India.
+4.  **Fail-Fast Error Policy (HTTP 503)**: Synthetic deterministic mock generators have been completely purged from the analytics pricer engine. If market data cannot be retrieved across all providers (e.g. during total network failure or provider outages), the API raises an explicit `HTTP 503 Service Unavailable` error, guaranteeing that no false or synthetic financial information reaches quantitative models or end users.
 
 ---
 
