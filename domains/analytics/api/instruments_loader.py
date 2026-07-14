@@ -180,6 +180,15 @@ class InstrumentsCatalog:
                         self._instruments.append(item)
                         added_symbols.add(item["symbol"])
             
+            # If no equities were loaded (e.g. download fetched HTML block page), append fallback catalog
+            if len(self._instruments) <= 5:
+                logger.warning("Fewer than 5 instruments loaded. Appending comprehensive local fallback catalog.")
+                added_symbols = set(inst["symbol"] for inst in self._instruments)
+                for item in _FALLBACK_STOCKS:
+                    if item["symbol"] not in added_symbols:
+                        self._instruments.append(item)
+                        added_symbols.add(item["symbol"])
+
             self._loaded = True
             # Build O(1) lookup set from loaded instruments
             self._symbol_set = {inst["symbol"] for inst in self._instruments}

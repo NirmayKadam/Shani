@@ -17,7 +17,8 @@ let appState = {
     riskFreeRate: 6.50,
     dividendYield: 1.20,
     // ATM Option Strike Info
-    atmStrike: 0.0
+    atmStrike: 0.0,
+    lastPriceUpdated: null
 };
 
 // WebSocket and inspection states
@@ -34,6 +35,7 @@ const elements = {
     underlyingSymbol: document.getElementById("underlying-symbol"),
     underlyingPrice: document.getElementById("underlying-price"),
     underlyingTime: document.getElementById("underlying-time"),
+    underlyingTimeElapsed: document.getElementById("underlying-time-elapsed"),
     reloadBtn: document.getElementById("reload-btn"),
     downloadCsvBtn: document.getElementById("download-csv-btn"),
     
@@ -410,6 +412,23 @@ function closeSuggestions() {
 
 
 /**
+ * Monotonically update underlying price timestamp
+ */
+function updateUnderlyingTime(timestampStr) {
+    if (!timestampStr) return false;
+    const incomingTime = new Date(timestampStr);
+    if (appState.lastPriceUpdated && incomingTime <= appState.lastPriceUpdated) {
+        console.log("Skipping out-of-order or stale update:", timestampStr);
+        return false;
+    }
+    appState.lastPriceUpdated = incomingTime;
+    if (elements.underlyingTimeElapsed) {
+        elements.underlyingTimeElapsed.textContent = "(updated live)";
+    }
+    return true;
+}
+
+/**
  * Query live Redis or mock analytics parameters for selected instrument
  */
 async function fetchTickerData(symbol) {
@@ -449,10 +468,8 @@ async function fetchTickerData(symbol) {
         elements.underlyingSymbol.textContent = appState.symbol;
         elements.underlyingPrice.textContent = formatNumber(appState.marketSpot, 2);
         
-        const now = new Date(data.generated_at || new Date());
-        elements.underlyingTime.textContent = now.toLocaleDateString("en-IN", {
-            day: "2-digit", month: "short", year: "numeric"
-        }) + " " + now.toLocaleTimeString("en-IN");
+        appState.lastPriceUpdated = null;
+        updateUnderlyingTime(data.generated_at || new Date().toISOString());
         
         // Update Slider limits and values
         elements.spotCurrency.textContent = (appState.symbol === "AAPL" || appState.symbol === "TSLA") ? "USD" : "INR";
@@ -531,16 +548,15 @@ function setupWebSocket(symbol) {
                 console.log(`Real-time price update received for ${symbol}:`, msg.data);
                 const priceData = msg.data;
                 if (priceData && priceData.last_price) {
+                    const updateTimeStr = priceData.last_updated || new Date().toISOString();
+                    if (!updateUnderlyingTime(updateTimeStr)) {
+                        return;
+                    }
                     const newPrice = priceData.last_price;
                     const isSpotSynced = Math.abs(appState.spot - appState.marketSpot) < 0.01 || appState.spot === 0;
                     
                     appState.marketSpot = newPrice;
                     elements.underlyingPrice.textContent = formatNumber(newPrice, 2);
-                    
-                    const updateTime = priceData.last_updated ? new Date(priceData.last_updated) : new Date();
-                    elements.underlyingTime.textContent = updateTime.toLocaleDateString("en-IN", {
-                        day: "2-digit", month: "short", year: "numeric"
-                    }) + " " + updateTime.toLocaleTimeString("en-IN");
                     
                     const spotMin = Math.round(appState.marketSpot * 0.7 * 100) / 100;
                     const spotMax = Math.round(appState.marketSpot * 1.3 * 100) / 100;
@@ -602,6 +618,11 @@ async function fetchTickerDataBackground(symbol) {
         
         if (data.symbol !== appState.symbol) return;
         
+        const updateTimeStr = data.generated_at || new Date().toISOString();
+        if (!updateUnderlyingTime(updateTimeStr)) {
+            return;
+        }
+        
         // Check if user is synced with market spot price
         const isSpotSynced = Math.abs(appState.spot - appState.marketSpot) < 0.01 || appState.spot === 0;
         
@@ -609,11 +630,6 @@ async function fetchTickerDataBackground(symbol) {
         appState.optionChains = data.option_chains || {};
         
         elements.underlyingPrice.textContent = formatNumber(appState.marketSpot, 2);
-        
-        const now = new Date(data.generated_at || new Date());
-        elements.underlyingTime.textContent = now.toLocaleDateString("en-IN", {
-            day: "2-digit", month: "short", year: "numeric"
-        }) + " " + now.toLocaleTimeString("en-IN");
         
         const spotMin = Math.round(appState.marketSpot * 0.7 * 100) / 100;
         const spotMax = Math.round(appState.marketSpot * 1.3 * 100) / 100;
@@ -1144,9 +1160,7 @@ elements.resetMarketBtn.addEventListener("click", () => {
 });
 
 function startHeaderClock() {
-    const clockTime = document.getElementById("clock-time");
-    const clockDate = document.getElementById("clock-date");
-    if (!clockTime || !clockDate) return;
+    if (!elements.underlyingTime) return;
 
     function update() {
         const now = new Date();
@@ -1154,19 +1168,30 @@ function startHeaderClock() {
         let hours = now.getHours();
         const minutes = String(now.getMinutes()).padStart(2, '0');
         const seconds = String(now.getSeconds()).padStart(2, '0');
-        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const ampm = hours >= 12 ? 'pm' : 'am';
         hours = hours % 12;
         hours = hours ? hours : 12; // the hour '0' should be '12'
         const hoursStr = String(hours).padStart(2, '0');
-        
-        clockTime.textContent = `${hoursStr}:${minutes}:${seconds} ${ampm}`;
         
         const day = String(now.getDate()).padStart(2, '0');
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const monthStr = months[now.getMonth()];
         const year = now.getFullYear();
         
-        clockDate.textContent = `${day} ${monthStr} ${year}`;
+        elements.underlyingTime.textContent = `${day} ${monthStr} ${year} ${hoursStr}:${minutes}:${seconds} ${ampm}`;
+        
+        // Update elapsed time since last price update
+        if (elements.underlyingTimeElapsed && appState.lastPriceUpdated) {
+            const diffMs = now - appState.lastPriceUpdated;
+            const diffSec = Math.floor(diffMs / 1000);
+            if (diffSec < 0) {
+                elements.underlyingTimeElapsed.textContent = "(updated live)";
+            } else if (diffSec <= 1) {
+                elements.underlyingTimeElapsed.textContent = "(updated live)";
+            } else {
+                elements.underlyingTimeElapsed.textContent = `(updated ${diffSec}s ago)`;
+            }
+        }
     }
     
     update();

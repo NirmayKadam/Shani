@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # Ingestion
     DefaultSymbols: str       = Field(
-        "NIFTY,BANKNIFTY,RELIANCE,INFY,HDFCBANK,TCS,ICICIBANK",
+        "",
         validation_alias="WATCHLIST_SYMBOLS"
     )
     PricePollIntervalSeconds: int = Field(5, validation_alias="PRICE_POLL_INTERVAL_SECONDS")

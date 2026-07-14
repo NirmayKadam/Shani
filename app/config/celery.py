@@ -31,13 +31,4 @@ celery_app.conf.update(
     result_expires=3600,
 )
 
-celery_app.conf.beat_schedule = {
-    "poll_market_prices": {
-        "task": "ingestion.poll_prices",
-        "schedule": float(settings.PricePollIntervalSeconds),
-    },
-    "poll_option_chains": {
-        "task": "ingestion.poll_options",
-        "schedule": float(settings.OptionsPollIntervalSeconds),
-    },
-}
+celery_app.conf.beat_schedule = {}

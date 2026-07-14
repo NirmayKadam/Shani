@@ -71,8 +71,8 @@ class TestSymbolValidatorWithMockedYfinance:
         mock_ticker.history.return_value = MagicMock(empty=False)
         mock_yf.Ticker.return_value = mock_ticker
 
-        assert SymbolValidator.validate("ZOMATO.NS") is True
-        mock_yf.Ticker.assert_called_with("ZOMATO.NS")
+        assert SymbolValidator.validate("UNKNOWNXYZ.NS") is True
+        mock_yf.Ticker.assert_called_with("UNKNOWNXYZ.NS")
 
     @patch("shared.utils.symbol_validator.yf")
     def test_validate_unknown_symbol_not_found(self, mock_yf):
@@ -89,5 +89,5 @@ class TestSymbolValidatorWithMockedYfinance:
         mock_yf.Ticker.return_value = mock_ticker
 
         # Symbol not in local map, not in instruments catalog
-        result = SymbolValidator.get_clean_symbol("ZOMATO")
-        assert result == "ZOMATO.NS"
+        result = SymbolValidator.get_clean_symbol("UNKNOWNXYZ")
+        assert result == "UNKNOWNXYZ.NS"
