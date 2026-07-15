@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Market Sentiment</title>
+    <title>Login</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -12,55 +12,24 @@
 </head>
 <body>
     <div class="split-layout">
-        <!-- Left Panel: Authentication Form -->
+        <!-- Left Panel: Authentication -->
         <div class="auth-panel">
-            <div class="auth-content">
-                <div class="brand">
-                    <i class="fa-solid fa-chart-line logo-icon"></i>
-                    <span>MarketSense</span>
-                </div>
-
+            <div class="auth-content" style="max-width: 400px; text-align: center;">
                 <div class="header">
                     <h1>Welcome Back</h1>
-                    <p>Welcome Back, Please enter Your details</p>
+                    <p style="margin-top: 10px; margin-bottom: 30px;">Sign in to access your personalized dashboard.</p>
                 </div>
 
-                <div class="toggle-container">
-                    <button class="toggle-btn active">Sign In</button>
-                    <button class="toggle-btn">Signup</button>
-                </div>
-
-                <form class="login-form">
-                    <div class="input-group">
-                        <i class="fa-regular fa-envelope input-icon"></i>
-                        <div class="input-wrapper">
-                            <label for="email">Email Address</label>
-                            <input type="email" id="email" placeholder="example@gmail.com" required>
-                        </div>
-                        <i class="fa-solid fa-circle-check success-icon"></i>
-                    </div>
-
-                    <button type="submit" class="primary-btn">Continue</button>
-                </form>
-
-                <div class="divider">
-                    <span>Or Continue With</span>
-                </div>
-
-                <div class="social-logins">
-                    <button class="social-btn" aria-label="Google Login">
+                <div class="social-logins" style="margin-bottom: 2rem;">
+                    <!-- Expanded Google Button since it's the only option -->
+                    <button class="primary-btn" id="googleLoginBtn">
                         <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/google/google-original.svg" alt="Google" />
-                    </button>
-                    <button class="social-btn" aria-label="Apple Login">
-                        <i class="fa-brands fa-apple"></i>
-                    </button>
-                    <button class="social-btn fb" aria-label="Facebook Login">
-                        <i class="fa-brands fa-facebook-f"></i>
+                        Sign in with Google
                     </button>
                 </div>
 
                 <p class="footer-text">
-                    Join the millions of smart investors who trust us to manage their finances. Log in to access your personalized dashboard, track your portfolio performance, and make informed investment decisions.
+                    Join the millions of smart investors who trust us to manage their finances. Log in to track your portfolio performance and make informed investment decisions.
                 </p>
             </div>
         </div>
@@ -71,17 +40,43 @@
             <div class="decoration dec-2"></div>
             <div class="decoration dec-3"></div>
             <div class="decoration dec-4"></div>
+            <!-- Original Image -->
             <img src="bull_image.png" alt="3D Finance Bull" class="hero-image">
         </div>
     </div>
     
-    <!-- Script for UI interactions (e.g. toggle active state) -->
-    <script>
-        document.querySelectorAll('.toggle-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-            });
+    <!-- Firebase Integration -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCKupNn5aElu7c07LcYJS0J0mWzCKo2EQc",
+            authDomain: "alphastreams-14879.firebaseapp.com",
+            projectId: "alphastreams-14879",
+            storageBucket: "alphastreams-14879.firebasestorage.app",
+            messagingSenderId: "849439984965",
+            appId: "1:849439984965:web:76934b9c49d9fdbd71422c"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        document.getElementById('googleLoginBtn').addEventListener('click', () => {
+            signInWithPopup(auth, provider)
+                .then((result) => {
+                    // Login successful
+                    window.location.href = '/dashboard.html';
+                })
+                .catch((error) => {
+                    // Handle Errors here
+                    console.error(error);
+                    alert("Login failed: " + error.message);
+                });
         });
     </script>
 </body>
