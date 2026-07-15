@@ -151,8 +151,19 @@ function calculateBSM(S, K, T_days, r_pct, sigma_pct, q_pct) {
     // Conversions
     const T = Math.max(T_days, 0.001) / 365.0; // Avoid division by zero
     const r = r_pct / 100.0;
-    const sigma = sigma_pct / 100.0;
+    const sigma = Math.max(0.0001, sigma_pct / 100.0); // Safeguard against zero/negative volatility
     const q = q_pct / 100.0;
+
+    if (S <= 0 || K <= 0) {
+        return {
+            call: 0.0, put: 0.0,
+            deltaCall: 0.0, deltaPut: 0.0,
+            gamma: 0.0, vega: 0.0,
+            thetaCall: 0.0, thetaPut: 0.0,
+            rhoCall: 0.0, rhoPut: 0.0,
+            d1: 0, d2: 0, nd1: 0, nd2: 0
+        };
+    }
 
     let d1, d2, Nd1, Nd2, NminusD1, NminusD2, nd1Val;
     
@@ -563,6 +574,7 @@ function setupWebSocket(symbol) {
                     
                     elements.bsmSpotSlider.min = spotMin;
                     elements.bsmSpotSlider.max = spotMax;
+                    elements.bsmSpotSlider.step = Math.round((spotMax - spotMin) / 200 * 100) / 100 || 0.05;
                     elements.spotMinLbl.textContent = formatNumber(spotMin, 2);
                     elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
                     
@@ -636,6 +648,7 @@ async function fetchTickerDataBackground(symbol) {
         
         elements.bsmSpotSlider.min = spotMin;
         elements.bsmSpotSlider.max = spotMax;
+        elements.bsmSpotSlider.step = Math.round((spotMax - spotMin) / 200 * 100) / 100 || 0.05;
         elements.spotMinLbl.textContent = formatNumber(spotMin, 2);
         elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
         
@@ -659,6 +672,23 @@ function updateGreeksModalIfOpen() {
     if (activeInspectedStrike !== null && elements.greeksModal.classList.contains("show")) {
         openStrikeModal(activeInspectedStrike);
     }
+}
+
+/**
+ * Re-populate Strike select dropdown options dynamically
+ */
+function populateStrikesDropdown() {
+    elements.strikeSelect.innerHTML = '<option value="ALL">Select</option>';
+    const chainRows = appState.optionChains[appState.selectedExpiry] || [];
+    chainRows.forEach(row => {
+        const opt = document.createElement("option");
+        opt.value = row.strike_price;
+        opt.textContent = formatNumber(row.strike_price, 0);
+        if (row.strike_price.toString() === appState.selectedStrike.toString()) {
+            opt.selected = true;
+        }
+        elements.strikeSelect.appendChild(opt);
+    });
 }
 
 /**
@@ -697,14 +727,7 @@ function populateDropdowns() {
     }
 
     // 2. Strike Price Filter Dropdown
-    elements.strikeSelect.innerHTML = '<option value="ALL">Select</option>';
-    const chainRows = appState.optionChains[appState.selectedExpiry] || [];
-    chainRows.forEach(row => {
-        const opt = document.createElement("option");
-        opt.value = row.strike_price;
-        opt.textContent = formatNumber(row.strike_price, 0);
-        elements.strikeSelect.appendChild(opt);
-    });
+    populateStrikesDropdown();
 }
 
 /**
@@ -1059,6 +1082,7 @@ bindSlider(elements.bsmDiv, elements.bsmDivSlider, "dividendYield", recalculateA
 // Listeners for selectors
 elements.expirySelect.addEventListener("change", (e) => {
     appState.selectedExpiry = e.target.value;
+    appState.selectedStrike = "ALL"; // Reset strike filter on expiry change
     
     // Estimate expiry days automatically based on select date
     try {
@@ -1075,6 +1099,7 @@ elements.expirySelect.addEventListener("change", (e) => {
         console.error(err);
     }
     
+    populateStrikesDropdown(); // Re-populate strikes dropdown for the new expiry
     recalculateAndRender();
 });
 

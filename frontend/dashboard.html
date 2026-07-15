@@ -22,6 +22,7 @@
     <div class="nse-top-navbar">
         <div class="nse-container">
             <div class="nse-tabs">
+                <a href="/" class="nse-tab" style="text-decoration: none; display: inline-block;">Home</a>
                 <a href="/dashboard.html" class="nse-tab active" style="text-decoration: none; display: inline-block;">Option Chain</a>
             </div>
         </div>
@@ -31,6 +32,9 @@
         <!-- Header -->
         <div class="nse-header">
             <h1 class="nse-title">Option Chain (Equity Derivatives)</h1>
+            <!-- <div class="nse-header-links">
+                <a href="#" class="nse-link orange-text">Futures contracts</a>
+            </div> -->
         </div>
 
         <!-- Filters Section -->
@@ -44,13 +48,13 @@
                     </div>
                 </div>
                 <div class="filter-group">
-                    <label>Expiry Date</label>
+                    <label for="expiry-select">Expiry Date</label>
                     <select id="expiry-select">
                         <!-- Populated dynamically -->
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label>Strike Price</label>
+                    <label for="strike-select">Strike Price</label>
                     <select id="strike-select">
                         <option value="ALL">Select</option>
                         <!-- Populated dynamically -->
@@ -78,6 +82,8 @@
                 </button>
             </div>
             <div class="nse-action-links">
+                <a href="/user_manual.html" id="user-manual-btn" class="nse-action-link">User Manual</a>
+                <span class="divider">|</span>
                 <a href="/terms.html" id="terms-btn" class="nse-action-link">Terms of Use</a>
                 <span class="divider">|</span>
                 <a href="#" class="nse-action-link">Best View</a>
@@ -104,7 +110,7 @@
                             <label for="bsm-spot">Spot Price (<span id="spot-currency">INR</span>)</label>
                             <input type="number" id="bsm-spot" step="0.01" value="0.00">
                         </div>
-                        <input type="range" id="bsm-spot-slider" min="0" max="0" step="0.01">
+                        <input type="range" id="bsm-spot-slider" min="0" max="0" step="0.01" aria-label="Spot Price Slider" title="Spot Price Slider">
                         <div class="range-labels">
                             <span id="spot-min-lbl">--</span>
                             <span id="spot-max-lbl">--</span>
@@ -116,7 +122,7 @@
                             <label for="bsm-vol">Volatility (σ %)</label>
                             <input type="number" id="bsm-vol" step="0.1" value="0.0">
                         </div>
-                        <input type="range" id="bsm-vol-slider" min="1" max="100" step="0.1" value="15">
+                        <input type="range" id="bsm-vol-slider" min="1" max="100" step="0.1" value="15" aria-label="Volatility Slider" title="Volatility Slider">
                         <div class="range-labels">
                             <span>1.0%</span>
                             <span>100.0%</span>
@@ -128,7 +134,7 @@
                             <label for="bsm-days">Days to Expiry</label>
                             <input type="number" id="bsm-days" step="1" value="30">
                         </div>
-                        <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30">
+                        <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30" aria-label="Days to Expiry Slider" title="Days to Expiry Slider">
                         <div class="range-labels">
                             <span>1 Day</span>
                             <span>365 Days</span>
@@ -140,7 +146,7 @@
                             <label for="bsm-rate">Risk-Free Rate (%)</label>
                             <input type="number" id="bsm-rate" step="0.01" value="6.50">
                         </div>
-                        <input type="range" id="bsm-rate-slider" min="0" max="15" step="0.05" value="6.5">
+                        <input type="range" id="bsm-rate-slider" min="0" max="15" step="0.05" value="6.5" aria-label="Risk-Free Rate Slider" title="Risk-Free Rate Slider">
                         <div class="range-labels">
                             <span>0.0%</span>
                             <span>15.0%</span>
@@ -152,7 +158,7 @@
                             <label for="bsm-div">Dividend Yield (%)</label>
                             <input type="number" id="bsm-div" step="0.01" value="0.00">
                         </div>
-                        <input type="range" id="bsm-div-slider" min="0" max="10" step="0.05" value="0">
+                        <input type="range" id="bsm-div-slider" min="0" max="10" step="0.05" value="0" aria-label="Dividend Yield Slider" title="Dividend Yield Slider">
                         <div class="range-labels">
                             <span>0.0%</span>
                             <span>10.0%</span>
