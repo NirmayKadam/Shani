@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Market Sentiment</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="login.css">
+</head>
+<body>
+    <div class="split-layout">
+        <!-- Left Panel: Authentication Form -->
+        <div class="auth-panel">
+            <div class="auth-content">
+                <div class="brand">
+                    <i class="fa-solid fa-chart-line logo-icon"></i>
+                    <span>MarketSense</span>
+                </div>
+
+                <div class="header">
+                    <h1>Welcome Back</h1>
+                    <p>Welcome Back, Please enter Your details</p>
+                </div>
+
+                <div class="toggle-container">
+                    <button class="toggle-btn active">Sign In</button>
+                    <button class="toggle-btn">Signup</button>
+                </div>
+
+                <form class="login-form">
+                    <div class="input-group">
+                        <i class="fa-regular fa-envelope input-icon"></i>
+                        <div class="input-wrapper">
+                            <label for="email">Email Address</label>
+                            <input type="email" id="email" placeholder="example@gmail.com" required>
+                        </div>
+                        <i class="fa-solid fa-circle-check success-icon"></i>
+                    </div>
+
+                    <button type="submit" class="primary-btn">Continue</button>
+                </form>
+
+                <div class="divider">
+                    <span>Or Continue With</span>
+                </div>
+
+                <div class="social-logins">
+                    <button class="social-btn" aria-label="Google Login">
+                        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/google/google-original.svg" alt="Google" />
+                    </button>
+                    <button class="social-btn" aria-label="Apple Login">
+                        <i class="fa-brands fa-apple"></i>
+                    </button>
+                    <button class="social-btn fb" aria-label="Facebook Login">
+                        <i class="fa-brands fa-facebook-f"></i>
+                    </button>
+                </div>
+
+                <p class="footer-text">
+                    Join the millions of smart investors who trust us to manage their finances. Log in to access your personalized dashboard, track your portfolio performance, and make informed investment decisions.
+                </p>
+            </div>
+        </div>
+
+        <!-- Right Panel: Visual Showcase -->
+        <div class="visual-panel">
+            <div class="decoration dec-1"></div>
+            <div class="decoration dec-2"></div>
+            <div class="decoration dec-3"></div>
+            <div class="decoration dec-4"></div>
+            <img src="bull_image.png" alt="3D Finance Bull" class="hero-image">
+        </div>
+    </div>
+    
+    <!-- Script for UI interactions (e.g. toggle active state) -->
+    <script>
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>
