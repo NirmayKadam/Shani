@@ -434,7 +434,7 @@ function updateUnderlyingTime(timestampStr) {
 async function fetchTickerData(symbol) {
     try {
         // Show loading state in the table
-        elements.tableBody.innerHTML = `<tr><td colspan="25" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">Loading option chain for ${symbol}...</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">Loading option chain for ${symbol}...</td></tr>`;
         
         const res = await fetch(`/v1/pricer/ticker/${symbol}`);
         if (!res.ok) throw new Error(`Ticker query failed for ${symbol}`);
@@ -511,7 +511,7 @@ async function fetchTickerData(symbol) {
         }
     } catch (e) {
         console.error("Error fetching options parameters: ", e);
-        elements.tableBody.innerHTML = `<tr><td colspan="25" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
     }
 }
 
@@ -714,7 +714,7 @@ function recalculateAndRender() {
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
     if (chainRows.length === 0) {
         const symbolText = appState.symbol ? appState.symbol : "selected instrument";
-        elements.tableBody.innerHTML = `<tr><td colspan="25" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #ea580c; background-color: rgba(234, 88, 12, 0.04);">Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #ea580c; background-color: rgba(234, 88, 12, 0.04);">Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
         return;
     }
 
@@ -824,13 +824,10 @@ function recalculateAndRender() {
                     </svg>
                 </button>
             </td>
-            <td class="${callItmClass}">${formatNumber(row.call?.oi, 0, "-")}</td>
-            <td class="${callItmClass} ${row.call?.chng_in_oi < 0 ? 'negative-val' : ''}">${formatNumber(row.call?.chng_in_oi, 0, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.volume, 0, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.iv, 2, "-")}</td>
             <td class="${callItmClass} bs-field ${callBsClass}" title="${callBsTitle}">${formatNumber(callBS.call, 2)}</td>
             <td class="${callItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.call?.ltp, 2, "-")}</td>
-            <td class="${callItmClass} ${cChgClass}">${formatNumber(row.call?.chng, 2, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.bid_qty, 0, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.bid, 2, "-")}</td>
             <td class="${callItmClass}">${formatNumber(row.call?.ask, 2, "-")}</td>
@@ -844,13 +841,10 @@ function recalculateAndRender() {
             <td class="${putItmClass}">${formatNumber(row.put?.bid, 2, "-")}</td>
             <td class="${putItmClass}">${formatNumber(row.put?.ask, 2, "-")}</td>
             <td class="${putItmClass}">${formatNumber(row.put?.ask_qty, 0, "-")}</td>
-            <td class="${putItmClass} ${pChgClass}">${formatNumber(row.put?.chng, 2, "-")}</td>
             <td class="${putItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.put?.ltp, 2, "-")}</td>
             <td class="${putItmClass} bs-field ${putBsClass}" title="${putBsTitle}">${formatNumber(putBS.put, 2)}</td>
             <td class="${putItmClass}">${formatNumber(row.put?.iv, 2, "-")}</td>
             <td class="${putItmClass}">${formatNumber(row.put?.volume, 0, "-")}</td>
-            <td class="${putItmClass} ${row.put?.chng_in_oi < 0 ? 'negative-val' : ''}">${formatNumber(row.put?.chng_in_oi, 0, "-")}</td>
-            <td class="${putItmClass}">${formatNumber(row.put?.oi, 0, "-")}</td>
             <td class="chart-cell">
                 <button class="chart-icon-btn" title="View Chart" onclick="openStrikeModal(${strike})">
                     <svg viewBox="0 0 24 24" width="12" height="12">
@@ -943,7 +937,7 @@ function downloadCSV() {
     let csvContent = "data:text/csv;charset=utf-8,";
     
     // CSV Header row
-    csvContent += "CALLS - OI,CALLS - CHNG IN OI,CALLS - VOLUME,CALLS - IV,CALLS - BSM PRICE,CALLS - LTP,CALLS - CHNG,CALLS - BID QTY,CALLS - BID,CALLS - ASK,CALLS - ASK QTY,STRIKE,PUTS - BID QTY,PUTS - BID,PUTS - ASK,PUTS - ASK QTY,PUTS - CHNG,PUTS - LTP,PUTS - BSM PRICE,PUTS - IV,PUTS - VOLUME,PUTS - CHNG IN OI,PUTS - OI\r\n";
+    csvContent += "CALLS - VOLUME,CALLS - IV,CALLS - BSM PRICE,CALLS - LTP,CALLS - BID QTY,CALLS - BID,CALLS - ASK,CALLS - ASK QTY,STRIKE,PUTS - BID QTY,PUTS - BID,PUTS - ASK,PUTS - ASK QTY,PUTS - LTP,PUTS - BSM PRICE,PUTS - IV,PUTS - VOLUME\r\n";
     
     chainRows.forEach(row => {
         const strike = row.strike_price;
@@ -953,13 +947,10 @@ function downloadCSV() {
         const putBS = calculateBSM(appState.spot, strike, appState.daysToExpiry, appState.riskFreeRate, putIv, appState.dividendYield);
 
         const values = [
-            row.call?.oi || 0,
-            row.call?.chng_in_oi || 0,
             row.call?.volume || 0,
             row.call?.iv || 0.0,
             callBS.call.toFixed(2),
             row.call?.ltp || 0.0,
-            row.call?.chng || 0.0,
             row.call?.bid_qty || 0,
             row.call?.bid || 0.0,
             row.call?.ask || 0.0,
@@ -969,13 +960,10 @@ function downloadCSV() {
             row.put?.bid || 0.0,
             row.put?.ask || 0.0,
             row.put?.ask_qty || 0,
-            row.put?.chng || 0.0,
             row.put?.ltp || 0.0,
             putBS.put.toFixed(2),
             row.put?.iv || 0.0,
-            row.put?.volume || 0,
-            row.put?.chng_in_oi || 0,
-            row.put?.oi || 0
+            row.put?.volume || 0
         ];
         
         csvContent += values.join(",") + "\r\n";

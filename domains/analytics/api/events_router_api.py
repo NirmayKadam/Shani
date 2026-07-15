@@ -183,7 +183,8 @@ class ConnectionManager:
         if cleanup_stop is not None:
             cleanup_stop.set()
 
-        tasks = [t for t in (subscriber_task, cleanup_task) if t is not None]
+        current = asyncio.current_task()
+        tasks = [t for t in (subscriber_task, cleanup_task) if t is not None and t is not current]
         for task in tasks:
             task.cancel()
         if tasks:
