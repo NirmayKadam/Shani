@@ -31,9 +31,6 @@
         <!-- Header -->
         <div class="nse-header">
             <h1 class="nse-title">Option Chain (Equity Derivatives)</h1>
-            <!-- <div class="nse-header-links">
-                <a href="#" class="nse-link orange-text">Futures contracts</a>
-            </div> -->
         </div>
 
         <!-- Filters Section -->
@@ -234,20 +231,17 @@
                     <thead>
                         <!-- Calls / Strikes / Puts Super Header -->
                         <tr class="super-header">
-                            <th colspan="12" class="calls-super">CALLS</th>
+                            <th colspan="9" class="calls-super">CALLS</th>
                             <th class="strike-super">STRIKE</th>
-                            <th colspan="12" class="puts-super">PUTS</th>
+                            <th colspan="9" class="puts-super">PUTS</th>
                         </tr>
                         <!-- Sub Columns Header -->
                         <tr class="sub-header">
                             <th title="Chart Link"></th>
-                            <th title="Open Interest">OI</th>
-                            <th title="Change in Open Interest">CHNG IN OI</th>
                             <th title="Volume">VOLUME</th>
                             <th title="Implied Volatility">IV</th>
                             <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
                             <th title="Last Traded Price">LTP</th>
-                            <th title="Net Change">CHNG</th>
                             <th title="Bid Quantity">BID QTY</th>
                             <th title="Bid Price">BID</th>
                             <th title="Ask Price">ASK</th>
@@ -259,13 +253,10 @@
                             <th title="Bid Price">BID</th>
                             <th title="Ask Price">ASK</th>
                             <th title="Ask Quantity">ASK QTY</th>
-                            <th title="Net Change">CHNG</th>
                             <th title="Last Traded Price">LTP</th>
                             <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
                             <th title="Implied Volatility">IV</th>
                             <th title="Volume">VOLUME</th>
-                            <th title="Change in Open Interest">CHNG IN OI</th>
-                            <th title="Open Interest">OI</th>
                             <th title="Chart Link"></th>
                         </tr>
                     </thead>
@@ -386,7 +377,7 @@
         </div>
     </div>
 
-    <!-- Info Center Modal -->
+    <!-- Info & Regulatory Center Modal -->
     <div id="info-modal" class="modal">
         <div class="modal-content info-modal-content">
             <div class="modal-header info-modal-header">
@@ -418,7 +409,7 @@
                                 <li><strong>Days to Expiry:</strong> Time remaining until derivative settlement.</li>
                                 <li><strong>Risk-Free Rate:</strong> Prevailing interest rate environment.</li>
                                 <li><strong>Dividend Yield:</strong> Continuous cash payouts of stock or index.</li>
-                             </ul>
+                            </ul>
                         </div>
                         <div class="guide-card">
                             <h4>Option Chain Shading & Pricing Highlights</h4>
@@ -529,6 +520,6 @@
     </div>
 
     <!-- Main Application Script -->
-    <script src="/app.js"></script>
+    <script src="/app.js?v=2.1.2"></script>
 </body>
 </html>
