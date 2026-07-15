@@ -3,532 +3,429 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Option Chain (Equity Derivatives) - NSE India Clone</title>
+    <!-- SEO Meta Tags -->
+    <title>AlphaStreams V2 — Quant-Grade Options Analytics & Pricing Terminal</title>
+    <meta name="description" content="AlphaStreams V2 is an event-driven modular monolith combining real-time NSE options chain calculations, client-side Black-Scholes Greeks calculators, Crank-Nicolson PDE pricing, and deep NLP market sentiment.">
+    <meta name="keywords" content="NSE Option Chain, Black-Scholes Calculator, Crank-Nicolson PDE, Quant Options Trading, Option Greeks, Indian Market Derivatives, FastAPI, Celery, Redis Streams">
+    
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css?v=2.1.1">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/landing.css">
 </head>
 <body>
-    <!-- AlphaStreams Brand Header -->
-    <div class="alphastreams-brand-header">
-        <div class="nse-container">
-            <h1 style="margin: 10px 0 5px 0; font-size: 28px; font-weight: 700; color: #1a237e;">AlphaStreams</h1>
-        </div>
-    </div>
+    <!-- Live Streaming Particle Background -->
+    <canvas id="bg-canvas"></canvas>
 
-    <!-- Top Brand Tab Bar -->
-    <div class="nse-top-navbar">
-        <div class="nse-container">
-            <div class="nse-tabs">
-                <a href="/index.html" class="nse-tab active" style="text-decoration: none; display: inline-block;">Option Chain</a>
-            </div>
-        </div>
-    </div>
-
-    <div class="nse-container main-content">
-        <!-- Header -->
-        <div class="nse-header">
-            <h1 class="nse-title">Option Chain (Equity Derivatives)</h1>
-            <!-- <div class="nse-header-links">
-                <a href="#" class="nse-link orange-text">Futures contracts</a>
-            </div> -->
-        </div>
-
-        <!-- Filters Section -->
-        <div class="nse-filters-box">
-            <div class="filter-row">
-                <div class="filter-group">
-                    <label for="symbol-search-input">Search Instrument (Indices/Stocks):</label>
-                    <div class="autocomplete-wrapper">
-                        <input type="text" id="symbol-search-input" placeholder="Type NIFTY, RELIANCE, TCS..." value="NIFTY" autocomplete="off">
-                        <div id="search-suggestions" class="suggestions-dropdown hidden"></div>
-                    </div>
-                </div>
-                <div class="filter-group">
-                    <label>Expiry Date</label>
-                    <select id="expiry-select">
-                        <!-- Populated dynamically -->
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Strike Price</label>
-                    <select id="strike-select">
-                        <option value="ALL">Select</option>
-                        <!-- Populated dynamically -->
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label style="visibility: hidden;">Action</label>
-                    <button id="main-search-btn" style="padding: 7px 16px; background-color: #f37021; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 13px;">Search</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Info and Actions Bar -->
-        <div class="nse-info-bar">
-            <div class="nse-underlying-info">
-                Underlying Index: <span id="underlying-symbol" class="bold-text">NIFTY</span> 
-                <span id="underlying-price" class="bold-text price-text">--</span> 
-                <span class="gray-text">As on</span> 
-                <span id="underlying-time" class="bold-text">--</span>
-                <span id="underlying-time-elapsed" class="gray-text" style="font-size: 11px; margin-left: 6px; font-weight: 500;"></span>
-                <button id="reload-btn" class="nse-reload-icon" title="Reload Data">
-                    <svg viewBox="0 0 24 24" width="16" height="16">
-                        <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+    <!-- Top Navigation Header -->
+    <header>
+        <div class="container nav-container">
+            <a href="/" class="logo-link" id="nav-logo">
+                <div class="logo-wrapper">
+                    <!-- Embedded SVG logo matching logo.svg -->
+                    <svg viewBox="0 0 200 200" width="100%" height="100%">
+                        <path d="M 100,32 C 104,32 107,34 110,39 L 173,142 C 176,147 174,153 168,155 C 166,156 163,156 161,156 L 39,156 C 33,156 28,151 28,145 C 28,142 29,140 31,137 L 90,39 C 93,34 96,32 100,32 Z" fill="none" stroke="#f37021" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M 25,120 C 55,90 75,130 105,100 C 135,70 155,115 185,85" fill="none" stroke="#06b6d4" stroke-width="10" stroke-linecap="round" />
+                        <path d="M 15,135 C 45,105 70,145 100,115 C 130,85 150,130 180,100" fill="none" stroke="#06b6d4" stroke-width="6" stroke-linecap="round" opacity="0.7" />
+                        <circle cx="100" cy="32" r="6" fill="#ff7a00" />
+                        <circle cx="102" cy="103" r="5" fill="#06b6d4" />
                     </svg>
-                </button>
-            </div>
-            <div class="nse-action-links">
-                <a href="/terms.html" id="terms-btn" class="nse-action-link">Terms of Use</a>
-                <span class="divider">|</span>
-                <a href="#" class="nse-action-link">Best View</a>
-                <span class="divider">|</span>
-                <button id="download-csv-btn" class="nse-csv-btn">
-                    <svg viewBox="0 0 24 24" width="14" height="14">
-                        <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                    </svg>
-                    Download (.csv)
-                </button>
-            </div>
-        </div>
-
-        <!-- BSM Control Panel -->
-        <div class="bsm-control-panel">
-            <div class="panel-header">
-                <h3>Black-Scholes-Merton (BSM) Control Panel</h3>
-                <button id="reset-market-btn" class="btn-secondary">Reset to Market Values</button>
-            </div>
-            <div class="panel-body">
-                <div class="inputs-grid">
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-spot">Spot Price (<span id="spot-currency">INR</span>)</label>
-                            <input type="number" id="bsm-spot" step="0.01" value="0.00">
-                        </div>
-                        <input type="range" id="bsm-spot-slider" min="0" max="0" step="0.01">
-                        <div class="range-labels">
-                            <span id="spot-min-lbl">--</span>
-                            <span id="spot-max-lbl">--</span>
-                        </div>
-                    </div>
-
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-vol">Volatility (σ %)</label>
-                            <input type="number" id="bsm-vol" step="0.1" value="0.0">
-                        </div>
-                        <input type="range" id="bsm-vol-slider" min="1" max="100" step="0.1" value="15">
-                        <div class="range-labels">
-                            <span>1.0%</span>
-                            <span>100.0%</span>
-                        </div>
-                    </div>
-
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-days">Days to Expiry</label>
-                            <input type="number" id="bsm-days" step="1" value="30">
-                        </div>
-                        <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30">
-                        <div class="range-labels">
-                            <span>1 Day</span>
-                            <span>365 Days</span>
-                        </div>
-                    </div>
-
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-rate">Risk-Free Rate (%)</label>
-                            <input type="number" id="bsm-rate" step="0.01" value="6.50">
-                        </div>
-                        <input type="range" id="bsm-rate-slider" min="0" max="15" step="0.05" value="6.5">
-                        <div class="range-labels">
-                            <span>0.0%</span>
-                            <span>15.0%</span>
-                        </div>
-                    </div>
-
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-div">Dividend Yield (%)</label>
-                            <input type="number" id="bsm-div" step="0.01" value="0.00">
-                        </div>
-                        <input type="range" id="bsm-div-slider" min="0" max="10" step="0.05" value="0">
-                        <div class="range-labels">
-                            <span>0.0%</span>
-                            <span>10.0%</span>
-                        </div>
-                    </div>
                 </div>
-
-                <!-- ATM Outputs Summary -->
-                <div class="atm-summary-box">
-                    <div class="atm-title">At-The-Money (ATM) BSM Analytics</div>
-                    <div class="atm-metrics-grid">
-                        <div class="atm-metric-column">
-                            <div class="column-title calls-label">ATM Call Option</div>
-                            <div class="metric-row">
-                                <span class="lbl">BSM Price:</span>
-                                <span id="atm-call-price" class="val font-mono bold">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Delta (Δ):</span>
-                                <span id="atm-call-delta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Theta (θ/day):</span>
-                                <span id="atm-call-theta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Rho (ρ):</span>
-                                <span id="atm-call-rho" class="val font-mono">--</span>
-                            </div>
-                        </div>
-
-                        <div class="atm-metric-column center-column">
-                            <div class="column-title">Common Greeks</div>
-                            <div class="metric-row center-row">
-                                <span class="lbl">ATM Strike:</span>
-                                <span id="atm-strike-val" class="val font-mono bold highlight-text">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Gamma (Γ):</span>
-                                <span id="atm-gamma" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Vega (ν):</span>
-                                <span id="atm-vega" class="val font-mono">--</span>
-                            </div>
-                        </div>
-
-                        <div class="atm-metric-column">
-                            <div class="column-title puts-label">ATM Put Option</div>
-                            <div class="metric-row">
-                                <span class="lbl">BSM Price:</span>
-                                <span id="atm-put-price" class="val font-mono bold">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Delta (Δ):</span>
-                                <span id="atm-put-delta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Theta (θ/day):</span>
-                                <span id="atm-put-theta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Rho (ρ):</span>
-                                <span id="atm-put-rho" class="val font-mono">--</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                <div class="logo-text">Alpha<span>Streams</span></div>
+            </a>
+            <ul class="nav-links">
+                <li><a href="/" class="active" id="nav-home">Home</a></li>
+                <li><a href="/user_manual.html" id="nav-manual">User Manual</a></li>
+                <li><a href="/terms.html" id="nav-terms">Regulatory Center</a></li>
+                <li><a href="/dashboard.html" class="btn-terminal" id="nav-launch">Launch Terminal</a></li>
+            </ul>
         </div>
+    </header>
 
-        <!-- Option Chain Container -->
-        <div class="nse-table-outer-wrapper">
-            <div class="nse-table-wrapper" id="chain-table-container">
-                <table class="nse-option-chain-table" id="option-chain-table">
-                    <thead>
-                        <!-- Calls / Strikes / Puts Super Header -->
-                        <tr class="super-header">
-                            <th colspan="12" class="calls-super">CALLS</th>
-                            <th class="strike-super">STRIKE</th>
-                            <th colspan="12" class="puts-super">PUTS</th>
-                        </tr>
-                        <!-- Sub Columns Header -->
-                        <tr class="sub-header">
-                            <th title="Chart Link"></th>
-                            <th title="Open Interest">OI</th>
-                            <th title="Change in Open Interest">CHNG IN OI</th>
-                            <th title="Volume">VOLUME</th>
-                            <th title="Implied Volatility">IV</th>
-                            <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
-                            <th title="Last Traded Price">LTP</th>
-                            <th title="Net Change">CHNG</th>
-                            <th title="Bid Quantity">BID QTY</th>
-                            <th title="Bid Price">BID</th>
-                            <th title="Ask Price">ASK</th>
-                            <th title="Ask Quantity">ASK QTY</th>
-                            
-                            <th title="Strike Price" class="strike-col">STRIKE</th>
-                            
-                            <th title="Bid Quantity">BID QTY</th>
-                            <th title="Bid Price">BID</th>
-                            <th title="Ask Price">ASK</th>
-                            <th title="Ask Quantity">ASK QTY</th>
-                            <th title="Net Change">CHNG</th>
-                            <th title="Last Traded Price">LTP</th>
-                            <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
-                            <th title="Implied Volatility">IV</th>
-                            <th title="Volume">VOLUME</th>
-                            <th title="Change in Open Interest">CHNG IN OI</th>
-                            <th title="Open Interest">OI</th>
-                            <th title="Chart Link"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="option-chain-tbody">
-                        <!-- Placed dynamically -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Premium AlphaStreams Brand Footer -->
-    <footer class="nse-footer">
-        <div class="nse-container footer-grid">
-            <div class="footer-brand-section">
-                <div class="footer-logo">
-                    <span class="logo-accent">Alpha</span>Streams
+    <!-- Hero Area -->
+    <section class="hero-section" id="hero">
+        <div class="container hero-grid">
+            <div class="hero-content">
+                <div class="hero-tag">
+                    <span></span> Event-Driven Options Engine V2
                 </div>
-                <p class="footer-desc">Professional-grade derivatives analytics and real-time options chain valuation using advanced Black-Scholes-Merton models.</p>
-                <div class="footer-socials">
-                    <span class="system-status-indicator">
-                        <span class="status-dot animate-pulse"></span> Live Market Feed Active
-                    </span>
+                <h1 class="hero-title">Real-Time Options Analytics <br>& <mark>Mathematical Solvers</mark></h1>
+                <p class="hero-desc">
+                    A high-performance modular monolith built for the Indian derivatives market. Combine live NSE option chains, client-side Black-Scholes Greeks, numerical Crank-Nicolson PDE solutions, and AI sentiment processing in a single system.
+                </p>
+                <div class="hero-actions">
+                    <a href="/dashboard.html" class="btn-primary" id="hero-cta-btn">Launch Analytics Terminal</a>
+                    <a href="/user_manual.html" class="btn-secondary" id="hero-docs-btn">Explore Documentation</a>
                 </div>
             </div>
             
-            <div class="footer-links-section">
-                <h4>Resources</h4>
-                <ul class="footer-links-list">
-                    <li><a href="/user_manual.html" id="footer-user-manual-btn" class="footer-link">User Manual</a></li>
-                    <li><a href="/terms.html" id="footer-terms-btn" class="footer-link">Terms & Conditions</a></li>
-                </ul>
-            </div>
+            <div class="hero-visual">
+                <!-- Interactive BSM Calculator Widget inside a Mock Terminal -->
+                <div class="glass-card mock-terminal calculator-widget">
+                    <div class="terminal-header">
+                        <div class="terminal-dots">
+                            <span class="terminal-dot dot-red"></span>
+                            <span class="terminal-dot dot-yellow"></span>
+                            <span class="terminal-dot dot-green"></span>
+                        </div>
+                        <div class="terminal-title">BSM calculator simulator</div>
+                    </div>
+                    
+                    <h4>Black-Scholes-Merton Engine</h4>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 15px;">Adjust parameters below to see analytical Greeks recalculate instantly in your browser.</p>
+                    
+                    <!-- Spot Price Slider -->
+                    <div class="slider-group">
+                        <label class="slider-label" for="calc-spot">
+                            <span>Underlying Spot (S)</span>
+                            <span>₹ <span id="calc-spot-val">19800</span></span>
+                        </label>
+                        <input type="range" min="18000" max="22000" value="19800" class="slider-input" id="calc-spot">
+                    </div>
+                    
+                    <!-- Strike Price Slider -->
+                    <div class="slider-group">
+                        <label class="slider-label" for="calc-strike">
+                            <span>Option Strike (K)</span>
+                            <span>₹ <span id="calc-strike-val">19800</span></span>
+                        </label>
+                        <input type="range" min="18000" max="22000" value="19800" class="slider-input" id="calc-strike">
+                    </div>
+                    
+                    <!-- Volatility Slider -->
+                    <div class="slider-group">
+                        <label class="slider-label" for="calc-vol">
+                            <span>Implied Volatility (IV)</span>
+                            <span><span id="calc-vol-val">14.5%</span></span>
+                        </label>
+                        <input type="range" min="5" max="50" step="0.5" value="14.5" class="slider-input" id="calc-vol">
+                    </div>
+                    
+                    <!-- Days to Expiry Slider -->
+                    <div class="slider-group">
+                        <label class="slider-label" for="calc-days">
+                            <span>Days to Expiry (T)</span>
+                            <span><span id="calc-days-val">7</span> days</span>
+                        </label>
+                        <input type="range" min="1" max="30" value="7" class="slider-input" id="calc-days">
+                    </div>
 
-            <div class="footer-disclosure-section">
-                <h4>Regulatory Notice</h4>
-                <div class="regulatory-disclosure-box">
-                    <p class="disclosure-title">Risk Disclosure (SEBI Guidelines)</p>
-                    <p class="footer-regulatory-alert">Disclaimer: Futures, options, and derivatives trading involve substantial risk of loss and are not suitable for every investor. Please review risk warnings carefully before trading.</p>
+                    <!-- Calculated Results -->
+                    <div class="results-grid">
+                        <div class="result-card">
+                            <div class="result-name">Call Price (C)</div>
+                            <div class="result-value call" id="res-call-price">--</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-name">Put Price (P)</div>
+                            <div class="result-value put" id="res-put-price">--</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-name">Call Delta (Δ)</div>
+                            <div class="result-value" id="res-call-delta">--</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-name">Gamma (Γ)</div>
+                            <div class="result-value" id="res-gamma">--</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        
-        <div class="footer-bottom-bar">
-            <div class="nse-container bottom-bar-content">
-                <p class="footer-copyright">&copy; 2026 AlphaStreams Option Chain Analytics. All rights reserved.</p>
-                <div class="footer-bottom-meta">
-                    <span class="footer-best-view">Best viewed in modern web browsers</span>
-                    <span class="footer-divider">|</span>
-                    <span class="footer-version">v2.1.0</span>
+    </section>
+
+    <!-- Features Overview Section -->
+    <section class="section" id="features">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-subtitle">Features Grid</span>
+                <h2 class="section-title">Core Capability Stack</h2>
+                <p class="section-desc">Designed as a high-performance system combining industrial engineering and mathematical pricing structures.</p>
+            </div>
+            
+            <div class="features-grid">
+                <!-- Feature 1: High Density Option Chain -->
+                <div class="glass-card feature-card">
+                    <div class="feature-icon-wrapper">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="3" x2="9" y2="21"></line>
+                            <line x1="15" y1="3" x2="15" y2="21"></line>
+                            <line x1="3" y1="9" x2="21" y2="9"></line>
+                            <line x1="3" y1="15" x2="21" y2="15"></line>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">NSE Options chain UI</h3>
+                    <p class="feature-desc">A production-grade interface that models the NSE India option chain grid, supporting sticky headers, custom ITM styling, and instant price updates.</p>
+                </div>
+
+                <!-- Feature 2: High Performance Solvers -->
+                <div class="glass-card feature-card">
+                    <div class="feature-icon-wrapper">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="16"></line>
+                            <line x1="8" y1="12" x2="16" y2="12"></line>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Dual pricing Solvers</h3>
+                    <p class="feature-desc">Analytical evaluations via the standard Black-Scholes-Merton model and numerical solutions using the discretized Crank-Nicolson PDE sparse matrix scheme.</p>
+                </div>
+
+                <!-- Feature 3: Modular Architecture -->
+                <div class="glass-card feature-card">
+                    <div class="feature-icon-wrapper">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Event-Driven Monolith</h3>
+                    <p class="feature-desc">Strict Hexagonal (Ports & Adapters) layers and Domain-Driven Design (DDD). Services communicate via durable Redis Streams event buses.</p>
+                </div>
+
+                <!-- Feature 4: Live WebSocket push -->
+                <div class="glass-card feature-card">
+                    <div class="feature-icon-wrapper">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                            <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                            <circle cx="12" cy="18" r="2"></circle>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Real-Time Streams</h3>
+                    <p class="feature-desc">An ASGI WebSocket hub broadcasting live pricing ticks, volatility adjustments, and sentiment signals directly to client sessions at low latency.</p>
+                </div>
+
+                <!-- Feature 5: Ingestion Failover -->
+                <div class="glass-card feature-card">
+                    <div class="feature-icon-wrapper">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Tiered Data Fallback</h3>
+                    <p class="feature-desc">Pluggable factory instantiating Groww API as primary, with automatic session-cached scraper failover on the NSE India official portal.</p>
+                </div>
+
+                <!-- Feature 6: Scalable Time-Series Storage -->
+                <div class="glass-card feature-card">
+                    <div class="feature-icon-wrapper">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                            <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">TimescaleDB Hypertable</h3>
+                    <p class="feature-desc">Optimized time-series database structure with automated 1-day chunking partitioning and a strict 7-day data retention policy.</p>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <!-- Mathematical Solvers Showcase Section -->
+    <section class="section math-section" id="math">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-subtitle">Mathematical Core</span>
+                <h2 class="section-title">Analytical vs. Numerical Solvers</h2>
+                <p class="section-desc">AlphaStreams V2 combines closed-form formulas with finite-difference grids to analyze and cross-verify pricing models.</p>
+            </div>
+            
+            <div class="math-grid">
+                <!-- Black Scholes Merton -->
+                <div class="glass-card math-card">
+                    <div class="math-title-row">
+                        <h3>Black-Scholes-Merton Engine</h3>
+                        <span class="math-badge">Analytical</span>
+                    </div>
+                    <p class="section-desc">Evaluates theoretical option prices using cumulative standard normal distributions modified for continuous dividend yields.</p>
+                    <div class="math-formula">
+d1 = [ln(S/K) + (r - q + 0.5 * σ²) * T] / [σ * √T]
+d2 = d1 - σ * √T
+
+Call Price = S * e^(-q*T) * N(d1) - K * e^(-r*T) * N(d2)
+Put Price  = K * e^(-r*T) * N(-d2) - S * e^(-q*T) * N(-d1)
+                    </div>
+                    <ul class="math-list">
+                        <li>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            Calculates full sensitivity Greeks (Delta, Gamma, Vega, Theta, Rho)
+                        </li>
+                        <li>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            Hastings approximation for cumulative standard normal density
+                        </li>
+                        <li>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            Supports real-time client-side calculation parameters sweeps
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Crank Nicolson PDE -->
+                <div class="glass-card math-card">
+                    <div class="math-title-row">
+                        <h3>Crank-Nicolson Solver</h3>
+                        <span class="math-badge">Numerical Grid</span>
+                    </div>
+                    <p class="section-desc">Solves the Black-Scholes partial differential equation over a discretized price-time grid, resolving boundaries backward in time.</p>
+                    <div class="math-formula">
+∂V/∂t + 0.5*σ²*S²*∂²V/∂S² + r*S*∂V/∂S - r*V = 0
+
+Tridiagonal Matrix Solver:
+- α_i * V_(i-1)^j + (1 + β_i) * V_i^j - γ_i * V_(i+1)^j = RHS^(j+1)
+                    </div>
+                    <ul class="math-list">
+                        <li>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            LU Decomposition pre-factorization using SciPy SuperLU
+                        </li>
+                        <li>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            Stability checks adjusting time step density dynamically
+                        </li>
+                        <li>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            Resolves European option fair values on arbitrary grid steps
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Engineering Architecture Pipeline Diagram -->
+    <section class="section" id="pipeline">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-subtitle">System Flow</span>
+                <h2 class="section-title">Event-Driven Pipeline</h2>
+                <p class="section-desc">A modular data pipeline ensuring high availability and low-latency client delivery.</p>
+            </div>
+            
+            <div class="pipeline-container">
+                <div class="pipeline-flow">
+                    <!-- Node 1: Ingestion -->
+                    <div class="pipeline-node">
+                        <div class="pipeline-node-icon">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                        </div>
+                        <h4 class="pipeline-node-title">Ingestion Layer</h4>
+                        <p class="pipeline-node-desc">Celery beat tasks query Groww API or NSE Web Scraper under cookie rotation rules.</p>
+                    </div>
+                    
+                    <!-- Arrow -->
+                    <div class="pipeline-arrow">&rarr;</div>
+
+                    <!-- Node 2: Redis Stream Event Bus -->
+                    <div class="pipeline-node">
+                        <div class="pipeline-node-icon">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+                        </div>
+                        <h4 class="pipeline-node-title">Redis Streams</h4>
+                        <p class="pipeline-node-desc">Durable, replayable consumer groups process raw option chains asynchronously.</p>
+                    </div>
+
+                    <!-- Arrow -->
+                    <div class="pipeline-arrow">&rarr;</div>
+
+                    <!-- Node 3: Analytics Pricer Engine -->
+                    <div class="pipeline-node">
+                        <div class="pipeline-node-icon">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                        </div>
+                        <h4 class="pipeline-node-title">Pricer Engine</h4>
+                        <p class="pipeline-node-desc">Executes BSM and Crank-Nicolson sparse solvers. Saves records to TimescaleDB.</p>
+                    </div>
+
+                    <!-- Arrow -->
+                    <div class="pipeline-arrow">&rarr;</div>
+
+                    <!-- Node 4: Cache & Broadcaster -->
+                    <div class="pipeline-node">
+                        <div class="pipeline-node-icon">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+                        </div>
+                        <h4 class="pipeline-node-title">Broadcaster / API</h4>
+                        <p class="pipeline-node-desc">Updates Redis Cache read models. FastAPI routes REST calls and WebSocket ticks.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Sentiment Meter Ingestion Stream Showcase -->
+    <section class="section sentiment-section" id="sentiment">
+        <div class="container sentiment-grid">
+            <div class="sentiment-meter-box">
+                <span class="section-subtitle">Real-Time Indicators</span>
+                <h3 class="section-title" style="margin-bottom: 24px;">Market NLP Sentiment</h3>
+                
+                <div class="meter-wrapper">
+                    <div class="meter-arc"></div>
+                    <div class="meter-needle" id="sentiment-needle"></div>
+                </div>
+                
+                <div class="sentiment-label" id="sentiment-label">Neutral</div>
+                <div class="sentiment-confidence" id="sentiment-confidence">Model Confidence: --%</div>
+            </div>
+            
+            <div class="sentiment-nlp-logs">
+                <h4 style="margin-bottom: 12px; font-weight: 700; color: var(--primary-orange);">NLP Stream Parser Ingestion</h4>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                    Below is the simulated news and options volume parser log. In the actual system, this feed parses finance headlines to derive sentiment vectors.
+                </p>
+                <div class="nlp-terminal" id="nlp-terminal">
+                    <div id="nlp-terminal-body">
+                        <!-- Generated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer CTA -->
+    <section class="cta-section">
+        <div class="cta-glow"></div>
+        <h2 class="cta-title">Ready to launch the Terminal?</h2>
+        <p class="cta-desc">
+            Experience our high-density option grid pricing sheet, customize BSM calculator overlays, and access quant metrics locally.
+        </p>
+        <a href="/dashboard.html" class="btn-primary" style="font-size: 16px; padding: 14px 36px;" id="footer-cta-btn">Launch Analytics Terminal</a>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container footer-grid">
+            <div class="footer-logo">
+                <div class="footer-logo-wrapper">
+                    <svg viewBox="0 0 200 200" width="100%" height="100%">
+                        <path d="M 100,32 C 104,32 107,34 110,39 L 173,142 C 176,147 174,153 168,155 C 166,156 163,156 161,156 L 39,156 C 33,156 28,151 28,145 C 28,142 29,140 31,137 L 90,39 C 93,34 96,32 100,32 Z" fill="none" stroke="#f37021" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M 25,120 C 55,90 75,130 105,100 C 135,70 155,115 185,85" fill="none" stroke="#06b6d4" stroke-width="10" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="footer-logo-text">AlphaStreams V2</div>
+            </div>
+            
+            <ul class="footer-links">
+                <li><a href="/user_manual.html">User Manual</a></li>
+                <li><a href="/terms.html">Terms & Disclosures</a></li>
+                <li><a href="https://www.nseindia.com" target="_blank" rel="noopener">NSE India Portal</a></li>
+            </ul>
+            
+            <div>&copy; 2026 AlphaStreams. Provided for research and analytics purposes.</div>
         </div>
     </footer>
 
-    <!-- Greeks Inspection Modal -->
-    <div id="greeks-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Option Strike Analysis</h2>
-                <span class="close-btn" id="modal-close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="modal-strikes-header">
-                    Strike Price: <span id="modal-strike-price" class="bold-text">--</span>
-                </div>
-                <div class="modal-tables-grid">
-                    <table class="modal-data-table">
-                        <thead>
-                            <tr class="calls-super"><th colspan="2">CALL OPTION</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr><td>Market Price (LTP)</td><td id="modal-c-ltp" class="font-mono">--</td></tr>
-                            <tr class="highlight-row"><td>BSM Theoretical Price</td><td id="modal-c-bs-val" class="font-mono bold">--</td></tr>
-                            <tr><td>Theoretical Edge</td><td id="modal-c-edge" class="font-mono">--</td></tr>
-                            <tr><td>Delta (Δ)</td><td id="modal-c-delta" class="font-mono">--</td></tr>
-                            <tr><td>Gamma (Γ)</td><td id="modal-c-gamma" class="font-mono">--</td></tr>
-                            <tr><td>Vega (ν)</td><td id="modal-c-vega" class="font-mono">--</td></tr>
-                            <tr><td>Theta (θ/day)</td><td id="modal-c-theta" class="font-mono">--</td></tr>
-                            <tr><td>Rho (ρ)</td><td id="modal-c-rho" class="font-mono">--</td></tr>
-                        </tbody>
-                    </table>
-
-                    <table class="modal-data-table">
-                        <thead>
-                            <tr class="puts-super"><th colspan="2">PUT OPTION</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr><td>Market Price (LTP)</td><td id="modal-p-ltp" class="font-mono">--</td></tr>
-                            <tr class="highlight-row"><td>BSM Theoretical Price</td><td id="modal-p-bs-val" class="font-mono bold">--</td></tr>
-                            <tr><td>Theoretical Edge</td><td id="modal-p-edge" class="font-mono">--</td></tr>
-                            <tr><td>Delta (Δ)</td><td id="modal-p-delta" class="font-mono">--</td></tr>
-                            <tr><td>Gamma (Γ)</td><td id="modal-p-gamma" class="font-mono">--</td></tr>
-                            <tr><td>Vega (ν)</td><td id="modal-p-vega" class="font-mono">--</td></tr>
-                            <tr><td>Theta (θ/day)</td><td id="modal-p-theta" class="font-mono">--</td></tr>
-                            <tr><td>Rho (ρ)</td><td id="modal-p-rho" class="font-mono">--</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="modal-inputs-box">
-                    <h4>Active Model Parameters</h4>
-                    <div class="modal-inputs-flex">
-                        <div>Spot Price: <span id="modal-in-spot" class="font-mono bold">--</span></div>
-                        <div>Volatility: <span id="modal-in-vol" class="font-mono bold">--</span></div>
-                        <div>Days to Expiry: <span id="modal-in-days" class="font-mono bold">--</span></div>
-                        <div>Risk-Free Rate: <span id="modal-in-rate" class="font-mono bold">--</span></div>
-                        <div>Dividend Yield: <span id="modal-in-div" class="font-mono bold">--</span></div>
-                    </div>
-                    <div class="modal-param-notes">
-                        d₁ = <span id="modal-d1" class="font-mono">--</span> | 
-                        d₂ = <span id="modal-d2" class="font-mono">--</span> | 
-                        N(d₁) = <span id="modal-nd1" class="font-mono">--</span> | 
-                        N(d₂) = <span id="modal-nd2" class="font-mono">--</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Info & Regulatory Center Modal -->
-    <div id="info-modal" class="modal">
-        <div class="modal-content info-modal-content">
-            <div class="modal-header info-modal-header">
-                <h2>AlphaStreams Information & Regulatory Center</h2>
-                <span class="close-btn" id="info-modal-close">&times;</span>
-            </div>
-            <div class="info-modal-tabs">
-                <button class="info-tab-btn active" data-tab="user-manual">User Manual</button>
-                <button class="info-tab-btn" data-tab="terms-conditions">Regulatory Terms & Conditions</button>
-                <button class="info-tab-btn" data-tab="greeks-ref">Greeks Guide</button>
-            </div>
-            <div class="modal-body info-modal-body">
-                <!-- User Manual Tab -->
-                <div id="user-manual" class="info-tab-content active">
-                    <h3 class="info-section-title">Website User Guide</h3>
-                    <p class="info-p">Welcome to <strong>AlphaStreams Option Chain Analytics</strong>. This dashboard replicates the official National Stock Exchange of India (NSE) equity derivatives option chain layout, enhanced with real-time derivative valuations, theoretical Black-Scholes-Merton (BSM) prices, and real-time Greek computations.</p>
-                    
-                    <div class="guide-grid">
-                        <div class="guide-card">
-                            <h4>Dynamic Search & Filters</h4>
-                            <p>Use the search box in the top filter bar to look up active stock symbols or indices (e.g., <code>NIFTY</code>, <code>RELIANCE</code>, <code>TCS</code>) traded on the NSE. The system auto-completes and fetches active parameters. Filter option expiry dates or isolate specific strikes from the drop-downs.</p>
-                        </div>
-                        <div class="guide-card">
-                            <h4>Black-Scholes-Merton Calculator</h4>
-                            <p>Adjust variables in the BSM Control Panel to simulate pricing environments:</p>
-                            <ul>
-                                <li><strong>Spot Price:</strong> Base underlying asset value (supports slide scaling).</li>
-                                <li><strong>Volatility (σ %):</strong> Standard deviation of underlying returns.</li>
-                                <li><strong>Days to Expiry:</strong> Time remaining until derivative settlement.</li>
-                                <li><strong>Risk-Free Rate:</strong> Prevailing interest rate environment.</li>
-                                <li><strong>Dividend Yield:</strong> Continuous cash payouts of stock or index.</li>
-                            </ul>
-                        </div>
-                        <div class="guide-card">
-                            <h4>Option Chain Shading & Pricing Highlights</h4>
-                            <p><strong>ITM Shading:</strong> Pale yellow highlights show in-the-money strikes (calls under spot, puts above spot).</p>
-                            <p><strong>Underpriced / Overpriced Fields (BS PRICE):</strong> Comparing BSM fair price with market Last Traded Price (LTP):</p>
-                            <ul>
-                                <li><span class="label-teal">Teal Green:</span> Market price is <em>Underpriced</em> compared to BSM model (Theoretical Edge available).</li>
-                                <li><span class="label-orange">Orange Red:</span> Market price is <em>Overpriced</em> compared to BSM model.</li>
-                            </ul>
-                        </div>
-                        <div class="guide-card">
-                            <h4>Strike Greeks Analysis</h4>
-                            <p>Click on any <strong>Strike Price</strong> cell or <strong>LTP</strong> value to launch the Greeks Inspection Modal. This reveals detailed mathematical parameters (d₁, d₂, N(d₁), N(d₂)) and active model outputs (Delta, Gamma, Vega, Theta, Rho) for both Call and Put contracts on that specific strike.</p>
-                        </div>
-                    </div>
-                </div>
- 
-                <!-- Terms & Conditions Tab -->
-                <div id="terms-conditions" class="info-tab-content">
-                    <h3 class="info-section-title">Regulatory Disclosures & Terms of Use</h3>
-                    
-                    <!-- SEBI Mandated Derivatives Warning -->
-                    <div class="sebi-warning-box">
-                        <h5>MANDATED REGULATORY DISCLOSURE (SEBI Guidelines)</h5>
-                        <p><strong>Risk Disclosures on Derivatives (Futures and Options):</strong></p>
-                        <ul>
-                            <li>9 out of 10 individual traders in equity derivatives segment incurred net losses.</li>
-                            <li>On an average, loss makers registered net trading loss close to ₹50,000.</li>
-                            <li>Over and above the net trading losses incurred, loss makers expended an additional 28% of net trading losses as transaction costs.</li>
-                            <li>Those making net profits, on an average, institutional/non-individual entities pocketed the bulk of the profits.</li>
-                        </ul>
-                    </div>
-
-                    <div class="terms-scroll-box">
-                        <h4>1. Theoretical and Analytical Models</h4>
-                        <p>All Black-Scholes-Merton (BSM) prices, Greeks (Delta, Gamma, Vega, Theta, Rho), and implied volatility calculations rendered on this website are simulated mathematical approximations. They are for educational, research, and analytical purposes only. They do not constitute actual exchange trading advice, quotes, or transactional execution services.</p>
-
-                        <h4>2. No Financial Advice or Recommendations</h4>
-                        <p>AlphaStreams is not a registered SEBI Investment Adviser (IA) or Research Analyst (RA). No calculations, outputs, search indexes, or pricing sheets on this website constitute investment, legal, tax, or trading advice, or a recommendation to buy, sell, or write any stock, derivative, or option contract. Users are entirely responsible for their own investment and trading decisions.</p>
-
-                        <h4>3. Exchange Data Source Limitation</h4>
-                        <p>Market data (LTP, OI, Volume, bid/ask spreads) displayed on this platform is processed through an automated ingestion catalog. While we strive to maintain high-quality tracking, data may be subject to ingestion latencies, inaccuracies, or standard transmission errors. AlphaStreams makes no warranties regarding the accuracy, completeness, or timeliness of data. For live execution, cross-reference data directly with official platforms of the National Stock Exchange of India (NSE India).</p>
-
-                        <h4>4. Assumption of Valuation Risks</h4>
-                        <p>Derivative pricing models make mathematical assumptions (e.g., constant volatility, log-normal distributions, constant interest rates) that frequently deviate from real-world market dynamics. Financial markets are subject to extreme tail risks, high volatility, bid-ask slippages, and liquidity dry-outs. Users who leverage these models assume all associated financial risks.</p>
-
-                        <h4>5. Intellectual Property</h4>
-                        <p>NSE, NIFTY, and related stock symbols are trademarks of the National Stock Exchange of India Limited and/or its affiliates. AlphaStreams is an independent analytical application and is not affiliated, endorsed, or partnered with NSE India.</p>
-                    </div>
-                </div>
-
-                <!-- Greeks Quick Reference Tab -->
-                <div id="greeks-ref" class="info-tab-content">
-                    <h3 class="info-section-title">Greeks Analytical Cheat Sheet</h3>
-                    <div class="greeks-reference-table-wrapper">
-                        <table class="greeks-reference-table">
-                            <thead>
-                                <tr>
-                                    <th>Greek Symbol</th>
-                                    <th>Represents</th>
-                                    <th>Call Option Dynamic</th>
-                                    <th>Put Option Dynamic</th>
-                                    <th>Trading Impact</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="bold-text">Delta (Δ)</td>
-                                    <td>Sensitivity to <strong>Underlying Price</strong> change.</td>
-                                    <td class="positive-val">Positive (0.0 to +1.0)</td>
-                                    <td class="negative-val">Negative (-1.0 to 0.0)</td>
-                                    <td>Measures equivalent asset exposure. Approximate probability of expiring ITM.</td>
-                                </tr>
-                                <tr>
-                                    <td class="bold-text">Gamma (Γ)</td>
-                                    <td>Sensitivity of <strong>Delta</strong> to underlying price change.</td>
-                                    <td>Positive (highest ATM)</td>
-                                    <td>Positive (highest ATM)</td>
-                                    <td>Indicates speed of Delta acceleration. High Gamma near expiry poses risk.</td>
-                                </tr>
-                                <tr>
-                                    <td class="bold-text">Vega (ν)</td>
-                                    <td>Sensitivity to <strong>Volatility (1% σ change)</strong>.</td>
-                                    <td>Positive</td>
-                                    <td>Positive</td>
-                                    <td>Measures exposure to market fear/pricing shifts. Crucial for earnings releases.</td>
-                                </tr>
-                                <tr>
-                                    <td class="bold-text">Theta (θ)</td>
-                                    <td>Sensitivity to <strong>Time Decay (1 day loss)</strong>.</td>
-                                    <td class="negative-val">Negative (erodes value)</td>
-                                    <td class="negative-val">Negative (erodes value)</td>
-                                    <td>Measures the bleeding rate of options value. Acceleration occurs in final 30 days.</td>
-                                </tr>
-                                <tr>
-                                    <td class="bold-text">Rho (ρ)</td>
-                                    <td>Sensitivity to <strong>Interest Rate (1% r change)</strong>.</td>
-                                    <td class="positive-val">Positive</td>
-                                    <td class="negative-val">Negative</td>
-                                    <td>Measures carrying cost effects. Higher significance for long-term options (LEAPs).</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Main Application Script -->
-    <script src="/app.js"></script>
+    <!-- Scripts -->
+    <script src="/landing.js"></script>
 </body>
 </html>
