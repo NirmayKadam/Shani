@@ -24,6 +24,20 @@ async function checkSupabaseSession() {
                 if (navLaunch) {
                     navLaunch.textContent = "Dashboard";
                     navLaunch.href = "/dashboard.html";
+                    
+                    // Add Logout button next to it
+                    const logoutBtn = document.createElement('button');
+                    logoutBtn.textContent = "Logout";
+                    logoutBtn.style.cssText = "background: transparent; color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; margin-left: 10px; font-family: inherit;";
+                    logoutBtn.onmouseover = () => logoutBtn.style.backgroundColor = "rgba(255,255,255,0.1)";
+                    logoutBtn.onmouseout = () => logoutBtn.style.backgroundColor = "transparent";
+                    
+                    logoutBtn.onclick = async () => {
+                        await supabase.auth.signOut();
+                        window.location.reload();
+                    };
+                    
+                    navLaunch.parentNode.appendChild(logoutBtn);
                 }
                 const heroCtaBtn = document.getElementById("hero-cta-btn");
                 if (heroCtaBtn) {
