@@ -19,9 +19,11 @@ async def test_connection_manager_cleanup_recursion_fix():
             manager._CleanupTask.cancel()
         if manager._GlobalSubscriberTask:
             manager._GlobalSubscriberTask.cancel()
+        if manager._PollingTask:
+            manager._PollingTask.cancel()
 
         await asyncio.gather(
-            *[t for t in (manager._CleanupTask, manager._GlobalSubscriberTask) if t],
+            *[t for t in (manager._CleanupTask, manager._GlobalSubscriberTask, manager._PollingTask) if t],
             return_exceptions=True
         )
 
@@ -29,6 +31,7 @@ async def test_connection_manager_cleanup_recursion_fix():
         current_task = asyncio.current_task()
         manager._CleanupTask = current_task
         manager._GlobalSubscriberTask = None
+        manager._PollingTask = None
 
         # Disconnecting should trigger _stop_background_tasks_if_idle_locked
         # Since _CleanupTask is the current task, it must not cancel/await itself
@@ -52,9 +55,11 @@ async def test_connection_manager_subscriber_recursion_fix():
             manager._CleanupTask.cancel()
         if manager._GlobalSubscriberTask:
             manager._GlobalSubscriberTask.cancel()
+        if manager._PollingTask:
+            manager._PollingTask.cancel()
 
         await asyncio.gather(
-            *[t for t in (manager._CleanupTask, manager._GlobalSubscriberTask) if t],
+            *[t for t in (manager._CleanupTask, manager._GlobalSubscriberTask, manager._PollingTask) if t],
             return_exceptions=True
         )
 
@@ -62,6 +67,7 @@ async def test_connection_manager_subscriber_recursion_fix():
         current_task = asyncio.current_task()
         manager._GlobalSubscriberTask = current_task
         manager._CleanupTask = None
+        manager._PollingTask = None
 
         # Disconnecting should trigger _stop_background_tasks_if_idle_locked
         # Since _GlobalSubscriberTask is the current task, it must not cancel/await itself

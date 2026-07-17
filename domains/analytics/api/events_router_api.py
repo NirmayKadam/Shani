@@ -61,6 +61,8 @@ class ConnectionManager:
         self._GlobalSubscriberStopEvent: asyncio.Event | None = None
         self._CleanupTask: asyncio.Task | None = None
         self._CleanupStopEvent: asyncio.Event | None = None
+        self._PollingTask: asyncio.Task | None = None
+        self._PollingStopEvent: asyncio.Event | None = None
         self._Lock = asyncio.Lock()
 
     async def connect(self, symbol: str, ws: WebSocket) -> None:
@@ -164,6 +166,11 @@ class ConnectionManager:
             self._CleanupTask = asyncio.create_task(self._cleanup_loop(self._CleanupStopEvent))
             logger.info("WS stale-client cleanup loop started")
 
+        if self._PollingTask is None or self._PollingTask.done():
+            self._PollingStopEvent = asyncio.Event()
+            self._PollingTask = asyncio.create_task(self._polling_loop(self._PollingStopEvent))
+            logger.info("WS dynamic polling loop started")
+
     async def _stop_background_tasks_if_idle_locked(self) -> None:
         if self._Connections:
             return
@@ -172,19 +179,25 @@ class ConnectionManager:
         subscriber_stop = self._GlobalSubscriberStopEvent
         cleanup_task = self._CleanupTask
         cleanup_stop = self._CleanupStopEvent
+        polling_task = self._PollingTask
+        polling_stop = self._PollingStopEvent
 
         self._GlobalSubscriberTask = None
         self._GlobalSubscriberStopEvent = None
         self._CleanupTask = None
         self._CleanupStopEvent = None
+        self._PollingTask = None
+        self._PollingStopEvent = None
 
         if subscriber_stop is not None:
             subscriber_stop.set()
         if cleanup_stop is not None:
             cleanup_stop.set()
+        if polling_stop is not None:
+            polling_stop.set()
 
         current = asyncio.current_task()
-        tasks = [t for t in (subscriber_task, cleanup_task) if t is not None and t is not current]
+        tasks = [t for t in (subscriber_task, cleanup_task, polling_task) if t is not None and t is not current]
         for task in tasks:
             task.cancel()
         if tasks:
@@ -233,6 +246,55 @@ class ConnectionManager:
                     await self.disconnect(symbol, ws)
         except asyncio.CancelledError:
             pass
+
+    async def _polling_loop(self, stop_event: asyncio.Event) -> None:
+        try:
+            last_price_poll: dict[str, float] = {}
+            last_options_poll: dict[str, float] = {}
+
+            # Dynamic imports to prevent circular references
+            from domains.ingestion.tasks.ingestion_tasks import poll_prices, poll_options
+            from domains.ingestion.tasks.market_tasks import fetch_and_publish_options
+
+            loop = asyncio.get_running_loop()
+
+            while not stop_event.is_set():
+                now = loop.time()
+                active_symbols = []
+                async with self._Lock:
+                    active_symbols = list(self._Connections.keys())
+
+                settings = get_settings()
+                price_interval = float(settings.PricePollIntervalSeconds)
+                options_interval = float(settings.OptionsPollIntervalSeconds)
+
+                for symbol in active_symbols:
+                    # 1. Price Polling
+                    last_price = last_price_poll.get(symbol, 0.0)
+                    if now - last_price >= price_interval:
+                        try:
+                            poll_prices.delay(symbol)
+                            logger.info("Dispatched live price poll task for %s", symbol)
+                        except Exception as exc:
+                            logger.error("Failed to dispatch price poll for %s: %s", symbol, exc)
+                        last_price_poll[symbol] = now
+
+                    # 2. Options Polling
+                    last_opts = last_options_poll.get(symbol, 0.0)
+                    if now - last_opts >= options_interval:
+                        try:
+                            poll_options.delay(symbol)
+                            fetch_and_publish_options.delay(symbol)
+                            logger.info("Dispatched live options poll tasks for %s", symbol)
+                        except Exception as exc:
+                            logger.error("Failed to dispatch options poll for %s: %s", symbol, exc)
+                        last_options_poll[symbol] = now
+
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.error("Dynamic polling loop error: %s", exc, exc_info=True)
 
 
 _Manager = ConnectionManager()
