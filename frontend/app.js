@@ -110,6 +110,27 @@ const elements = {
     modalNd1: document.getElementById("modal-nd1"),
     modalNd2: document.getElementById("modal-nd2"),
     
+    // New modal market data elements
+    modalCOi: document.getElementById("modal-c-oi"),
+    modalCOiChg: document.getElementById("modal-c-oi-chg"),
+    modalCVolume: document.getElementById("modal-c-volume"),
+    modalCIv: document.getElementById("modal-c-iv"),
+    modalCChg: document.getElementById("modal-c-chg"),
+    modalCBidPrice: document.getElementById("modal-c-bid-price"),
+    modalCBidQty: document.getElementById("modal-c-bid-qty"),
+    modalCAskPrice: document.getElementById("modal-c-ask-price"),
+    modalCAskQty: document.getElementById("modal-c-ask-qty"),
+
+    modalPOi: document.getElementById("modal-p-oi"),
+    modalPOiChg: document.getElementById("modal-p-oi-chg"),
+    modalPVolume: document.getElementById("modal-p-volume"),
+    modalPIv: document.getElementById("modal-p-iv"),
+    modalPChg: document.getElementById("modal-p-chg"),
+    modalPBidPrice: document.getElementById("modal-p-bid-price"),
+    modalPBidQty: document.getElementById("modal-p-bid-qty"),
+    modalPAskPrice: document.getElementById("modal-p-ask-price"),
+    modalPAskQty: document.getElementById("modal-p-ask-qty"),
+    
     // Info and Regulatory modal elements
     userManualBtn: document.getElementById("user-manual-btn"),
     termsBtn: document.getElementById("terms-btn"),
@@ -946,6 +967,31 @@ window.openStrikeModal = function(strikePrice) {
     elements.modalD2.textContent = formatNumber(callBS.d2, 4);
     elements.modalNd1.textContent = formatNumber(callBS.nd1, 4);
     elements.modalNd2.textContent = formatNumber(callBS.nd2, 4);
+
+    // Load market and order book data into modal HTML
+    elements.modalCOi.textContent = formatNumber(row.call?.oi, 0, "-");
+    elements.modalCOiChg.textContent = formatNumber(row.call?.chng_in_oi, 0, "-");
+    elements.modalCOiChg.className = "font-mono " + (row.call?.chng_in_oi < 0 ? "negative-val" : "");
+    elements.modalCVolume.textContent = formatNumber(row.call?.volume, 0, "-");
+    elements.modalCIv.textContent = formatNumber(row.call?.iv, 2, "-");
+    elements.modalCChg.textContent = formatNumber(row.call?.chng, 2, "-");
+    elements.modalCChg.className = "font-mono " + (row.call?.chng < 0 ? "negative-val" : row.call?.chng > 0 ? "positive-val" : "");
+    elements.modalCBidPrice.textContent = formatNumber(row.call?.bid, 2, "-");
+    elements.modalCBidQty.textContent = formatNumber(row.call?.bid_qty, 0, "-");
+    elements.modalCAskPrice.textContent = formatNumber(row.call?.ask, 2, "-");
+    elements.modalCAskQty.textContent = formatNumber(row.call?.ask_qty, 0, "-");
+
+    elements.modalPOi.textContent = formatNumber(row.put?.oi, 0, "-");
+    elements.modalPOiChg.textContent = formatNumber(row.put?.chng_in_oi, 0, "-");
+    elements.modalPOiChg.className = "font-mono " + (row.put?.chng_in_oi < 0 ? "negative-val" : "");
+    elements.modalPVolume.textContent = formatNumber(row.put?.volume, 0, "-");
+    elements.modalPIv.textContent = formatNumber(row.put?.iv, 2, "-");
+    elements.modalPChg.textContent = formatNumber(row.put?.chng, 2, "-");
+    elements.modalPChg.className = "font-mono " + (row.put?.chng < 0 ? "negative-val" : row.put?.chng > 0 ? "positive-val" : "");
+    elements.modalPBidPrice.textContent = formatNumber(row.put?.bid, 2, "-");
+    elements.modalPBidQty.textContent = formatNumber(row.put?.bid_qty, 0, "-");
+    elements.modalPAskPrice.textContent = formatNumber(row.put?.ask, 2, "-");
+    elements.modalPAskQty.textContent = formatNumber(row.put?.ask_qty, 0, "-");
 
     elements.greeksModal.classList.add("show");
 };

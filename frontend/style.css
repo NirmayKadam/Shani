@@ -811,6 +811,22 @@ input[type=range]::-webkit-slider-thumb:hover {
     padding: 20px;
 }
 
+#greeks-modal .modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.modal-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #3c3580;
+    margin-top: 25px;
+    margin-bottom: 12px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #cbd5e1;
+}
+
 .modal-strikes-header {
     font-size: 16px;
     color: #3c3580;
