@@ -563,33 +563,34 @@
         </div>
     </div>
 
-    <!-- Firebase Auth Guard -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+    <!-- Supabase Auth Guard -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/supabaseClient.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", async () => {
+            const supabase = await initSupabase();
+            if (!supabase) {
+                window.location.href = '/login.html';
+                return;
+            }
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCKupNn5aElu7c07LcYJS0J0mWzCKo2EQc",
-            authDomain: "alphastreams-14879.firebaseapp.com",
-            projectId: "alphastreams-14879",
-            storageBucket: "alphastreams-14879.firebasestorage.app",
-            messagingSenderId: "849439984965",
-            appId: "1:849439984965:web:76934b9c49d9fdbd71422c"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-
-        onAuthStateChanged(auth, (user) => {
-            if (!user) {
+            const { data: { session } } = await supabase.auth.getSession();
+            
+            if (!session) {
                 window.location.href = '/login.html';
             } else {
                 document.body.style.opacity = '1';
-                // Optional: Attach logout logic if you have a logout button
+                
+                supabase.auth.onAuthStateChange((event, session) => {
+                    if (event === 'SIGNED_OUT') {
+                        window.location.href = '/index.html';
+                    }
+                });
+
                 const logoutBtn = document.getElementById('logout-btn');
                 if (logoutBtn) {
-                    logoutBtn.addEventListener('click', () => {
-                        signOut(auth).then(() => window.location.href = '/login.html');
+                    logoutBtn.addEventListener('click', async () => {
+                        await supabase.auth.signOut();
                     });
                 }
             }

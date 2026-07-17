@@ -109,5 +109,14 @@ app.include_router(nse_options_router_api, prefix="/v1/ingestion")
 def health():
     return {"status": "ok"}
 
+@app.get("/config")
+def get_config():
+    from app.config.settings import get_settings
+    settings = get_settings()
+    return {
+        "supabaseUrl": settings.SupabaseUrl,
+        "supabaseKey": settings.SupabaseKey
+    }
+
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

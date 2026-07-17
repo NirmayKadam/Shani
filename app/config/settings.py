@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     GrowwApiSecret: str   = Field("", validation_alias="GROWW_API_SECRET")
     GrowwAccessToken: str = Field("", validation_alias="GROWW_ACCESS_TOKEN")
 
+    # Supabase
+    SupabaseUrl: str = Field("", validation_alias="supabaseUrl")
+    SupabaseKey: str = Field("", validation_alias="supabaseKey")
+    SupabaseConnectionString: str = Field("", validation_alias="supabaseConnectionString")
+
     # Ingestion
     DefaultSymbols: str       = Field(
         "",

@@ -8,7 +8,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 3. Dynamic Sentiment Indicator Stream
     initSentimentStream();
+
+    // 4. Supabase Session Check
+    checkSupabaseSession();
 });
+
+async function checkSupabaseSession() {
+    if (typeof initSupabase !== 'undefined') {
+        const supabase = await initSupabase();
+        if (supabase) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                // Change Login buttons to Dashboard
+                const navLaunch = document.getElementById("nav-launch");
+                if (navLaunch) {
+                    navLaunch.textContent = "Dashboard";
+                    navLaunch.href = "/dashboard.html";
+                }
+                const heroCtaBtn = document.getElementById("hero-cta-btn");
+                if (heroCtaBtn) {
+                    heroCtaBtn.textContent = "Go to Dashboard";
+                    heroCtaBtn.href = "/dashboard.html";
+                }
+                const footerCtaBtn = document.getElementById("footer-cta-btn");
+                if (footerCtaBtn) {
+                    footerCtaBtn.textContent = "Go to Dashboard";
+                    footerCtaBtn.href = "/dashboard.html";
+                }
+            }
+        }
+    }
+}
 
 /**
  * 1. Particles stream in a canvas background, flowing horizontally
