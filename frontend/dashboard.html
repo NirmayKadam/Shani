@@ -68,6 +68,22 @@
             </div>
         </div>
 
+        <!-- Watchlist Bar -->
+        <div class="nse-watchlist-bar" style="background-color: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px 16px; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;" id="watchlist-container">
+                <span style="font-weight: 600; color: #1a237e; margin-right: 8px;">
+                    <i class="fas fa-star" style="color: #f59e0b; margin-right: 4px;"></i> My Watchlist:
+                </span>
+                <div id="watchlist-items" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <span style="color: #6b7280; font-size: 13px; font-style: italic;" id="watchlist-empty-msg">Loading...</span>
+                </div>
+            </div>
+            <button id="add-to-watchlist-btn" style="padding: 6px 12px; background-color: #10b981; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px; transition: background-color 0.2s;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                Add <span id="watchlist-current-symbol" style="margin-left:2px;">NIFTY</span>
+            </button>
+        </div>
+
         <!-- Info and Actions Bar -->
         <div class="nse-info-bar">
             <div class="nse-underlying-info">
@@ -593,8 +609,171 @@
                         await supabase.auth.signOut();
                     });
                 }
+
+                // Initialize Watchlist
+                initWatchlist(supabase, session.user.id);
             }
         });
+
+        function initWatchlist(supabase, userId) {
+            const addBtn = document.getElementById('add-to-watchlist-btn');
+            const itemsContainer = document.getElementById('watchlist-items');
+            const emptyMsg = document.getElementById('watchlist-empty-msg');
+            const currentSymbolEl = document.getElementById('watchlist-current-symbol');
+            const underlyingSymbol = document.getElementById('underlying-symbol');
+            const searchInput = document.getElementById('symbol-search-input');
+            const searchBtn = document.getElementById('main-search-btn');
+
+            let currentWatchlist = [];
+
+            // Load Watchlist
+            async function loadWatchlist() {
+                const { data, error } = await supabase
+                    .from('watchlists')
+                    .select('id, symbol')
+                    .eq('user_id', userId)
+                    .order('added_at', { ascending: true });
+
+                if (error) {
+                    console.error('Error fetching watchlist:', error);
+                    emptyMsg.textContent = 'Error loading watchlist';
+                    return;
+                }
+
+                currentWatchlist = data || [];
+                renderWatchlist();
+            }
+
+            // Render Watchlist
+            function renderWatchlist() {
+                itemsContainer.innerHTML = '';
+                
+                if (currentWatchlist.length === 0) {
+                    itemsContainer.innerHTML = '<span style="color: #6b7280; font-size: 13px; font-style: italic;">No symbols added yet.</span>';
+                    return;
+                }
+
+                currentWatchlist.forEach(item => {
+                    const badge = document.createElement('div');
+                    badge.style.cssText = 'background-color: white; border: 1px solid #d1d5db; border-radius: 16px; padding: 4px 10px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer; color: #1f2937; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: border-color 0.2s;';
+                    
+                    // Click badge to search
+                    badge.addEventListener('click', () => {
+                        if (searchInput && searchBtn) {
+                            searchInput.value = item.symbol;
+                            searchBtn.click();
+                        }
+                    });
+                    
+                    // Hover effect
+                    badge.addEventListener('mouseenter', () => badge.style.borderColor = '#10b981');
+                    badge.addEventListener('mouseleave', () => badge.style.borderColor = '#d1d5db');
+
+                    const symbolText = document.createElement('span');
+                    symbolText.textContent = item.symbol;
+                    
+                    const removeBtn = document.createElement('span');
+                    removeBtn.innerHTML = '&times;';
+                    removeBtn.style.cssText = 'color: #9ca3af; font-size: 14px; margin-left: 2px; padding: 0 2px; border-radius: 50%; display: flex; align-items: center; justify-content: center; height: 16px; width: 16px; transition: color 0.2s, background-color 0.2s;';
+                    
+                    // Remove click handler
+                    removeBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation(); // prevent searching
+                        removeBtn.style.color = 'white';
+                        removeBtn.style.backgroundColor = '#ef4444';
+                        
+                        const { error } = await supabase
+                            .from('watchlists')
+                            .delete()
+                            .eq('id', item.id);
+                            
+                        if (!error) {
+                            loadWatchlist();
+                        } else {
+                            console.error('Error deleting from watchlist:', error);
+                            // reset styling on error
+                            removeBtn.style.color = '#9ca3af';
+                            removeBtn.style.backgroundColor = 'transparent';
+                        }
+                    });
+                    
+                    // Remove hover
+                    removeBtn.addEventListener('mouseenter', () => { removeBtn.style.color = '#ef4444'; });
+                    removeBtn.addEventListener('mouseleave', () => { removeBtn.style.color = '#9ca3af'; });
+
+                    badge.appendChild(symbolText);
+                    badge.appendChild(removeBtn);
+                    itemsContainer.appendChild(badge);
+                });
+                
+                checkCurrentSymbol();
+            }
+
+            // Check if current symbol is already in watchlist to toggle button state
+            function checkCurrentSymbol() {
+                const symbol = currentSymbolEl.textContent;
+                const exists = currentWatchlist.some(item => item.symbol === symbol);
+                
+                if (exists) {
+                    addBtn.style.backgroundColor = '#d1d5db';
+                    addBtn.style.color = '#4b5563';
+                    addBtn.style.cursor = 'not-allowed';
+                    addBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Added';
+                    addBtn.disabled = true;
+                } else {
+                    addBtn.style.backgroundColor = '#10b981';
+                    addBtn.style.color = 'white';
+                    addBtn.style.cursor = 'pointer';
+                    addBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg> Add <span style="margin-left:2px;">' + symbol + '</span>';
+                    addBtn.disabled = false;
+                }
+            }
+
+            // Add to Watchlist
+            addBtn.addEventListener('click', async () => {
+                const symbol = currentSymbolEl.textContent;
+                if (!symbol || addBtn.disabled) return;
+                
+                addBtn.innerHTML = '<span style="font-size: 11px;">Adding...</span>';
+                addBtn.disabled = true;
+
+                const { error } = await supabase
+                    .from('watchlists')
+                    .insert([{ user_id: userId, symbol: symbol }]);
+
+                if (error) {
+                    console.error('Error adding to watchlist:', error);
+                    alert("Could not add to watchlist: " + error.message);
+                    checkCurrentSymbol(); // reset button
+                } else {
+                    loadWatchlist();
+                }
+            });
+
+            // Observe underlying symbol changes to update the "Add" button target
+            if (underlyingSymbol) {
+                const observer = new MutationObserver((mutations) => {
+                    for (let mutation of mutations) {
+                        if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                            const newSymbol = underlyingSymbol.textContent.trim();
+                            if (newSymbol && newSymbol !== '--') {
+                                currentSymbolEl.textContent = newSymbol;
+                                checkCurrentSymbol();
+                            }
+                        }
+                    }
+                });
+                observer.observe(underlyingSymbol, { childList: true, characterData: true, subtree: true });
+                
+                // initial set
+                if (underlyingSymbol.textContent && underlyingSymbol.textContent !== '--') {
+                    currentSymbolEl.textContent = underlyingSymbol.textContent;
+                }
+            }
+
+            // Initial Load
+            loadWatchlist();
+        }
     </script>
 
     <!-- Main Application Script -->

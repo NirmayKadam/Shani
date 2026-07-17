@@ -19,13 +19,13 @@ body {
     background-color: #ffffff;
     color: var(--text-dark);
     height: 100vh;
-    overflow: hidden;
+    overflow: auto;
     -webkit-font-smoothing: antialiased;
 }
 
 .split-layout {
     display: flex;
-    height: 100vh;
+    min-height: 100vh;
     width: 100%;
 }
 
