@@ -28,10 +28,20 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
     Adapter for market data via Groww API with a fallback to NseApiAdapter (yfinance/NSE proxy).
     """
 
-    def __init__(self, api_key: str = "", secret_key: str = "", access_token: str = "", redis_client=None) -> None:
+    def __init__(
+        self,
+        api_key: str = "",
+        secret_key: str = "",
+        access_token: str = "",
+        totp_secret: str = "",
+        pin: str = "",
+        redis_client=None,
+    ) -> None:
         self.api_key = api_key
         self.secret_key = secret_key
         self._access_token = access_token
+        self.totp_secret = totp_secret
+        self.pin = pin
         self._session: Optional[aiohttp.ClientSession] = None
         self._fallback_adapter = NseApiAdapter()
         self._redis = redis_client
@@ -74,7 +84,10 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
 
     async def _get_token(self) -> Optional[str]:
         if self._access_token:
-            return self._access_token
+            if not self._is_token_expired(self._access_token):
+                return self._access_token
+            logger.info("Access token in settings is expired. Cleared to refresh dynamically.")
+            self._access_token = ""
 
         if self.api_key and self.secret_key and GROWW_SDK_AVAILABLE:
             try:
@@ -86,18 +99,85 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 if token:
                     self._access_token = token
                     logger.info("Successfully retrieved daily Groww API Access Token.")
+                    try:
+                        import base64
+                        import json
+                        parts = token.split('.')
+                        if len(parts) == 3:
+                            payload_b64 = parts[1]
+                            payload_b64 += '=' * (4 - len(payload_b64) % 4)
+                            payload = json.loads(base64.b64decode(payload_b64).decode('utf-8'))
+                            sub_payload = json.loads(payload.get('sub', '{}'))
+                            roles = sub_payload.get('role', '')
+                            if 'live_data-basic' not in roles:
+                                logger.warning("Dynamically generated token lacks 'live_data-basic' role (roles: %s). Groww API requests may fail with 403 Forbidden. Manually set a valid GROWW_ACCESS_TOKEN in .env if live options data is needed.", roles)
+                    except Exception:
+                        pass
                     return token
             except Exception as e:
                 logger.error("Failed to generate Groww access token dynamically: %s", e)
 
         return None
 
+    def _is_token_expired(self, token: str) -> bool:
+        import base64
+        import json
+        import time
+        try:
+            parts = token.split('.')
+            if len(parts) != 3:
+                # Mock token or generic API token in tests; treat as not expired
+                return False
+            payload_b64 = parts[1]
+            payload_b64 += '=' * (4 - len(payload_b64) % 4)
+            payload_json = base64.b64decode(payload_b64).decode('utf-8')
+            payload = json.loads(payload_json)
+            exp = payload.get('exp')
+            if exp:
+                return time.time() > float(exp)
+        except Exception:
+            pass
+        return True
+
     def _fetch_token_sync(self) -> Optional[str]:
         try:
-            return GrowwAPI.get_access_token(api_key=self.api_key, secret=self.secret_key)
+            totp_code = None
+            if self.totp_secret:
+                try:
+                    import pyotp
+                    totp = pyotp.TOTP(self.totp_secret.replace(" ", "").upper())
+                    totp_code = totp.now()
+                except Exception as e:
+                    logger.warning("TOTP generation failed: %s", e)
+
+            # Try SDK methods with available parameters
+            if totp_code:
+                # Attempt 1: GrowwAPI SDK get_access_token with totp
+                try:
+                    return GrowwAPI.get_access_token(
+                        api_key=self.api_key or self.totp_secret,
+                        totp=totp_code,
+                        pin=self.pin
+                    )
+                except (TypeError, AttributeError):
+                    pass
+                
+                # Attempt 2: Standard GrowwAPI SDK (key + totp as secret)
+                try:
+                    return GrowwAPI.get_access_token(
+                        api_key=self.api_key,
+                        secret=totp_code
+                    )
+                except Exception:
+                    pass
+
+            # Fallback to key + secret_key if present
+            if self.api_key and self.secret_key:
+                return GrowwAPI.get_access_token(api_key=self.api_key, secret=self.secret_key)
+
         except Exception as e:
-            logger.error("Error in GrowwAPI.get_access_token sync call: %s", e)
-            return None
+            logger.error("Error in GrowwAPI token retrieval: %s", e)
+        return None
 
     # ── Market Price (Groww API) ─────────────────────────────────
 

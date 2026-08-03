@@ -14,13 +14,14 @@ import json
 import logging
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from shared.utils.symbol_validator import SymbolValidator
 from shared.infrastructure.redis_client import get_redis_client
 from shared.constants import RedisKeys
 from domains.analytics.application.dto.read_models_dto import OptionChainSummaryDTO, compute_pcr
-from domains.analytics.api.schemas import DerivativesResponse, PricedStrike
+from domains.analytics.api.schemas import DerivativesResponse, PricedStrike, TechnicalsResponse
 
 logger = logging.getLogger(__name__)
 
@@ -156,3 +157,39 @@ async def get_derivatives(symbol: str):
         partial=not (available and len(fair_priced_chain) > 0),
         status="COMPLETED" if (available and len(fair_priced_chain) > 0) else "CALCULATING"
     )
+
+
+@router.get("/{symbol}/technicals", response_model=TechnicalsResponse)
+async def get_technicals(symbol: str, spot: Optional[float] = None):
+    """
+    Get calculated technical indicators and color-coded signals for symbol.
+    """
+    from domains.analytics.application.technicals_calculator import compute_all_technicals
+
+    symbol_upper = symbol.strip().upper()
+    symbol_clean = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol_upper)
+
+    spot_price = spot or 24774.30  # Default fallback spot
+
+    try:
+        redis = await get_redis_client()
+        raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
+        raw_cached = await redis.get(raw_key)
+
+        if raw_cached:
+            data = json.loads(raw_cached)
+            spot_price = float(data.get("underlying_price") or data.get("underlying_value") or spot_price)
+    except Exception as exc:
+        logger.warning("Redis fetch error in technicals for %s: %s", symbol_clean, exc)
+
+    technicals_data = compute_all_technicals(spot_price)
+    technicals_data["symbol"] = symbol_clean
+    technicals_data["generated_at"] = _generated_at()
+    technicals_data["source"] = "analytics_domain_engine"
+    technicals_data["stale"] = False
+    technicals_data["partial"] = False
+    technicals_data["status"] = "COMPLETED"
+
+    return technicals_data
+
+

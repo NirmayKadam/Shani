@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     GrowwApiKey: str      = Field("", validation_alias="GROWW_API_KEY")
     GrowwApiSecret: str   = Field("", validation_alias="GROWW_API_SECRET")
     GrowwAccessToken: str = Field("", validation_alias="GROWW_ACCESS_TOKEN")
+    GrowwTotpSecret: str  = Field("", validation_alias="GROWW_TOTP_SECRET")
+    GrowwPin: str         = Field("", validation_alias="GROWW_PIN")
 
     # Supabase
     SupabaseUrl: str = Field("", validation_alias="supabaseUrl")

@@ -8,7 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css?v=2.1.1">
+    <link rel="stylesheet" href="/style.css?v=2.5.0">
+
+
 </head>
 <body style="opacity: 0; transition: opacity 0.3s ease;">
     <!-- AlphaStreams Brand Header -->
@@ -23,13 +25,14 @@
         <div class="nse-container">
             <div class="nse-tabs">
                 <a href="/" class="nse-tab" style="text-decoration: none; display: inline-block;">Home</a>
-                <a href="/dashboard.html" class="nse-tab active" style="text-decoration: none; display: inline-block;">Option Chain</a>
+                <a href="#" id="tab-option-chain" class="nse-tab active" style="text-decoration: none; display: inline-block;">Option Chain</a>
+                <a href="#" id="tab-technicals" class="nse-tab" style="text-decoration: none; display: inline-block;">Technicals</a>
                 <button id="logout-btn" class="nse-tab" style="background: none; border: none; cursor: pointer; color: white; font: inherit; padding: 12px 16px;">Logout</button>
             </div>
         </div>
     </div>
 
-    <div class="nse-container main-content">
+    <div id="option-chain-view-container" class="nse-container main-content">
         <!-- Header -->
         <div class="nse-header">
             <h1 class="nse-title">Option Chain (Equity Derivatives)</h1>
@@ -287,6 +290,120 @@
                         <!-- Placed dynamically -->
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Technical Analysis Dashboard Container -->
+    <div id="technicals-view-container" class="nse-container technicals-container" style="display: none; margin-top: 20px; margin-bottom: 40px;">
+        <!-- Technical Summary Hero Card -->
+        <div class="tech-card tech-summary-card">
+            <div class="tech-summary-header">
+                <div>
+                    <h2 style="margin:0 0 6px 0; font-size: 22px; color: #1a237e; font-weight: 700;">
+                        Technical Indicators & Market Bias (<span id="tech-symbol-lbl">NIFTY</span>)
+                    </h2>
+                    <p style="margin: 0; color: #6b7280; font-size: 13px;">Real-time quantitative indicators, moving averages, and oscillator signals.</p>
+                </div>
+                <div class="tech-overall-badge-wrapper">
+                    <span class="tech-badge badge-bullish" id="tech-overall-badge">BULLISH</span>
+                    <span style="font-size: 12px; color: #4b5563; font-weight: 600; display: block; text-align: center; margin-top: 4px;" id="tech-summary-counts">8 Buy | 2 Neutral | 1 Sell</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Technical Indicators Grid -->
+        <div class="tech-grid">
+            <!-- Card 1: Oscillators -->
+            <div class="tech-card">
+                <div class="tech-card-title">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    Oscillators & Momentum
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">RSI (14)</div>
+                        <div class="tech-metric-val font-mono" id="tech-rsi-val">--</div>
+                    </div>
+                    <div id="tech-rsi-badge-wrap"><span class="tech-pill pill-neutral" id="tech-rsi-pill">NEUTRAL</span></div>
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">MACD (12, 26, 9)</div>
+                        <div class="tech-metric-val font-mono" id="tech-macd-val">--</div>
+                    </div>
+                    <div id="tech-macd-badge-wrap"><span class="tech-pill pill-bullish" id="tech-macd-pill">BULLISH</span></div>
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">Bollinger Bands (20, 2)</div>
+                        <div class="tech-metric-sub" id="tech-bb-sub">Upper: -- | Lower: --</div>
+                    </div>
+                    <div id="tech-bb-badge-wrap"><span class="tech-pill pill-neutral" id="tech-bb-pill">NEUTRAL</span></div>
+                </div>
+            </div>
+
+            <!-- Card 2: Moving Averages -->
+            <div class="tech-card">
+                <div class="tech-card-title">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                    Moving Averages
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">SMA 20</div>
+                        <div class="tech-metric-val font-mono" id="tech-sma20-val">--</div>
+                    </div>
+                    <div><span class="tech-pill pill-bullish" id="tech-sma20-pill">BULLISH</span></div>
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">SMA 50</div>
+                        <div class="tech-metric-val font-mono" id="tech-sma50-val">--</div>
+                    </div>
+                    <div><span class="tech-pill pill-bullish" id="tech-sma50-pill">BULLISH</span></div>
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">EMA 20</div>
+                        <div class="tech-metric-val font-mono" id="tech-ema20-val">--</div>
+                    </div>
+                    <div><span class="tech-pill pill-bullish" id="tech-ema20-pill">BULLISH</span></div>
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">EMA 50</div>
+                        <div class="tech-metric-val font-mono" id="tech-ema50-val">--</div>
+                    </div>
+                    <div><span class="tech-pill pill-bullish" id="tech-ema50-pill">BULLISH</span></div>
+                </div>
+            </div>
+
+            <!-- Card 3: Volatility & Pivot Points -->
+            <div class="tech-card">
+                <div class="tech-card-title">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v8M8 12h8"></path></svg>
+                    Pivots & Volatility (ATR)
+                </div>
+                <div class="tech-metric-row">
+                    <div>
+                        <div class="tech-metric-lbl">ATR (14) Volatility</div>
+                        <div class="tech-metric-val font-mono" id="tech-atr-val">--</div>
+                    </div>
+                    <div><span class="tech-pill pill-neutral">NORMAL</span></div>
+                </div>
+                <div style="margin-top: 12px; border-top: 1px dashed #e5e7eb; padding-top: 10px;">
+                    <div class="tech-metric-lbl" style="margin-bottom: 8px;">Pivot Levels (Floor)</div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; font-size: 12px;" class="font-mono">
+                        <div style="background: #fef2f2; color: #dc2626; padding: 4px; border-radius: 4px; text-align: center;">R3: <span id="tech-r3">--</span></div>
+                        <div style="background: #fef2f2; color: #dc2626; padding: 4px; border-radius: 4px; text-align: center;">R2: <span id="tech-r2">--</span></div>
+                        <div style="background: #fef2f2; color: #dc2626; padding: 4px; border-radius: 4px; text-align: center;">R1: <span id="tech-r1">--</span></div>
+                        <div style="background: #f3f4f6; color: #1f2937; padding: 4px; border-radius: 4px; text-align: center; grid-column: span 3; font-weight: bold;">Pivot (P): <span id="tech-pivot">--</span></div>
+                        <div style="background: #ecfdf5; color: #059669; padding: 4px; border-radius: 4px; text-align: center;">S1: <span id="tech-s1">--</span></div>
+                        <div style="background: #ecfdf5; color: #059669; padding: 4px; border-radius: 4px; text-align: center;">S2: <span id="tech-s2">--</span></div>
+                        <div style="background: #ecfdf5; color: #059669; padding: 4px; border-radius: 4px; text-align: center;">S3: <span id="tech-s3">--</span></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -777,6 +894,9 @@
     </script>
 
     <!-- Main Application Script -->
-    <script src="/app.js?v=2.1.2"></script>
+    <script src="/app.js?v=2.5.0"></script>
+
+
+
 </body>
 </html>

@@ -23,6 +23,8 @@ def get_market_data_adapter(redis_client=None):
             api_key=settings.GrowwApiKey,
             secret_key=settings.GrowwApiSecret,
             access_token=settings.GrowwAccessToken,
+            totp_secret=settings.GrowwTotpSecret,
+            pin=settings.GrowwPin,
             redis_client=redis_client,
         )
     else:

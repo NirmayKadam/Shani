@@ -188,3 +188,55 @@ class BSMCalculateResponse(BaseModel):
     fair_value: float
     market_mid: Optional[float] = None
     edge: Optional[float] = None
+
+
+# ── Technicals Response Schemas ─────────────────────────────────
+
+class IndicatorSignal(BaseModel):
+    value: Optional[float] = None
+    macd: Optional[float] = None
+    signal_line: Optional[float] = None
+    histogram: Optional[float] = None
+    upper: Optional[float] = None
+    middle: Optional[float] = None
+    lower: Optional[float] = None
+    signal: str
+    label: str
+
+
+class MovingAverageItem(BaseModel):
+    name: str
+    value: float
+    signal: str
+
+
+class PivotsData(BaseModel):
+    p: float
+    r1: float
+    r2: float
+    r3: float
+    s1: float
+    s2: float
+    s3: float
+
+
+class TechnicalsSummary(BaseModel):
+    overall_signal: str
+    overall_badge: str
+    bullish_count: int
+    bearish_count: int
+    neutral_count: int
+    total_indicators: int
+
+
+class TechnicalsResponse(ResponseMetadata):
+    symbol: str
+    spot_price: float
+    summary: TechnicalsSummary
+    rsi: IndicatorSignal
+    macd: IndicatorSignal
+    bollinger: IndicatorSignal
+    moving_averages: list[MovingAverageItem]
+    atr: float
+    pivots: PivotsData
+
