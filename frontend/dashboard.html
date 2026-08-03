@@ -50,9 +50,17 @@
                 </div>
                 <div class="filter-group">
                     <label for="expiry-select">Expiry Date</label>
-                    <select id="expiry-select">
-                        <!-- Populated dynamically -->
-                    </select>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <select id="expiry-select" style="min-width: 140px;">
+                            <!-- Populated dynamically -->
+                        </select>
+                        <div class="preset-expiries" style="display: flex; gap: 4px;">
+                            <button id="btn-exp-7" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">7D</button>
+                            <button id="btn-exp-14" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">14D</button>
+                            <button id="btn-exp-30" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">30D</button>
+                        </div>
+                        <input type="date" id="custom-expiry-date" title="Custom Expiry Date" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
+                    </div>
                 </div>
                 <div class="filter-group">
                     <label for="strike-select">Strike Price</label>
