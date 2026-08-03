@@ -23,11 +23,19 @@
     <!-- Top Brand Tab Bar -->
     <div class="nse-top-navbar">
         <div class="nse-container">
-            <div class="nse-tabs">
-                <a href="/" class="nse-tab" style="text-decoration: none; display: inline-block;">Home</a>
-                <a href="#" id="tab-option-chain" class="nse-tab active" style="text-decoration: none; display: inline-block;">Option Chain</a>
-                <a href="#" id="tab-technicals" class="nse-tab" style="text-decoration: none; display: inline-block;">Technicals</a>
+            <div class="nse-tabs" style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                <div>
+                    <a href="/" class="nse-tab" style="text-decoration: none; display: inline-block;">Home</a>
+                    <a href="#" id="tab-option-chain" class="nse-tab active" style="text-decoration: none; display: inline-block;">Option Chain</a>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <div id="user-profile-badge" style="display: flex; align-items: center; gap: 8px; margin-right: 16px; color: white; font-size: 14px;">
+                        <div id="user-avatar" style="width: 28px; height: 28px; border-radius: 50%; background-color: #f37021; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">?</div>
+                        <span id="user-name-display">Loading...</span>
+                    </div>
+                    <a href="#" id="tab-technicals" class="nse-tab" style="text-decoration: none; display: inline-block;">Technicals</a>
                 <button id="logout-btn" class="nse-tab" style="background: none; border: none; cursor: pointer; color: white; font: inherit; padding: 12px 16px;">Logout</button>
+                </div>
             </div>
         </div>
     </div>
@@ -53,9 +61,17 @@
                 </div>
                 <div class="filter-group">
                     <label for="expiry-select">Expiry Date</label>
-                    <select id="expiry-select">
-                        <!-- Populated dynamically -->
-                    </select>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <select id="expiry-select" style="min-width: 140px;">
+                            <!-- Populated dynamically -->
+                        </select>
+                        <div class="preset-expiries" style="display: flex; gap: 4px;">
+                            <button id="btn-exp-7" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">7D</button>
+                            <button id="btn-exp-14" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">14D</button>
+                            <button id="btn-exp-30" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">30D</button>
+                        </div>
+                        <input type="date" id="custom-expiry-date" title="Custom Expiry Date" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
+                    </div>
                 </div>
                 <div class="filter-group">
                     <label for="strike-select">Strike Price</label>
@@ -727,10 +743,32 @@
                     });
                 }
 
-                // Initialize Watchlist
+                // Initialize Profile and Watchlist
+                initUserProfile(session.user);
                 initWatchlist(supabase, session.user.id);
             }
         });
+
+        function initUserProfile(user) {
+            const nameDisplay = document.getElementById('user-name-display');
+            const avatarDisplay = document.getElementById('user-avatar');
+            
+            let fullName = user.user_metadata?.full_name || user.email;
+            let initials = '?';
+            
+            if (fullName) {
+                nameDisplay.textContent = fullName;
+                const names = fullName.split(' ');
+                if (names.length > 1) {
+                    initials = (names[0][0] + names[names.length - 1][0]).toUpperCase();
+                } else {
+                    initials = fullName.substring(0, 2).toUpperCase();
+                }
+                avatarDisplay.textContent = initials;
+            } else {
+                nameDisplay.textContent = 'User';
+            }
+        }
 
         function initWatchlist(supabase, userId) {
             const addBtn = document.getElementById('add-to-watchlist-btn');

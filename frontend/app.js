@@ -809,6 +809,14 @@ function recalculateAndRender() {
     if (appState.selectedStrike !== "ALL") {
         const sVal = parseFloat(appState.selectedStrike);
         rowsToRender = chainRows.filter(r => Math.abs(r.strike_price - sVal) < 0.01);
+    } else {
+        // Show 20 rows above ATM, 20 rows below ATM (total 41)
+        const atmIndex = chainRows.findIndex(r => r.strike_price === atmStrike);
+        if (atmIndex !== -1) {
+            const startIdx = Math.max(0, atmIndex - 20);
+            const endIdx = Math.min(chainRows.length, atmIndex + 21);
+            rowsToRender = chainRows.slice(startIdx, endIdx);
+        }
     }
 
     rowsToRender.forEach(row => {
@@ -1155,6 +1163,33 @@ elements.strikeSelect.addEventListener("change", (e) => {
     appState.selectedStrike = e.target.value;
     recalculateAndRender();
 });
+
+// Custom Date & Presets Handlers
+function updateDaysToExpiry(days) {
+    if (days < 1) days = 1;
+    appState.daysToExpiry = days;
+    elements.bsmDays.value = days;
+    elements.bsmDaysSlider.value = days;
+    recalculateAndRender();
+}
+
+const customDateInput = document.getElementById("custom-expiry-date");
+if (customDateInput) {
+    customDateInput.addEventListener("change", (e) => {
+        const selected = new Date(e.target.value);
+        if (isNaN(selected.getTime())) return;
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        selected.setHours(0,0,0,0);
+        const diff = Math.round((selected - today) / (1000 * 60 * 60 * 24));
+        updateDaysToExpiry(diff);
+    });
+}
+
+document.getElementById("btn-exp-7")?.addEventListener("click", () => updateDaysToExpiry(7));
+document.getElementById("btn-exp-14")?.addEventListener("click", () => updateDaysToExpiry(14));
+document.getElementById("btn-exp-30")?.addEventListener("click", () => updateDaysToExpiry(30));
+
 
 // Search button trigger
 document.getElementById("main-search-btn").addEventListener("click", () => {
