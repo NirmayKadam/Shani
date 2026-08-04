@@ -12,9 +12,13 @@ FastAPI auto-generates interactive documentation which is served at:
 Returns the options chain evaluated by the Crank-Nicolson PDE solver, PCR, volume, and open interest summary.
 - **Example**: `GET /v1/derivatives/NIFTY`
 
-### GET `/v1/pricer/ticker/{symbol}` — Option Chain Data
-Returns raw or mock options chain ticks to run Black-Scholes-Merton calculations.
-- **Example**: `GET /v1/pricer/ticker/NIFTY`
+### GET `/v1/derivatives/{symbol}/technicals` — Technical Indicators & Signals
+Returns precomputed technical indicator metrics (RSI, MACD, Bollinger Bands, ATR, Moving Averages, Pivot Points) and composite bull/bear sentiment signals computed using live historical market OHLC price history via `yfinance`.
+- **Example**: `GET /v1/derivatives/NIFTY/technicals`
+
+### GET `/v1/analytics/options/{symbol}/parameters` — Option Chain Parameters
+Returns option chain parameters, spot price, risk-free rate, dividend yield, and available strike grids for Black-Scholes-Merton calculations.
+- **Example**: `GET /v1/analytics/options/NIFTY/parameters`
 
 ### POST `/v1/pricer/calculate` — BSM Pricing Calculator
 Performs high-precision, client-side equivalent analytical Black-Scholes-Merton pricing on arbitrary parameters.
@@ -31,6 +35,12 @@ Performs high-precision, client-side equivalent analytical Black-Scholes-Merton 
   }
   ```
 
+### Auth & User Profile Endpoints
+- **`POST /v1/auth/signup`**: Registers a new user account with email and password via Supabase Auth.
+- **`POST /v1/auth/login`**: Authenticates user credentials and returns session tokens.
+- **`GET /v1/auth/me`**: Fetches authenticated user profile and metadata.
+- **`POST /v1/auth/profile`**: Updates user full name and metadata.
+
 ### GET `/v1/symbols` — System Watchlist
 Returns the default watchlist from configuration settings.
 
@@ -45,8 +55,9 @@ Returns `{"status": "ok"}` when healthy.
 
 ## 2. WebSocket Real-Time Stream
 
-### Endpoint: `WS /v1/ws/{symbol}`
-Streams real-time updates for the target symbol.
+### Endpoints:
+- `WS /ws/options/{symbol}` — Streams live option chain recalculations, spot prices, and BSM metrics.
+- `WS /ws/derivatives/{symbol}` — Streams real-time tick updates for derivative analytics.
 
 ### Message Payload Types
 When subscribed, the system pushes JSON payloads containing the `type` field:

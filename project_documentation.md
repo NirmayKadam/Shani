@@ -50,29 +50,28 @@ AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principl
 ```
 MarketSentimentAnalysis2/
 ├── app/
-│   ├── api/                           # Entry point adapters (routers)
-│   ├── config.py                      # Pydantic configuration schemas
-│   └── main.py                        # FastAPI application bootstrapper
+│   ├── config/                        # Pydantic settings & environment configuration
+│   ├── bootstrap.py                   # Domain router registration & app bootstrapping
+│   └── main.py                        # FastAPI application bootstrapper & middleware
 ├── domains/
 │   ├── ingestion/                     # Ingestion Context
 │   │   ├── api/                       # REST endpoint adapters
 │   │   ├── application/               # Orchestrators and Celery tasks
-│   │   ├── dto/                       # Data Transfer Objects (DTOs)
-│   │   ├── domain/                    # Ingestion domain entities
-│   │   └── infrastructure/            # Outbound adapters (NSE, Groww)
+│   │   ├── domain/                    # Ingestion domain entities & DTOs
+│   │   └── infrastructure/            # Outbound adapters (NSE, Groww, yfinance)
 │   └── analytics/                     # Analytics Context
-│       ├── api/                       # REST and WebSocket entry adapters
-│       ├── application/               # Pricing solvers
-│       ├── domain/                    # Quantitative domain models
-│       └── infrastructure/            # Database and read-model subscribers
+│       ├── api/                       # REST, Technicals, Auth & WS entry adapters
+│       ├── application/               # BSM, PDE & Technical indicator calculators
+│       ├── domain/                    # Quantitative domain models & entities
+│       └── infrastructure/            # Read-model subscribers & cache repositories
 ├── shared/                            # Shared Kernel
-│   ├── infrastructure/                # Redis and Database connection pools
+│   ├── infrastructure/                # Redis connection pools & streaming bus
 │   ├── constants.py                   # Stream names, TTLs, and keys
-│   └── utils/                         # Symbol and timezone utilities
-├── static/                            # Client assets (HTML, CSS, JS)
-├── scripts/                           # Schema migrations
-├── tests/                             # Unit and integration test suites
-├── supervisord.conf                   # Multi-process configuration
+│   └── utils/                         # Symbol validation & timezone utilities
+├── frontend/                          # Client web assets (HTML5, CSS3, Vanilla JS)
+├── scripts/                           # Database migration & catalog tools
+├── tests/                             # Unit and integration test suites (65+ tests)
+├── supervisord.conf                   # Multi-process container configuration
 ├── start.sh                           # Container startup script
 └── docker-compose.yml                 # Orchestration manifest
 ```

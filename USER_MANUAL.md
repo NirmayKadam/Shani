@@ -60,3 +60,23 @@ Click on any **Strike Price** or **LTP** cell to display the **Greeks Inspection
 
 ## 6. Data Export (.csv)
 Click the **"Download (.csv)"** button to export Option Chain pricing. The generated CSV captures all standard columns, implied volatilities, and BSM calculations for physical storage or custom algorithmic analysis in spreadsheet applications.
+
+---
+
+## 7. Technical Indicators & Sentiment Analysis
+Switch to the **"Technicals"** tab in the top navigation header to view real-time technical analysis and market sentiment signals for the selected instrument:
+* **Composite Sentiment Gauge:** Displays overall Bullish, Bearish, or Neutral market sentiment based on weighted indicator signals.
+* **Relative Strength Index (RSI):** 14-period momentum oscillator identifying Overbought (>70) and Oversold (<30) conditions.
+* **MACD (Moving Average Convergence Divergence):** Exposes MACD Line (12/26 EMA difference), Signal Line (9-period EMA of MACD), and Histogram momentum direction.
+* **Bollinger Bands:** 20-period SMA with ±2 standard deviation upper/lower bands to measure market volatility and band touch signals.
+* **Average True Range (ATR):** Measures 14-period market volatility in absolute points.
+* **Moving Averages (EMA 20, SMA 50, SMA 200):** Trend indicators highlighting Golden Cross and Death Cross signals.
+* **Pivot Points (Standard Floor Pivots):** Calculates intraday support ($S_1, S_2, S_3$) and resistance ($R_1, R_2, R_3$) levels derived from daily OHLC prices.
+
+---
+
+## 8. User Profile & Account Management
+Click on the user profile badge located in the top-right corner of the header:
+* **Profile Modal:** View active account details, registered email address, and account creation date.
+* **Update Profile:** Edit your Full Name and save changes to sync metadata with Supabase Auth instantly without requiring a full page refresh.
+

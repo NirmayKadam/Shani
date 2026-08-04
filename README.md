@@ -19,9 +19,11 @@ To read the detailed system documentation, please refer to the following guides:
 ## Features
 
 - **NSE Option Chain Dashboard** — interactive web UI cloning the NSE India option chain layout, with Calls / Strikes / Puts dual-column table.
+- **Technical Indicators & Sentiment Analysis** — real-time technical analysis engine computing RSI, MACD, Bollinger Bands, ATR, EMA/SMA crossovers, and Pivot Points with composite sentiment signals.
 - **Client-Side BSM Calculator** — real-time Black-Scholes-Merton pricing, full Greeks (Δ, Γ, ν, θ, ρ), and theoretical edge overlays.
-- **Dynamic Instrument Search** — autocomplete search across 2,000+ NSE equities and indices via a live instrument catalog.
-- **Real-Time WebSocket Push** — live price ticks and options data streamed to the UI.
+- **User Profile Management** — Supabase Auth integration with glassmorphic profile modal for real-time metadata updates.
+- **Dynamic Instrument Search** — debounced autocomplete search across 2,000+ NSE equities and indices via a live instrument catalog.
+- **Real-Time WebSocket Push** — live price ticks, option chain updates, and technical indicator signal synchronization.
 - **Crank-Nicolson PDE Fair Pricing** — numerical PDE solver for European-style option fair values.
 - **Single-Container Deployment** — everything (FastAPI, Celery, Redis, and TimescaleDB) runs in one Docker container via `supervisord`.
 
