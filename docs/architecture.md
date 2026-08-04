@@ -23,7 +23,7 @@ AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principl
                                      v                             v
                        +-------------+-------------+ +-------------+-------------+
                        |     Ingestion Domain      | |     Analytics Domain      |
-                       | (Data Retrieval, Polling) | | (PDE, BSM, Technicals, ML) |
+                       | (Data Retrieval, Polling) | |  (PDE, BSM, Technicals)   |
                        +-------------+-------------+ +-------------+-------------+
                                      |                             |
                                      +--------------+--------------+
@@ -57,7 +57,7 @@ MarketSentimentAnalysis2/
 │   │   ├── domain/                    # Ingestion domain entities & DTOs
 │   │   └── infrastructure/            # Outbound adapters (NSE, Groww, yfinance)
 │   └── analytics/                     # Analytics Context
-│       ├── api/                       # REST, Technicals, Auth & WS entry adapters
+│       ├── api/                       # REST, Technicals, Pricer & WS entry adapters
 │       ├── application/               # BSM, PDE & Technical indicator calculators
 │       ├── domain/                    # Quantitative domain models & entities
 │       └── infrastructure/            # Read-model subscribers & cache repositories
@@ -234,7 +234,7 @@ Matrix $\mathbf{A}$ is static and pre-factorized using SuperLU direct solver (`s
 1. `stream:options.raw_fetched`: Ingestion worker pushes raw tick blocks.
 2. `stream:options.priced`: `OptionsPricingSubscriber` daemon consumes ticks, solves BSM/PDE, and writes processed results.
 3. `stream:dlq:refresh_request`: Dead-Letter Queue isolates processing failures after 3 retries.
-4. `channel:options:updated:{SYMBOL}`: Ephemeral Pub/Sub channel mirrors tick updates to WebSocket hub.
+4. `market.options_updated.{symbol}` / `market.price_updated.{symbol}`: Ephemeral Pub/Sub channels mirror tick & chain updates to WebSocket hub (`/v1/ws/{symbol}`).
 
 ---
 

@@ -48,7 +48,7 @@ This is a **Modular Monolith** following Domain-Driven Design (DDD) principles:
 ```
 domains/
 ├── ingestion/     # Fetches data from external sources (Groww, NSE, NewsAPI, yfinance)
-├── analytics/     # NLP scoring, ML forecasting, options pricing, read-model updates
+├── analytics/     # Technical indicators, BSM & PDE options pricing, read-model updates
 ```
 
 Cross-domain communication uses **Redis Streams** (durable events). See `shared/infrastructure/event_bus/` for contracts.

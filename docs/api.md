@@ -35,11 +35,15 @@ Performs high-precision, client-side equivalent analytical Black-Scholes-Merton 
   }
   ```
 
-### Auth & User Profile Endpoints
-- **`POST /v1/auth/signup`**: Registers a new user account with email and password via Supabase Auth.
-- **`POST /v1/auth/login`**: Authenticates user credentials and returns session tokens.
-- **`GET /v1/auth/me`**: Fetches authenticated user profile and metadata.
-- **`POST /v1/auth/profile`**: Updates user full name and metadata.
+### GET `/v1/ingestion/nse/option-chain/{symbol}` — NSE Raw Option Chain Ingestion
+Fetches raw option chain payload from NSE API adapter for the specified symbol.
+- **Example**: `GET /v1/ingestion/nse/option-chain/NIFTY`
+
+### GET `/config` — Client Application Configuration
+Returns public environment configuration (Supabase URL and anon key) used by frontend JS.
+
+### Client-Side Auth & User Profile (Supabase JS SDK)
+Authentication, signups, logins, and profile metadata updates are performed directly client-side via the Supabase JS SDK (`supabase.auth.*` and `public.users` table), initialized using credentials from `/config`.
 
 ### GET `/v1/symbols` — System Watchlist
 Returns the default watchlist from configuration settings.
@@ -49,15 +53,14 @@ Searches across the 2,000+ NSE equity and indices catalog.
 - **Query Parameter**: `q` (e.g. `?q=RELIANCE`)
 
 ### GET `/health` — System Health Status
-Returns `{"status": "ok"}` when healthy.
+Returns health status for API, Redis, and Database connections.
 
 ---
 
 ## 2. WebSocket Real-Time Stream
 
-### Endpoints:
-- `WS /ws/options/{symbol}` — Streams live option chain recalculations, spot prices, and BSM metrics.
-- `WS /ws/derivatives/{symbol}` — Streams real-time tick updates for derivative analytics.
+### Endpoint:
+- `WS /v1/ws/{symbol}` — Single real-time streaming endpoint for price updates, option chain recalculations, volume triggers, and alert notifications.
 
 ### Message Payload Types
 When subscribed, the system pushes JSON payloads containing the `type` field:

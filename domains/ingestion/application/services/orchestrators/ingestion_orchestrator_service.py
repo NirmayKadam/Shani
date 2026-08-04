@@ -3,7 +3,7 @@ File Overview: Async worker listening for on-demand refresh requests to trigger 
 
 All Functions/Classes:
 - main: Infinite listener loop. Take events from ANALYSIS_REFRESH_REQUESTED stream and send to _handle_refresh.
-- _handle_refresh: Refresh logic with cooldowns. Take refresh event and send Celery tasks for news/price/options/ML.
+- _handle_refresh: Refresh logic with cooldowns. Take refresh event and send Celery tasks for price/options.
 
 Endpoints/APIs: None (Background process)
 
@@ -74,7 +74,7 @@ async def _handle_refresh(stream_bus: DurableEventStream, message: StreamMessage
         poll_options.delay(symbol)
         fetch_and_publish_options.delay(symbol)
 
-        logger.info("[%s] Dispatched ingestion + prediction tasks", symbol)
+        logger.info("[%s] Dispatched ingestion tasks", symbol)
         await stream_bus.ack(Streams.ANALYSIS_REFRESH_REQUESTED, _GROUP, message.message_id)
 
     except Exception as exc:
