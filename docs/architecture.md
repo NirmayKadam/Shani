@@ -7,33 +7,37 @@ AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principl
 ## 1. Architectural Philosophy & Bounded Contexts
 
 ```
-                                  +------------------------------------+
-                                  |         API & UI Adapter           |
-                                  |   (FastAPI Routers, WebSockets)    |
-                                  +-----------------+------------------+
-                                                    |
-                                                    v
-                                  +-----------------+------------------+
-                                  |          Domain Ports              |
-                                  |   (IMarketPriceSourcePort, etc.)   |
-                                  +-----------------+------------------+
-                                                    |
-                                     +--------------+--------------+
-                                     |                             |
-                                     v                             v
-                       +-------------+-------------+ +-------------+-------------+
-                       |     Ingestion Domain      | |     Analytics Domain      |
-                       | (Data Retrieval, Polling) | |  (PDE, BSM, Technicals)   |
-                       +-------------+-------------+ +-------------+-------------+
-                                     |                             |
-                                     +--------------+--------------+
-                                                    |
-                                                    v
-                                  +-----------------+------------------+
-                                  |      Shared Infrastructure         |
-                                  | (TimescaleDB, Redis, Event Bus)   |
-                                  +------------------------------------+
+               DDD + Hexagonal Flow
+
+                    Controller
+                         │
+                 Input Adapter
+                         │
+          Input Port (Use Case)
+                         │
+             Application Service
+                         │
+           Domain (Entities, Aggregates,
+           Value Objects, Domain Services)
+                         │
+                Output Ports (Interfaces)
+                         │
+               Output Adapters (JPA,
+             Kafka, Email, Payment APIs)
 ```
+
+### Layer Mapping Matrix
+
+| DDD / Hexagonal Layer | Project Architecture | Codebase Location | Examples / Implementation |
+|---|---|---|---|
+| **Controller / Driving Adapter** | FastAPI Routers & WebSockets | `app/main.py`, `domains/*/api/` | `options.py`, `/v1/ws/{symbol}` WebSocket endpoint |
+| **Input Adapter** | Request Handlers & Decoders | `domains/*/api/` | Pydantic request models & FastAPI dependency injection |
+| **Input Port (Use Case)** | Service Interfaces | `domains/*/ports/interface/inbound/` | Inbound execution interfaces |
+| **Application Service** | Pipeline Orchestrators | `domains/*/application/` | `BSMService`, `OptionChainIngestionService`, Celery tasks |
+| **Domain Core** | Entities, Value Objects & Math | `domains/*/domain/` | `OptionChain`, `TickData`, BSM formulas, PDE grid solvers |
+| **Output Ports (Interfaces)** | Abstract Data & Client Contracts | `domains/*/ports/interface/outbound/` | `IMarketPriceSourcePort`, `IOptionChainSourcePort` |
+| **Output Adapters (Driven)** | External API & Storage Clients | `domains/*/infrastructure/` | `GrowwApiAdapter`, `NseApiAdapter`, `TimescaleDBRepository`, `RedisStreamBus` |
+
 
 ### Active Bounded Contexts
 
@@ -143,9 +147,58 @@ graph TD
     RedisCache <-->|Read cache| FastAPI
     RedisPubSub ==|Push updates|==> WSHub
 
-    FastAPI <-->|REST API requests| WebUI
-    WSHub ==|WebSockets live feed|==> WebUI
 ```
+
+### Ports & Adapters End-to-End Execution Sequence
+
+```
+       Control Call Flow (Top → Down)            Data Return Flow (Bottom ↑ Up)
+
+    [ IngestionService ] (App Service)       [ IngestionService ] (App Service)
+             │ (calls port)                           ▲ (returns RawTickDTO)
+             ▼                                        │
+    [ IOptionChainSourcePort ]               [ IOptionChainSourcePort ]
+             │ (implemented by)                       ▲
+             ▼                                        │
+    [ GrowwApiAdapter ] (Adapter)            [ GrowwApiAdapter ] (Adapter)
+             │ (HTTP request)                         ▲ (HTTP response)
+             ▼                                        │
+      [ Groww / NSE API ]                      [ Groww / NSE API ]
+```
+
+### Complete Sequence
+
+```
+[ Celery Task ] ──(1. trigger)──> [ IngestionService ]
+                                         │
+    ┌────────────────────────────────────┴────────────────────────────────────┐
+    │ (2. Call Outbound Port)                                                 │ (4. Publish Outbound Port)
+    ▼                                                                         ▼
+[ IOptionChainSourcePort ]                                            [ IEventBusPort ]
+    │ (invokes implementation)                                                │ (invokes implementation)
+    ▼                                                                         ▼
+[ GrowwApiAdapter ]                                                   [ RedisEventBusAdapter ]
+    │                                                                         │
+    ├───> HTTP fetch ───> [ External Groww API ]                              │
+    │                                 │                                       │
+    └───< returns DTO <───────────────┘                                       │
+    │                                                                         │
+    └───> returns RawTickDTO to IngestionService ─────────────────────────────┼─> Stream publish ──> [ Redis Stream ]
+                                                                                                            │
+                                                                                                            ▼
+                                                                                             [ OptionsPricingSubscriber ]
+                                                                                                            │
+                                                                                                            ▼
+                                                                                                    [ Redis Pub/Sub ]
+                                                                                                            │
+                                                                                                            ▼
+                                                                                                   [ WebSocket Gateway ]
+```
+
+1. **Trigger (Driving Input):** Celery task `ingestion.poll_options` fires, invoking Application Service `IngestionService.ingest_options(symbol)`.
+2. **Fetch (Outbound Port -> Outbound Adapter):** `IngestionService` invokes `IOptionChainSourcePort.fetch_option_chain(symbol)`. Dependency Injection resolves concrete adapter (`GrowwApiAdapter` / `NseApiAdapter`), returning `RawTickDTO`.
+3. **Publish Stream (Outbound Port -> Outbound Adapter):** `IngestionService` invokes `IEventBusPort.publish("stream:options.raw_fetched", data)`. `RedisEventBusAdapter` pushes payload to Redis Stream.
+4. **Broadcast (Driven Consumer -> Driving Gateway):** `OptionsPricingSubscriber` consumes stream, computes math domain, pushes to Redis Pub/Sub. FastAPI WebSocket gateway (`/v1/ws/{symbol}`) relays payload to UI.
 
 ---
 
