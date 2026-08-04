@@ -1,18 +1,88 @@
-# System Architecture & Design
+# System Architecture & Mathematical Specifications
 
-AlphaStreams V2 is designed as an **Event-Driven Modular Monolith** enforcing strict separation of concerns, decoupling of domains, and clean process segregation inside the container.
+AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principles of **Domain-Driven Design (DDD)** and **Hexagonal (Ports and Adapters) Architecture**. By enforcing strict context boundaries at the package level, the system minimizes coupling and guarantees that domains communicate exclusively via public interfaces (Ports) or asynchronous, durable event streams.
 
 ---
 
-## 1. System Process Layout
+## 1. Architectural Philosophy & Bounded Contexts
 
-This diagram shows how processes are orchestrated inside the single Docker container, how they interact with external sources, and how data persists/streams across services:
+```
+                                  +------------------------------------+
+                                  |         API & UI Adapter           |
+                                  |   (FastAPI Routers, WebSockets)    |
+                                  +-----------------+------------------+
+                                                    |
+                                                    v
+                                  +-----------------+------------------+
+                                  |          Domain Ports              |
+                                  |   (IMarketPriceSourcePort, etc.)   |
+                                  +-----------------+------------------+
+                                                    |
+                                     +--------------+--------------+
+                                     |                             |
+                                     v                             v
+                       +-------------+-------------+ +-------------+-------------+
+                       |     Ingestion Domain      | |     Analytics Domain      |
+                       | (Data Retrieval, Polling) | | (PDE, BSM, Technicals, ML) |
+                       +-------------+-------------+ +-------------+-------------+
+                                     |                             |
+                                     +--------------+--------------+
+                                                    |
+                                                    v
+                                  +-----------------+------------------+
+                                  |      Shared Infrastructure         |
+                                  | (TimescaleDB, Redis, Event Bus)   |
+                                  +------------------------------------+
+```
+
+### Active Bounded Contexts
+
+1. **Ingestion Context (`domains/ingestion`)**: Establishes connections to external financial market APIs, maintains stateful sessions, rotates HTTP cookies, parses market payloads, and publishes raw tick data structures to the messaging layer.
+2. **Analytics Context (`domains/analytics`)**: The mathematical engine. Consumes ingestion event streams, executes analytical (BSM) and numerical (Crank-Nicolson PDE) option solvers, computes technical indicators, and updates read-optimized caches.
+3. **Application & Serving Context (`app/` / `frontend/`)**: Exposes REST and WebSocket gateways using FastAPI to interface with the web client. Serves static assets, provides caching mechanisms for endpoints, and manages low-latency pub/sub streaming to active web connections.
+4. **Shared Kernel (`shared/`)**: Provides cross-cutting facilities including database adapters, caching client configurations, global constants, symbol validation rules, and Celery task scheduler application context.
+
+### Directory Taxonomy
+
+```
+MarketSentimentAnalysis2/
+├── app/
+│   ├── config/                        # Pydantic settings & environment configuration
+│   ├── bootstrap.py                   # Domain router registration & app bootstrapping
+│   └── main.py                        # FastAPI application bootstrapper & middleware
+├── domains/
+│   ├── ingestion/                     # Ingestion Context
+│   │   ├── api/                       # REST endpoint adapters
+│   │   ├── application/               # Orchestrators and Celery tasks
+│   │   ├── domain/                    # Ingestion domain entities & DTOs
+│   │   └── infrastructure/            # Outbound adapters (NSE, Groww, yfinance)
+│   └── analytics/                     # Analytics Context
+│       ├── api/                       # REST, Technicals, Auth & WS entry adapters
+│       ├── application/               # BSM, PDE & Technical indicator calculators
+│       ├── domain/                    # Quantitative domain models & entities
+│       └── infrastructure/            # Read-model subscribers & cache repositories
+├── shared/                            # Shared Kernel
+│   ├── infrastructure/                # Redis connection pools & streaming bus
+│   ├── constants.py                   # Stream names, TTLs, and keys
+│   └── utils/                         # Symbol validation & timezone utilities
+├── frontend/                          # Client web assets (HTML5, CSS3, Vanilla JS)
+├── scripts/                           # Database migration & catalog tools
+├── tests/                             # Unit and integration test suites (65+ tests)
+├── supervisord.conf                   # Multi-process container configuration
+├── start.sh                           # Container startup script
+└── docker-compose.yml                 # Orchestration manifest
+```
+
+---
+
+## 2. Process Layout & Flow Diagram
 
 ```mermaid
 graph TD
     subgraph External [External Market Sources]
         GrowwAPI([Groww API - Primary Quotes])
         NseAPI([NSE India API - Market Fallback])
+        YfAPI([yfinance - Historical OHLC & Fallback])
     end
 
     subgraph DockerContainer [Docker Container - supervisord Process Manager]
@@ -51,227 +121,145 @@ graph TD
     end
 
     %% Flow lines
-    %% External to Ingestion adapters
     GrowwAPI -.->|HTTP POST/GET| GrowwAdapter
     NseAPI -.->|HTTP GET / Session Cookies| NseAdapter
+    YfAPI -.->|OHLC Fetch| NseAdapter
 
-    %% Ingestion internal calls
     CeleryTasks -->|Invoke via Port| AdapterFactory
     AdapterFactory --> GrowwAdapter
     AdapterFactory --> NseAdapter
     GrowwAdapter -.->|Fallback on fail| NseAdapter
 
-    %% Process flow
     CeleryTasks ==|Publish raw ticks|==> RawTicks
     CeleryTasks -->|Save raw options ticks| TimescaleDB
     RawTicks ==|Consume raw ticks|==> OptionsSub
     OptionsSub -->|Evaluate PDE| CNPricer
     OptionsSub -->|Evaluate Greeks| BSMPricer
     
-    %% Output and updates
     OptionsSub ==|Update cache read model|==> RedisCache
     OptionsSub ==|Publish priced ticks|==> PricedTicks
     OptionsSub ==|Broadcast updates|==> RedisPubSub
 
-    %% Serving
     RedisCache <-->|Read cache| FastAPI
     RedisPubSub ==|Push updates|==> WSHub
 
-    %% Client Consumption
     FastAPI <-->|REST API requests| WebUI
     WSHub ==|WebSockets live feed|==> WebUI
-
-    %% Force vertical ranking to align like a tree
-    External ~~~ Ingestion
-    Ingestion ~~~ OptionsPipeline
-    OptionsPipeline ~~~ Database
-    Database ~~~ CachePubSub
-    CachePubSub ~~~ Serving
-    Serving ~~~ UserClient
 ```
 
 ---
 
-## 2. Logical Architecture (DDD & Hexagonal Layers)
+## 3. Ingestion Context & Pluggable Data Adapters
 
-This diagram shows the software design pattern, mapping the **Domain-Driven Design (DDD)** bounded contexts and the **Hexagonal (Ports and Adapters) Architecture** layers:
+Data ingestion operates via an interface-driven architecture, decoupling pipeline execution from concrete API providers through `IMarketPriceSourcePort` and `IOptionChainSourcePort`.
 
-```mermaid
-graph TD
-    subgraph PrimaryAdapters [Primary Adapters - Drivers]
-        WebUI["Web UI Dashboard (HTML/CSS/JS)"]
-        FastAPI_Router["FastAPI Router / API Endpoints"]
-        WS_Events["WebSocket Router"]
-        Celery_Beat["Celery Beat (Scheduler)"]
-    end
-
-    subgraph Ports [Domain Ports - Interfaces]
-        IMarketPort["IMarketPriceSourcePort"]
-        IOptionPort["IOptionChainSourcePort"]
-        IEventBusPort["IEventBusPort"]
-    end
-
-    subgraph CoreDomain [Core Domains - Business Logic]
-        subgraph Ingestion_Ctx [Ingestion Domain]
-            IngestService["Ingestion Service"]
-            DTOs["Data Transfer Objects"]
-        end
-        subgraph Analytics_Ctx [Analytics Domain]
-            SentimentService["Sentiment Service"]
-            CNPricer["Crank-Nicolson PDE Pricer"]
-            BSMPricer["BSM Pricer Engine"]
-            PredictorService["MTF-CNN-LSTM Predictor"]
-            ReadModel["Read Model Updater"]
-        end
-    end
-
-    subgraph SecondaryAdapters [Secondary Adapters - Driven]
-        NseAdapter["NseApiAdapter"]
-        GrowwAdapter["GrowwApiAdapter"]
-        RedisBus["Redis Event Bus Adapter"]
-        TimescaleDB["TimescaleDB Database Adapter"]
-        RedisCache["Redis Cache / DB Read Model"]
-    end
-
-    %% Connectors
-    WebUI <--> FastAPI_Router
-    WebUI <--> WS_Events
-    FastAPI_Router --> Ports
-    Celery_Beat --> IngestService
-    IngestService --> Ports
-
-    Ports --> CoreDomain
-
-    %% Interfaces implemented by adapters
-    IMarketPort -.-> GrowwAdapter
-    IMarketPort -.-> NseAdapter
-    IOptionPort -.-> GrowwAdapter
-    IOptionPort -.-> NseAdapter
-    IEventBusPort -.-> RedisBus
-
-    %% Core interactions with resources
-    Analytics_Ctx --> TimescaleDB
-    Analytics_Ctx --> RedisCache
-    Analytics_Ctx --> RedisBus
-```
+### Adapter Factory & Session Management
+* **`GrowwApiAdapter`**: Primary live option chain and quote retrieval. Handles dynamic access tokens and caches auxiliary data (e.g. dividend yield) in Redis.
+* **`NseApiAdapter`**: Connects to NSE India API. Serves as primary driver under `MARKET_DATA_PROVIDER="nse"` or fallback when Groww credentials expire.
+* **Session Cookie Rotation**: Performs initial warm-up sequence (`https://www.nseindia.com`) and programmatically refreshes session cookies every 10 minutes (600s).
+* **Tiered Market Fallback**:
+  1. Redis Cache check.
+  2. Primary Adapter (Groww API / `yfinance`).
+  3. Secondary NSE Scraper.
+  4. **Fail-Fast Error Policy (HTTP 503)**: Purged synthetic mock generators. Returns clean `503 Service Unavailable` if external streams fail.
 
 ---
 
-## 3. Domain Component Architectures
+## 4. Option Pricing & Mathematical Solvers
 
-### A. Ingestion Domain Context
-Responsible for task scheduling, pulling market metrics from third-party endpoints using appropriate protocol-level adapters, caching static values (e.g. dividends) to reduce HTTP request volume, and staging raw records onto durable Redis Streams.
+### Analytical Model: Black-Scholes-Merton (BSM)
 
-```mermaid
-graph TD
-    CeleryBeat[Celery Beat Scheduler] -->|Triggers periodic tasks| CeleryWorker[Celery Tasks Worker]
-    
-    subgraph Ingestion_Domain [Ingestion Bounded Context]
-        CeleryWorker -->|Fetch Option Chain| AdapterFactory[Adapter Factory]
-        AdapterFactory -->|Instantiate adapter| GrowwAdapter[GrowwApiAdapter]
-        AdapterFactory -->|Instantiate adapter| NseAdapter[NseApiAdapter]
-        GrowwAdapter -.->|Failover Fallback| NseAdapter
-    end
+Closed-form formulation with continuous dividend yield:
 
-    subgraph Infrastructure [Shared Infrastructure]
-        RedisCache[(Redis Cache - Dividend Cache)]
-        RawTicksStream["stream:options.raw_fetched"]
-    end
+$$d_1 = \frac{\ln\left(\frac{S_0}{K}\right) + \left(r - q + \frac{\sigma^2}{2}\right)T}{\sigma\sqrt{T}}$$
+$$d_2 = d_1 - \sigma\sqrt{T}$$
 
-    GrowwAdapter -->|Check / Populate Cache| RedisCache
-    CeleryWorker ==|Publish raw option ticks|==> RawTicksStream
-```
+* **Call Theoretical Price ($C_{BSM}$):**
+  $$C_{BSM} = S_0 e^{-q T} N(d_1) - K e^{-r T} N(d_2)$$
+* **Put Theoretical Price ($P_{BSM}$):**
+  $$P_{BSM} = K e^{-r T} N(-d_2) - S_0 e^{-q T} N(-d_1)$$
 
-### B. Analytics Domain Context
-Consumes raw streams asynchronously using subscriber daemons, routes data through numerical evaluation engines, persists results in TimescaleDB, and publishes priced records onto processed streams to update cache layers.
-
-```mermaid
-graph TD
-    subgraph Streams [Redis Streams - Messaging Bus]
-        RawTicks["stream:options.raw_fetched"]
-        PricedTicks["stream:options.priced"]
-    end
-
-    subgraph Analytics_Domain [Analytics Bounded Context]
-        OptionsSub[Options Pricing Sub]
-
-        subgraph Core_Engines [Mathematical Engines]
-            CNPricer[Crank-Nicolson PDE Solver]
-            BSMPricer[Black-Scholes-Merton Engine]
-        end
-    end
-
-    subgraph Storage [Databases & Broadcast]
-        TimescaleDB[(TimescaleDB Hypertable)]
-        RedisCache[(Redis Cache - Read Models)]
-        RedisPubSub[(Redis Pub/Sub)]
-    end
-
-    %% Flow Option Pricing
-    RawTicks ==|Consume raw ticks|==> OptionsSub
-    OptionsSub -->|Evaluate PDE| CNPricer
-    OptionsSub -->|Evaluate Greeks| BSMPricer
-    OptionsSub -->|Save option ticks| TimescaleDB
-    OptionsSub ==|Update cache read model|==> RedisCache
-    OptionsSub ==|Publish priced options|==> PricedTicks
-    OptionsSub ==|Broadcast updates|==> RedisPubSub
-```
-
-### C. App / Serving Domain Context
-Handles incoming client requests, serving REST endpoints by reading from cache and pushing updates in real-time to active user dashboards using WebSockets.
-
-```mermaid
-graph TD
-    subgraph Storage [Infrastructure Layer]
-        RedisCache[(Redis Cache - Read Models)]
-        RedisPubSub[(Redis Pub/Sub - Live Feed)]
-    end
-
-    subgraph App_Domain [App/Serving Bounded Context]
-        FastAPI[FastAPI Web Server]
-        WSHub[WebSocket Hub]
-    end
-
-    subgraph Client [Client UI]
-        WebUI[Option Chain Dashboard]
-    end
-
-    %% Reads & Queries
-    FastAPI -->|Query Cache| RedisCache
-    WSHub -->|Subscribe to updates| RedisPubSub
-
-    %% Serving clients
-    WebUI <-->|REST API requests / BSM Calculations| FastAPI
-    WebUI <-->|WebSockets Live Feed| WSHub
-```
+#### Dynamic Greeks Formulations
+* **Delta ($\Delta$):** $\Delta_{Call} = e^{-q T} N(d_1), \quad \Delta_{Put} = -e^{-q T} N(-d_1)$
+* **Gamma ($\Gamma$):** $\Gamma = \frac{e^{-q T} n(d_1)}{S_0 \sigma \sqrt{T}} \quad \text{where } n(x) = \frac{1}{\sqrt{2\pi}} e^{-\frac{x^2}{2}}$
+* **Vega ($\nu$):** $\nu = \frac{S_0 e^{-q T} \sqrt{T} n(d_1)}{100}$
+* **Theta ($\Theta$):**
+  $$\Theta_{Call} = \frac{- \frac{S_0 e^{-q T} n(d_1) \sigma}{2 \sqrt{T}} + q S_0 e^{-q T} N(d_1) - r K e^{-r T} N(d_2)}{365}$$
+  $$\Theta_{Put} = \frac{- \frac{S_0 e^{-q T} n(d_1) \sigma}{2 \sqrt{T}} - q S_0 e^{-q T} N(-d_1) + r K e^{-r T} N(-d_2)}{365}$$
+* **Rho ($\rho$):** $\rho_{Call} = \frac{K T e^{-r T} N(d_2)}{100}, \quad \rho_{Put} = \frac{-K T e^{-r T} N(-d_2)}{100}$
 
 ---
 
-## 4. Durable-First Event Model
+### Numerical Solver: Crank-Nicolson PDE Scheme
 
-Cross-domain correctness uses **Redis Streams** (durable, replayable, consumer-group semantics). Pub/Sub is used only for UX/live push.
+Solves the Black-Scholes partial differential equation:
 
-### Durable streams (state/correctness path)
+$$\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0$$
 
-| Stream | Producer domain | Consumer domain | Notes |
+#### Grid Discretization & CFL Stability
+1. **Stock Price Domain**: $S \in [0, S_{max}]$ with $S_{max} = \max(3K, 2.5S_0)$, grid size $M$ steps ($dS = S_{max}/M$).
+2. **Temporal Domain**: $t \in [0, T]$ with $N$ steps ($dt = T/N$).
+3. **CFL Stability Check**: Validates $dt \le \frac{0.9}{\sigma^2 M^2} S_{max}^2$, automatically increasing $N$ if stability criterion is violated.
+
+#### Linear System Construction
+Discretized implicit/explicit formulation:
+
+$$- \alpha_i V_{i-1}^{j} + (1 + \beta_i) V_i^{j} - \gamma_i V_{i+1}^{j} = \alpha_i V_{i-1}^{j+1} + (1 - \beta_i) V_i^{j+1} + \gamma_i V_{i+1}^{j+1}$$
+
+Where:
+$$\alpha_i = -\frac{1}{4} dt \left( \sigma^2 i^2 - r i \right)$$
+$$\beta_i = \frac{1}{2} dt \left( \sigma^2 i^2 + r \right)$$
+$$\gamma_i = -\frac{1}{4} dt \left( \sigma^2 i^2 + r i \right)$$
+
+Formulated as tridiagonal system: $\mathbf{A} \mathbf{V}^j = \mathbf{B} \mathbf{V}^{j+1}$.
+
+#### SciPy Sparse Matrix LU Optimization
+Matrix $\mathbf{A}$ is static and pre-factorized using SuperLU direct solver (`scipy.sparse.linalg.splu`) outside the temporal loop. Resolves backward steps in linear $O(M)$ time via `A_solver.solve(rhs)`.
+
+---
+
+## 5. Storage & Event Streaming Infrastructure
+
+### TimescaleDB Hypertables
+* **`TickData` Table**: Partitioned on `Timestamp` column with 1-day chunks (`chunk_time_interval => INTERVAL '1 day'`).
+* **Retention Policy**: Automatic data retention drops chunks older than 7 days.
+
+| Table Name | Partitioning | Primary Columns | Purpose |
 |---|---|---|---|
-*   `stream:market.price_trigger` | Ingestion | Analytics | Triggered market anomalies.
-*   `stream:options.raw_fetched` | Ingestion | Analytics | Raw option chain ticks for PDE solver.
-*   `stream:options.priced` | Analytics | App | Fair-priced option chain output.
-*   `stream:analysis.completed` | Analytics | App | Analysis completion signal.
-*   `stream:analysis.refresh_requested` | App | Ingestion | Async refresh command path.
+| `TickData` | Hypertable | `Timestamp`, `Symbol`, `StrikePrice`, `OptionType`, `LastPrice`, `Volume`, `ImpliedVolatility` | Tick database. |
+| `DetectedEvents` | Relational | `id` (UUID), `Timestamp`, `EventType`, `Payload` (JSONB) | Event anomaly log. |
+| `AlertRules` | Relational | `id` (UUID), `Symbol`, `ConditionType`, `Threshold`, `WebhookUrl` | User alerts. |
 
-### Dead-letter queues (DLQ)
+### Redis Streams Messaging Architecture
+1. `stream:options.raw_fetched`: Ingestion worker pushes raw tick blocks.
+2. `stream:options.priced`: `OptionsPricingSubscriber` daemon consumes ticks, solves BSM/PDE, and writes processed results.
+3. `stream:dlq:refresh_request`: Dead-Letter Queue isolates processing failures after 3 retries.
+4. `channel:options:updated:{SYMBOL}`: Ephemeral Pub/Sub channel mirrors tick updates to WebSocket hub.
 
-| Stream | Purpose |
-|---|---|
-*   `stream:dlq:refresh_request` | Failed refresh request events.
+---
 
-### Ephemeral Pub/Sub mirrors (UX-only)
+## 6. Frontend SPA & Client Math Engine
 
-| Channel pattern | Purpose |
-|---|---|
-*   `market.price_updated.{symbol}` | Live price updates.
-*   `market.options_updated.{symbol}` | Live options summary updates.
-*   `market.price_trigger.{symbol}` | Live trigger notifications.
-*   `alerts.dispatched.{symbol}` | Live alert dispatch notifications.
+* **SPA Architecture**: Dark glassmorphic trading terminal layout in vanilla HTML5/CSS3/JS.
+* **Client BSM Simulation**: Runs Hastings' cumulative normal distribution approximation ($N(x)$) inside browser JS for zero-latency slider calculations:
+
+```javascript
+function normalCDF(x) {
+    const b1 = 0.319381530, b2 = -0.356563782, b3 = 1.781477937, 
+          b4 = -1.821255978, b5 = 1.330274429, p = 0.2316419;
+    const t = 1.0 / (1.0 + p * Math.abs(x));
+    const poly = t * (b1 + t * (b2 + t * (b3 + t * (b4 + t * b5))));
+    const cdf = 1.0 - (1.0 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x) * poly;
+    return x >= 0 ? cdf : 1.0 - cdf;
+}
+```
+
+---
+
+## 7. Regulatory Compliance & Disclaimers
+
+### SEBI Risk Disclosure
+> "9 out of 10 individual traders in equity derivatives segment incurred net losses, averaging ₹50,000 loss per year, with an additional 28% in transaction costs."
+
+### Investment Disclaimer
+All theoretical pricing metrics and PDE outputs are strictly for research and educational purposes. The platform operators are not registered SEBI Investment Advisers (IA) or Research Analysts (RA).
