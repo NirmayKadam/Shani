@@ -459,7 +459,7 @@ function updateUnderlyingTime(timestampStr) {
 }
 
 /**
- * Query live Redis or mock analytics parameters for selected instrument
+ * Query live Redis or dynamic analytics parameters for selected instrument
  */
 async function fetchTickerData(symbol) {
     try {
@@ -478,44 +478,34 @@ async function fetchTickerData(symbol) {
         appState.expiryDates = data.expiry_dates || [];
         
         // Bind dynamic model values
-        appState.spot = data.stock_price;
-        appState.volatility = data.implied_volatility || 15.0;
-        appState.daysToExpiry = data.expiry_days || 30;
-        appState.riskFreeRate = data.risk_free_rate || 6.50;
+        appState.volatility = data.implied_volatility > 0 ? data.implied_volatility : (data.historical_volatility > 0 ? data.historical_volatility : 25.0);
+        appState.daysToExpiry = data.expiry_days > 0 ? data.expiry_days : 30;
+        appState.riskFreeRate = data.risk_free_rate || (appState.symbol === "AAPL" || appState.symbol === "TSLA" ? 5.25 : 6.50);
         appState.dividendYield = data.dividend_yield || 0.0;
+        appState.spot = appState.marketSpot;
         
-        // Pick nearest expiry as active default
+        // Select nearest expiry date by default
         if (appState.expiryDates.length > 0) {
             appState.selectedExpiry = appState.expiryDates[0];
         } else {
             appState.selectedExpiry = "";
         }
         
-        // Reset strike filters
-        appState.selectedStrike = "ALL";
-        
-        // Update Info Labels
+        // Populate inputs in UI
         elements.underlyingSymbol.textContent = appState.symbol;
         elements.underlyingPrice.textContent = formatNumber(appState.marketSpot, 2);
         
-        appState.lastPriceUpdated = null;
-        updateUnderlyingTime(data.generated_at || new Date().toISOString());
-        
-        // Update Slider limits and values
-        elements.spotCurrency.textContent = (appState.symbol === "AAPL" || appState.symbol === "TSLA") ? "USD" : "INR";
         const spotMin = Math.round(appState.marketSpot * 0.7 * 100) / 100;
         const spotMax = Math.round(appState.marketSpot * 1.3 * 100) / 100;
         
+        elements.bsmSpot.value = appState.spot;
         elements.bsmSpotSlider.min = spotMin;
         elements.bsmSpotSlider.max = spotMax;
         elements.bsmSpotSlider.step = Math.round((spotMax - spotMin) / 200 * 100) / 100 || 0.05;
+        elements.bsmSpotSlider.value = appState.spot;
         
         elements.spotMinLbl.textContent = formatNumber(spotMin, 2);
         elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
-        
-        // Update Numeric Control values
-        elements.bsmSpot.value = appState.spot;
-        elements.bsmSpotSlider.value = appState.spot;
         
         elements.bsmVol.value = appState.volatility;
         elements.bsmVolSlider.value = appState.volatility;
@@ -609,6 +599,10 @@ function setupWebSocket(symbol) {
                     
                     recalculateAndRender();
                     updateGreeksModalIfOpen();
+
+                    if (document.getElementById("tab-technicals")?.classList.contains("active")) {
+                        fetchAndRenderTechnicals(symbol);
+                    }
                 }
             } else if (msg.type === "options") {
                 console.log(`Real-time options update received for ${symbol}`);
@@ -683,6 +677,10 @@ async function fetchTickerDataBackground(symbol) {
         
         recalculateAndRender();
         updateGreeksModalIfOpen();
+
+        if (document.getElementById("tab-technicals")?.classList.contains("active")) {
+            fetchAndRenderTechnicals(symbol);
+        }
     } catch (e) {
         console.error("Error in background options update:", e);
     }
@@ -732,7 +730,7 @@ function populateDropdowns() {
             
             // Format date beautifully (e.g. 04-Jun-2026)
             try {
-                const dt = new Date(dateStr);
+                const dt = new Date(dateStr + 'T00:00:00');
                 const day = String(dt.getDate()).padStart(2, '0');
                 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
                 const monthStr = months[dt.getMonth()];
@@ -752,6 +750,8 @@ function populateDropdowns() {
     // 2. Strike Price Filter Dropdown
     populateStrikesDropdown();
 }
+
+let isFirstLoad = true;
 
 /**
  * Locate ATM strike and calculate option chain values and dynamic layouts
@@ -923,8 +923,6 @@ function recalculateAndRender() {
     }
 }
 
-let isFirstLoad = true;
-
 /**
  * Open Greeks Details Modal loaded with specific strike's analytical parameters
  */
@@ -944,13 +942,42 @@ window.openStrikeModal = function(strikePrice) {
     const callEdge = row.call?.ltp ? callBS.call - row.call.ltp : null;
     const putEdge = row.put?.ltp ? putBS.put - row.put.ltp : null;
 
+    // Format BSM edge label text with 0.05 threshold
+    let callEdgeText = formatNumber(callEdge, 2);
+    let callEdgeClass = "font-mono";
+    if (callEdge !== null) {
+        if (callEdge > 0.05) {
+            callEdgeText += " (Underpriced)";
+            callEdgeClass += " positive-val";
+        } else if (callEdge < -0.05) {
+            callEdgeText += " (Overpriced)";
+            callEdgeClass += " negative-val";
+        } else {
+            callEdgeText += " (Fair)";
+        }
+    }
+
+    let putEdgeText = formatNumber(putEdge, 2);
+    let putEdgeClass = "font-mono";
+    if (putEdge !== null) {
+        if (putEdge > 0.05) {
+            putEdgeText += " (Underpriced)";
+            putEdgeClass += " positive-val";
+        } else if (putEdge < -0.05) {
+            putEdgeText += " (Overpriced)";
+            putEdgeClass += " negative-val";
+        } else {
+            putEdgeText += " (Fair)";
+        }
+    }
+
     // Load values into modal HTML
     elements.modalStrikePrice.textContent = formatNumber(strikePrice, 2);
 
     elements.modalCLtp.textContent = formatNumber(row.call?.ltp, 2);
     elements.modalCBsVal.textContent = formatNumber(callBS.call, 2);
-    elements.modalCEdge.textContent = formatNumber(callEdge, 2) + (callEdge > 0 ? " (Underpriced)" : callEdge < 0 ? " (Overpriced)" : "");
-    elements.modalCEdge.className = "font-mono " + (callEdge > 0 ? "positive-val" : callEdge < 0 ? "negative-val" : "");
+    elements.modalCEdge.textContent = callEdgeText;
+    elements.modalCEdge.className = callEdgeClass;
     elements.modalCDelta.textContent = formatNumber(callBS.deltaCall, 4);
     elements.modalCGamma.textContent = formatNumber(callBS.gamma, 6);
     elements.modalCVega.textContent = formatNumber(callBS.vega, 4);
@@ -959,8 +986,8 @@ window.openStrikeModal = function(strikePrice) {
 
     elements.modalPLtp.textContent = formatNumber(row.put?.ltp, 2);
     elements.modalPBsVal.textContent = formatNumber(putBS.put, 2);
-    elements.modalPEdge.textContent = formatNumber(putEdge, 2) + (putEdge > 0 ? " (Underpriced)" : putEdge < 0 ? " (Overpriced)" : "");
-    elements.modalPEdge.className = "font-mono " + (putEdge > 0 ? "positive-val" : putEdge < 0 ? "negative-val" : "");
+    elements.modalPEdge.textContent = putEdgeText;
+    elements.modalPEdge.className = putEdgeClass;
     elements.modalPDelta.textContent = formatNumber(putBS.deltaPut, 4);
     elements.modalPGamma.textContent = formatNumber(putBS.gamma, 6); // Gamma is same for Call and Put
     elements.modalPVega.textContent = formatNumber(putBS.vega, 4);   // Vega is same for Call and Put
@@ -1013,7 +1040,7 @@ function downloadCSV() {
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
     if (chainRows.length === 0) return;
 
-    let csvContent = "data:text/csv;charset=utf-8,";
+    let csvContent = "";
     
     // CSV Header row
     csvContent += "CALLS - VOLUME,CALLS - IV,CALLS - BSM PRICE,CALLS - LTP,CALLS - BID QTY,CALLS - BID,CALLS - ASK,CALLS - ASK QTY,STRIKE,PUTS - BID QTY,PUTS - BID,PUTS - ASK,PUTS - ASK QTY,PUTS - LTP,PUTS - BSM PRICE,PUTS - IV,PUTS - VOLUME\r\n";
@@ -1048,13 +1075,15 @@ function downloadCSV() {
         csvContent += values.join(",") + "\r\n";
     });
 
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `option_chain_${appState.symbol}_${appState.selectedExpiry}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 // ----------------------------------------------------
@@ -1117,7 +1146,7 @@ document.querySelectorAll(".info-tab-btn").forEach(btn => {
     });
 });
 
-window.onclick = function(event) {
+window.addEventListener("click", function(event) {
     if (event.target == elements.greeksModal) {
         elements.greeksModal.classList.remove("show");
         activeInspectedStrike = null;
@@ -1126,7 +1155,7 @@ window.onclick = function(event) {
     if (event.target == infoModalEl) {
         infoModalEl.classList.remove("show");
     }
-};
+});
 
 // Bind sliders to number boxes and state values
 bindSlider(elements.bsmSpot, elements.bsmSpotSlider, "spot", recalculateAndRender);
@@ -1293,64 +1322,71 @@ function startHeaderClock() {
     setInterval(update, 1000);
 }
 
-// Client-side technical indicator computation engine (fallback when server endpoint is restarting or cached)
-function computeClientTechnicals(spotPrice, symbol) {
-    const s = spotPrice > 0 ? spotPrice : 24774.30;
-    const rsiVal = 56.40;
-    const macdVal = +(s * 0.008).toFixed(2);
-    const macdHist = +(macdVal * 0.25).toFixed(2);
-    const bbUpper = +(s * 1.02).toFixed(2);
-    const bbMiddle = +s.toFixed(2);
-    const bbLower = +(s * 0.98).toFixed(2);
+function renderTechnicalsUnavailable(symbol) {
+    const sym = symbol || appState.symbol || "NIFTY";
+    const symbolLbl = document.getElementById("tech-symbol-lbl");
+    if (symbolLbl) symbolLbl.textContent = sym;
 
-    const sma20 = +(s * 0.995).toFixed(2);
-    const sma50 = +(s * 0.988).toFixed(2);
-    const ema20 = +(s * 0.996).toFixed(2);
-    const ema50 = +(s * 0.989).toFixed(2);
-    const atr = +(s * 0.012).toFixed(2);
+    const badgeEl = document.getElementById("tech-overall-badge");
+    if (badgeEl) {
+        badgeEl.textContent = "UNAVAILABLE";
+        badgeEl.className = "tech-badge badge-neutral";
+    }
 
-    const high = s * 1.008;
-    const low = s * 0.992;
-    const close = s;
-    const p = +((high + low + close) / 3).toFixed(2);
-    const r1 = +((2 * p) - low).toFixed(2);
-    const r2 = +(p + (high - low)).toFixed(2);
-    const r3 = +(high + 2 * (p - low)).toFixed(2);
-    const s1 = +((2 * p) - high).toFixed(2);
-    const s2 = +(p - (high - low)).toFixed(2);
-    const s3 = +(low - 2 * (high - p)).toFixed(2);
+    const countsEl = document.getElementById("tech-summary-counts");
+    if (countsEl) countsEl.textContent = "Data unavailable";
 
-    return {
-        symbol: symbol || "NIFTY",
-        spot_price: s,
-        summary: {
-            overall_signal: "BULLISH",
-            overall_badge: "BULLISH",
-            bullish_count: 6,
-            bearish_count: 1,
-            neutral_count: 1,
-            total_indicators: 8
-        },
-        rsi: { value: rsiVal, signal: "BULLISH", label: "Bullish (56.4)" },
-        macd: { macd: macdVal, histogram: macdHist, signal: "BULLISH", label: "Strong Bullish" },
-        bollinger: { upper: bbUpper, middle: bbMiddle, lower: bbLower, signal: "NEUTRAL", label: "Middle Band" },
-        moving_averages: [
-            { name: "SMA 20", value: sma20, signal: s >= sma20 ? "BULLISH" : "BEARISH" },
-            { name: "SMA 50", value: sma50, signal: s >= sma50 ? "BULLISH" : "BEARISH" },
-            { name: "EMA 20", value: ema20, signal: s >= ema20 ? "BULLISH" : "BEARISH" },
-            { name: "EMA 50", value: ema50, signal: s >= ema50 ? "BULLISH" : "BEARISH" }
-        ],
-        atr: atr,
-        pivots: { p, r1, r2, r3, s1, s2, s3 }
+    const updateVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
     };
+    const updatePill = (id, label, cls) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = label;
+            el.className = `tech-pill ${cls}`;
+        }
+    };
+
+    updateVal("tech-rsi-val", "--");
+    updatePill("tech-rsi-pill", "--", "pill-neutral");
+
+    updateVal("tech-macd-val", "--");
+    updateVal("tech-macd-hist", "--");
+    updatePill("tech-macd-pill", "--", "pill-neutral");
+
+    updateVal("tech-bb-upper", "--");
+    updateVal("tech-bb-middle", "--");
+    updateVal("tech-bb-lower", "--");
+    updatePill("tech-bb-pill", "--", "pill-neutral");
+
+    updateVal("tech-sma20-val", "--");
+    updatePill("tech-sma20-pill", "--", "pill-neutral");
+    updateVal("tech-sma50-val", "--");
+    updatePill("tech-sma50-pill", "--", "pill-neutral");
+    updateVal("tech-ema20-val", "--");
+    updatePill("tech-ema20-pill", "--", "pill-neutral");
+    updateVal("tech-ema50-val", "--");
+    updatePill("tech-ema50-pill", "--", "pill-neutral");
+
+    updateVal("tech-atr-val", "--");
+
+    ["tech-pivot-p", "tech-pivot-r1", "tech-pivot-r2", "tech-pivot-r3", "tech-pivot-s1", "tech-pivot-s2", "tech-pivot-s3"].forEach(id => {
+        updateVal(id, "--");
+    });
 }
 
 // Technicals Tab Logic
 async function fetchAndRenderTechnicals(symbol) {
     const sym = symbol || appState.symbol || "NIFTY";
-    const spot = appState.marketSpot || appState.spot || 24774.30;
+    const spot = appState.marketSpot || appState.spot;
     const symbolLbl = document.getElementById("tech-symbol-lbl");
     if (symbolLbl) symbolLbl.textContent = sym;
+
+    if (!spot || spot <= 0) {
+        renderTechnicalsUnavailable(sym);
+        return;
+    }
 
     try {
         const url = `/v1/derivatives/${encodeURIComponent(sym)}/technicals?spot=${spot}`;
@@ -1361,12 +1397,10 @@ async function fetchAndRenderTechnicals(symbol) {
             return;
         }
     } catch (err) {
-        console.warn("Backend technicals endpoint 404/offline, using fallback client engine:", err);
+        console.warn("Backend technicals endpoint unavailable:", err);
     }
 
-    // Instant client-side fallback when server endpoint returning 404 before restart
-    const fallbackData = computeClientTechnicals(spot, sym);
-    renderTechnicalsData(fallbackData);
+    renderTechnicalsUnavailable(sym);
 }
 
 
@@ -1542,12 +1576,6 @@ async function initApp() {
     setupAutocomplete();
     setupTabSwitching();
     await fetchTickerData("NIFTY");
-}
-
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", setupTabSwitching);
-} else {
-    setupTabSwitching();
 }
 
 window.onload = initApp;

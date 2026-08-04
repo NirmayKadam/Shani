@@ -13,32 +13,38 @@
 
 </head>
 <body style="opacity: 0; transition: opacity 0.3s ease;">
-    <!-- AlphaStreams Brand Header -->
-    <div class="alphastreams-brand-header">
-        <div class="nse-container">
-            <h1 style="margin: 10px 0 5px 0; font-size: 28px; font-weight: 700; color: #1a237e;">AlphaStreams</h1>
-        </div>
-    </div>
-
-    <!-- Top Brand Tab Bar -->
-    <div class="nse-top-navbar">
-        <div class="nse-container">
-            <div class="nse-tabs" style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                <div>
-                    <a href="/" class="nse-tab" style="text-decoration: none; display: inline-block;">Home</a>
-                    <a href="#" id="tab-option-chain" class="nse-tab active" style="text-decoration: none; display: inline-block;">Option Chain</a>
-                </div>
-                <div style="display: flex; align-items: center;">
-                    <div id="user-profile-badge" style="display: flex; align-items: center; gap: 8px; margin-right: 16px; color: white; font-size: 14px;">
-                        <div id="user-avatar" style="width: 28px; height: 28px; border-radius: 50%; background-color: #f37021; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">?</div>
-                        <span id="user-name-display">Loading...</span>
+    <!-- Top Brand Navbar -->
+    <header class="dashboard-header" style="background-color: rgba(10, 8, 23, 0.85); border-bottom: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); sticky: top; position: sticky; top: 0; z-index: 100; padding: 14px 0;">
+        <div class="nse-container" style="max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 32px;">
+                <a href="/" style="text-decoration: none; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 34px; height: 34px; flex-shrink: 0;">
+                        <svg viewBox="0 0 200 200" width="100%" height="100%">
+                            <path d="M 100,32 C 104,32 107,34 110,39 L 173,142 C 176,147 174,153 168,155 C 166,156 163,156 161,156 L 39,156 C 33,156 28,151 28,145 C 28,142 29,140 31,137 L 90,39 C 93,34 96,32 100,32 Z" fill="none" stroke="#f37021" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+                            <path d="M 25,120 C 55,90 75,130 105,100 C 135,70 155,115 185,85" fill="none" stroke="#06b6d4" stroke-width="10" stroke-linecap="round" />
+                            <path d="M 15,135 C 45,105 70,145 100,115 C 130,85 150,130 180,100" fill="none" stroke="#06b6d4" stroke-width="6" stroke-linecap="round" opacity="0.7" />
+                            <circle cx="100" cy="32" r="6" fill="#ff7a00" />
+                            <circle cx="102" cy="103" r="5" fill="#06b6d4" />
+                        </svg>
                     </div>
-                    <a href="#" id="tab-technicals" class="nse-tab" style="text-decoration: none; display: inline-block;">Technicals</a>
-                <button id="logout-btn" class="nse-tab" style="background: none; border: none; cursor: pointer; color: white; font: inherit; padding: 12px 16px;">Logout</button>
+                    <span style="font-size: 20px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #ffffff 30%, #f37021 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Alpha<span style="color: #06b6d4; -webkit-text-fill-color: initial;">Streams</span></span>
+                </a>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <a href="/" class="dash-nav-link">Home</a>
+                    <a href="#" id="tab-option-chain" class="dash-nav-link active">Option Chain</a>
+                    <a href="#" id="tab-technicals" class="dash-nav-link">Technicals</a>
                 </div>
             </div>
+            <div style="display: flex; align-items: center; gap: 20px;">
+                <div id="user-profile-badge" style="display: flex; align-items: center; gap: 10px; color: #f8fafc; font-size: 14px; font-weight: 500;">
+                    <div id="user-avatar" style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #f37021, #d8560c); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: white; box-shadow: 0 2px 8px rgba(243, 112, 33, 0.4);">?</div>
+                    <span id="user-name-display">Loading...</span>
+                </div>
+                <button id="logout-btn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer; color: #f8fafc; font-family: inherit; font-size: 13px; font-weight: 600; padding: 7px 16px; transition: all 0.2s ease;">Logout</button>
+            </div>
         </div>
-    </div>
+    </header>
+
 
     <div id="option-chain-view-container" class="nse-container main-content">
         <!-- Header -->
@@ -322,8 +328,8 @@
                     <p style="margin: 0; color: #6b7280; font-size: 13px;">Real-time quantitative indicators, moving averages, and oscillator signals.</p>
                 </div>
                 <div class="tech-overall-badge-wrapper">
-                    <span class="tech-badge badge-bullish" id="tech-overall-badge">BULLISH</span>
-                    <span style="font-size: 12px; color: #4b5563; font-weight: 600; display: block; text-align: center; margin-top: 4px;" id="tech-summary-counts">8 Buy | 2 Neutral | 1 Sell</span>
+                    <span class="tech-badge badge-neutral" id="tech-overall-badge">--</span>
+                    <span style="font-size: 12px; color: #4b5563; font-weight: 600; display: block; text-align: center; margin-top: 4px;" id="tech-summary-counts">--</span>
                 </div>
             </div>
         </div>
@@ -348,7 +354,7 @@
                         <div class="tech-metric-lbl">MACD (12, 26, 9)</div>
                         <div class="tech-metric-val font-mono" id="tech-macd-val">--</div>
                     </div>
-                    <div id="tech-macd-badge-wrap"><span class="tech-pill pill-bullish" id="tech-macd-pill">BULLISH</span></div>
+                    <div id="tech-macd-badge-wrap"><span class="tech-pill pill-neutral" id="tech-macd-pill">NEUTRAL</span></div>
                 </div>
                 <div class="tech-metric-row">
                     <div>
@@ -370,28 +376,28 @@
                         <div class="tech-metric-lbl">SMA 20</div>
                         <div class="tech-metric-val font-mono" id="tech-sma20-val">--</div>
                     </div>
-                    <div><span class="tech-pill pill-bullish" id="tech-sma20-pill">BULLISH</span></div>
+                    <div><span class="tech-pill pill-neutral" id="tech-sma20-pill">NEUTRAL</span></div>
                 </div>
                 <div class="tech-metric-row">
                     <div>
                         <div class="tech-metric-lbl">SMA 50</div>
                         <div class="tech-metric-val font-mono" id="tech-sma50-val">--</div>
                     </div>
-                    <div><span class="tech-pill pill-bullish" id="tech-sma50-pill">BULLISH</span></div>
+                    <div><span class="tech-pill pill-neutral" id="tech-sma50-pill">NEUTRAL</span></div>
                 </div>
                 <div class="tech-metric-row">
                     <div>
                         <div class="tech-metric-lbl">EMA 20</div>
                         <div class="tech-metric-val font-mono" id="tech-ema20-val">--</div>
                     </div>
-                    <div><span class="tech-pill pill-bullish" id="tech-ema20-pill">BULLISH</span></div>
+                    <div><span class="tech-pill pill-neutral" id="tech-ema20-pill">NEUTRAL</span></div>
                 </div>
                 <div class="tech-metric-row">
                     <div>
                         <div class="tech-metric-lbl">EMA 50</div>
                         <div class="tech-metric-val font-mono" id="tech-ema50-val">--</div>
                     </div>
-                    <div><span class="tech-pill pill-bullish" id="tech-ema50-pill">BULLISH</span></div>
+                    <div><span class="tech-pill pill-neutral" id="tech-ema50-pill">NEUTRAL</span></div>
                 </div>
             </div>
 
@@ -600,7 +606,7 @@
                                 <li><strong>Spot Price:</strong> Base underlying asset value (supports slide scaling).</li>
                                 <li><strong>Volatility (σ %):</strong> Standard deviation of underlying returns.</li>
                                 <li><strong>Days to Expiry:</strong> Time remaining until derivative settlement.</li>
-                                <li><strong>Risk-Free Rate:</strong> Prevailing interest rate environment.</li>
+                                <li><strong>Risk-Free Rate:</strong> Prevailing interest rate environment (e.g. 6.50%).</li>
                                 <li><strong>Dividend Yield:</strong> Continuous cash payouts of stock or index.</li>
                             </ul>
                         </div>
@@ -616,6 +622,19 @@
                         <div class="guide-card">
                             <h4>Strike Greeks Analysis</h4>
                             <p>Click on any <strong>Strike Price</strong> cell or <strong>LTP</strong> value to launch the Greeks Inspection Modal. This reveals detailed mathematical parameters (d₁, d₂, N(d₁), N(d₂)) and active model outputs (Delta, Gamma, Vega, Theta, Rho) for both Call and Put contracts on that specific strike.</p>
+                        </div>
+                        <div class="guide-card" style="grid-column: span 2;">
+                            <h4>Technical Indicators & Market Signals</h4>
+                            <p>The <strong>Technicals</strong> tab computes quantitative signals, trend indicators, and floor pivot levels:</p>
+                            <ul>
+                                <li><strong>RSI (14):</strong> Relative Strength Index. Values &ge;70 signal Overbought (Bearish alert), &le;30 signal Oversold (Bullish alert).</li>
+                                <li><strong>MACD (12, 26, 9):</strong> Moving Average Convergence Divergence. Crossovers above signal line indicate Bullish trend.</li>
+                                <li><strong>Bollinger Bands (20, 2):</strong> 20-period moving average with &plusmn;2 standard deviation envelopes.</li>
+                                <li><strong>Moving Averages (SMA & EMA 20/50):</strong> Simple and Exponential moving averages. Spot &ge; MA indicates Bullish bias.</li>
+                                <li><strong>ATR (14):</strong> Average True Range measuring price volatility amplitude.</li>
+                                <li><strong>Floor Pivots:</strong> Intraday Pivot (P), Resistance (R1-R3), and Support (S1-S3) levels calculated from prior price history.</li>
+                                <li><strong>Composite Score:</strong> Aggregates 7 indicator signals into overall bias (Strong Bullish, Bullish, Neutral, Bearish, Strong Bearish).</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -712,6 +731,62 @@
         </div>
     </div>
 
+    <!-- User Profile Modal -->
+    <div id="user-profile-modal" class="modal">
+        <div class="modal-content profile-modal-content">
+            <div class="modal-header profile-modal-header">
+                <h2 style="margin: 0; font-size: 16px; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#f37021" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    User Account & Profile
+                </h2>
+                <span class="close-btn" id="profile-modal-close" style="color: #94a3b8; font-size: 24px; cursor: pointer;">&times;</span>
+            </div>
+            <div class="profile-avatar-banner">
+                <div id="profile-modal-avatar" class="profile-large-avatar">?</div>
+                <div class="profile-user-info-meta">
+                    <h3 id="profile-modal-name">Loading...</h3>
+                    <p id="profile-modal-email">--</p>
+                    <span id="profile-modal-provider" class="profile-meta-badge">Supabase Auth</span>
+                </div>
+            </div>
+            <form id="profile-form" class="profile-form-body" onsubmit="return false;">
+                <div class="profile-field-group">
+                    <label for="profile-full-name-input">Full Name</label>
+                    <input type="text" id="profile-full-name-input" class="profile-input" placeholder="Enter your full name" autocomplete="off">
+                </div>
+
+                <div class="profile-field-group">
+                    <label for="profile-email-input">Email Address</label>
+                    <input type="email" id="profile-email-input" class="profile-input" readonly title="Email cannot be changed directly">
+                </div>
+
+                <div class="profile-stats-grid">
+                    <div class="profile-stat-card">
+                        <div class="profile-stat-lbl">Account Status</div>
+                        <div class="profile-stat-val" style="color: #10b981; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                            <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Active
+                        </div>
+                    </div>
+                    <div class="profile-stat-card">
+                        <div class="profile-stat-lbl">Watchlist Items</div>
+                        <div id="profile-watchlist-count" class="profile-stat-val font-mono">0 items</div>
+                    </div>
+                </div>
+
+                <div id="profile-alert" class="profile-alert"></div>
+
+                <div class="profile-actions">
+                    <button type="button" id="profile-logout-btn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;">
+                        Log Out
+                    </button>
+                    <button type="button" id="profile-save-btn" class="profile-save-btn">
+                        Save Profile
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Supabase Auth Guard -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/supabaseClient.js"></script>
@@ -744,31 +819,161 @@
                 }
 
                 // Initialize Profile and Watchlist
-                initUserProfile(session.user);
+                initUserProfile(supabase, session.user);
                 initWatchlist(supabase, session.user.id);
             }
         });
 
-        function initUserProfile(user) {
+        function initUserProfile(supabase, currentUser) {
             const nameDisplay = document.getElementById('user-name-display');
             const avatarDisplay = document.getElementById('user-avatar');
+            const profileBadge = document.getElementById('user-profile-badge');
             
-            let fullName = user.user_metadata?.full_name || user.email;
-            let initials = '?';
-            
-            if (fullName) {
-                nameDisplay.textContent = fullName;
-                const names = fullName.split(' ');
-                if (names.length > 1) {
-                    initials = (names[0][0] + names[names.length - 1][0]).toUpperCase();
+            const profileModal = document.getElementById('user-profile-modal');
+            const profileModalClose = document.getElementById('profile-modal-close');
+            const profileModalName = document.getElementById('profile-modal-name');
+            const profileModalEmail = document.getElementById('profile-modal-email');
+            const profileModalAvatar = document.getElementById('profile-modal-avatar');
+            const profileModalProvider = document.getElementById('profile-modal-provider');
+            const profileFullNameInput = document.getElementById('profile-full-name-input');
+            const profileEmailInput = document.getElementById('profile-email-input');
+            const profileWatchlistCount = document.getElementById('profile-watchlist-count');
+            const profileSaveBtn = document.getElementById('profile-save-btn');
+            const profileLogoutBtn = document.getElementById('profile-logout-btn');
+            const profileAlert = document.getElementById('profile-alert');
+
+            let userState = currentUser;
+
+            function updateHeaderBadge(user) {
+                let fullName = user.user_metadata?.full_name || user.email;
+                let initials = '?';
+                
+                if (fullName) {
+                    nameDisplay.textContent = fullName;
+                    const names = fullName.trim().split(' ').filter(n => n);
+                    if (names.length > 1) {
+                        initials = (names[0][0] + names[names.length - 1][0]).toUpperCase();
+                    } else if (names.length === 1 && names[0].length >= 2) {
+                        initials = names[0].substring(0, 2).toUpperCase();
+                    } else if (names.length === 1) {
+                        initials = names[0][0].toUpperCase();
+                    }
+                    avatarDisplay.textContent = initials;
+                    if (profileModalAvatar) profileModalAvatar.textContent = initials;
                 } else {
-                    initials = fullName.substring(0, 2).toUpperCase();
+                    nameDisplay.textContent = 'User';
+                    avatarDisplay.textContent = '?';
+                    if (profileModalAvatar) profileModalAvatar.textContent = '?';
                 }
-                avatarDisplay.textContent = initials;
-            } else {
-                nameDisplay.textContent = 'User';
+            }
+
+            updateHeaderBadge(userState);
+
+            // Open Profile Modal when clicking header badge
+            if (profileBadge) {
+                profileBadge.addEventListener('click', async () => {
+                    let fullName = userState.user_metadata?.full_name || '';
+                    let email = userState.email || '';
+
+                    profileFullNameInput.value = fullName;
+                    profileEmailInput.value = email;
+                    profileModalName.textContent = fullName || email;
+                    profileModalEmail.textContent = email;
+
+                    const provider = userState.app_metadata?.provider || 'Email/Password';
+                    profileModalProvider.textContent = provider.toUpperCase() + ' AUTH';
+
+                    // Fetch watchlist count for profile stats
+                    try {
+                        const { count, error } = await supabase
+                            .from('watchlists')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('user_id', userState.id);
+                        if (!error && count !== null) {
+                            profileWatchlistCount.textContent = count + (count === 1 ? ' item' : ' items');
+                        }
+                    } catch (e) {
+                        console.error("Watchlist count error:", e);
+                    }
+
+                    if (profileAlert) profileAlert.style.display = 'none';
+                    profileModal.classList.add('show');
+                });
+            }
+
+            // Close modal handlers
+            if (profileModalClose) {
+                profileModalClose.addEventListener('click', () => {
+                    profileModal.classList.remove('show');
+                });
+            }
+
+            window.addEventListener('click', (e) => {
+                if (e.target === profileModal) {
+                    profileModal.classList.remove('show');
+                }
+            });
+
+            // Save profile functionality
+            if (profileSaveBtn) {
+                profileSaveBtn.addEventListener('click', async () => {
+                    const newName = profileFullNameInput.value.trim();
+                    profileSaveBtn.disabled = true;
+                    profileSaveBtn.textContent = 'Saving...';
+                    if (profileAlert) profileAlert.style.display = 'none';
+
+                    try {
+                        // 1. Update Supabase Auth user metadata
+                        const { data, error: authError } = await supabase.auth.updateUser({
+                            data: { full_name: newName }
+                        });
+
+                        if (authError) throw authError;
+
+                        // 2. Upsert to public.users table
+                        const { error: dbError } = await supabase
+                            .from('users')
+                            .upsert({
+                                id: userState.id,
+                                email: userState.email,
+                                full_name: newName
+                            });
+
+                        if (dbError) console.warn("DB profile upsert warning:", dbError.message);
+
+                        if (data?.user) {
+                            userState = data.user;
+                            updateHeaderBadge(userState);
+                            profileModalName.textContent = newName || userState.email;
+                        }
+
+                        if (profileAlert) {
+                            profileAlert.className = 'profile-alert profile-alert-success';
+                            profileAlert.textContent = 'Profile updated successfully!';
+                            profileAlert.style.display = 'block';
+                        }
+                    } catch (err) {
+                        console.error('Error updating profile:', err);
+                        if (profileAlert) {
+                            profileAlert.className = 'profile-alert profile-alert-error';
+                            profileAlert.textContent = err.message || 'Failed to update profile';
+                            profileAlert.style.display = 'block';
+                        }
+                    } finally {
+                        profileSaveBtn.disabled = false;
+                        profileSaveBtn.textContent = 'Save Profile';
+                    }
+                });
+            }
+
+            // Logout from modal
+            if (profileLogoutBtn) {
+                profileLogoutBtn.addEventListener('click', async () => {
+                    await supabase.auth.signOut();
+                });
             }
         }
+
 
         function initWatchlist(supabase, userId) {
             const addBtn = document.getElementById('add-to-watchlist-btn');

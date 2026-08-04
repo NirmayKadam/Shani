@@ -326,6 +326,12 @@ function initSentimentStream() {
     // Run first update
     updateSentiment();
 
-    // Set interval for simulated streams tick
-    setInterval(updateSentiment, 6000 + Math.random() * 4000);
+    // Recursive setTimeout for truly random interval each cycle
+    function scheduleNext() {
+        setTimeout(() => {
+            updateSentiment();
+            scheduleNext();
+        }, 6000 + Math.random() * 4000);
+    }
+    scheduleNext();
 }

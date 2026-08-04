@@ -19,8 +19,9 @@ Database Tables:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from shared.logging import setup_logging
@@ -32,6 +33,7 @@ from domains.analytics.api.derivatives_router_api import router as derivatives_r
 from domains.analytics.api.symbols_router_api import router as symbols_router
 from domains.analytics.api.pricer_router_api import router as pricer_router
 from domains.ingestion.api.nse_options_router_api import nse_options_router_api
+from app.config.settings import get_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -88,10 +90,12 @@ app.add_middleware(MetricsMiddleware)
 app.add_middleware(TimingMiddleware)
 app.add_middleware(StructuredLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -106,8 +110,60 @@ app.include_router(nse_options_router_api, prefix="/v1/ingestion")
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+async def health(response: Response):
+    from shared.infrastructure.redis_client import get_redis_client
+    from shared.infrastructure.database import get_database_pool
+
+    current_settings = get_settings()
+    redis_status = "disabled"
+    db_status = "disabled"
+    healthy = True
+
+    try:
+        r = await get_redis_client()
+        if r and await r.ping():
+            redis_status = "connected"
+        else:
+            redis_status = "disconnected"
+            if current_settings.AppEnv == "production":
+                healthy = False
+    except Exception as exc:
+        redis_status = "error"
+        logger.debug("Health check Redis ping failed: %s", exc)
+        if current_settings.AppEnv == "production":
+            healthy = False
+
+    try:
+        pool = await get_database_pool()
+        if pool:
+            async with pool.acquire() as conn:
+                val = await conn.fetchval("SELECT 1")
+                if val == 1:
+                    db_status = "connected"
+                else:
+                    db_status = "disconnected"
+                    if current_settings.AppEnv == "production":
+                        healthy = False
+        else:
+            db_status = "disconnected"
+            if current_settings.AppEnv == "production":
+                healthy = False
+    except Exception as exc:
+        db_status = "error"
+        logger.debug("Health check DB query failed: %s", exc)
+        if current_settings.AppEnv == "production":
+            healthy = False
+
+    if not healthy:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    return {
+        "status": "ok" if healthy else "degraded",
+        "environment": current_settings.AppEnv,
+        "redis": redis_status,
+        "database": db_status
+    }
+
 
 @app.get("/config")
 def get_config():

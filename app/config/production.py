@@ -1,4 +1,6 @@
 from app.config.settings import Settings
 
 class ProductionSettings(Settings):
-    pass
+    AppEnv: str = "production"
+    LogLevel: str = "WARNING"
+

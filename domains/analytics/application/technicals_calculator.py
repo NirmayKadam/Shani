@@ -117,7 +117,7 @@ def calculate_bollinger_bands(prices: List[float], period: int = 20, num_std: fl
     
     middle = calculate_sma(prices, period)
     window = prices[-period:] if len(prices) >= period else prices
-    variance = sum((x - middle) ** 2 for x in window) / len(window)
+    variance = sum((x - middle) ** 2 for x in window) / max(len(window) - 1, 1)
     std_dev = math.sqrt(variance)
     
     upper = round(middle + (num_std * std_dev), 2)
@@ -160,13 +160,9 @@ def calculate_pivots(high: float, low: float, close: float) -> Dict[str, float]:
 
 def compute_all_technicals(spot_price: float, price_history: List[float] = None) -> Dict[str, Any]:
     """Compute comprehensive technical analysis suite for spot price and price history."""
+    estimated = False
     if not price_history or len(price_history) < 5:
-        # Synthesize baseline variation array around spot for fallback
-        price_history = [
-            round(spot_price * (1.0 + (i - 15) * 0.0015), 2)
-            for i in range(30)
-        ]
-        price_history[-1] = spot_price
+        price_history = [spot_price]
 
     current_price = price_history[-1]
     
@@ -189,11 +185,15 @@ def compute_all_technicals(spot_price: float, price_history: List[float] = None)
     ]
 
     # 3. Volatility / ATR
-    atr = round(current_price * 0.012, 2)
+    if price_history and len(price_history) >= 2:
+        diffs = [abs(price_history[i] - price_history[i - 1]) for i in range(1, len(price_history))]
+        atr = round(sum(diffs[-14:]) / min(len(diffs), 14), 2)
+    else:
+        atr = 0.0
 
     # 4. Pivot Points
-    high = max(price_history[-15:])
-    low = min(price_history[-15:])
+    high = max(price_history[-15:]) if price_history else spot_price
+    low = min(price_history[-15:]) if price_history else spot_price
     pivots = calculate_pivots(high, low, current_price)
 
     # 5. Composite Score & Overall Signal
@@ -225,6 +225,7 @@ def compute_all_technicals(spot_price: float, price_history: List[float] = None)
 
     return {
         "spot_price": current_price,
+        "estimated": estimated,
         "summary": {
             "overall_signal": overall_signal,
             "overall_badge": overall_badge,
@@ -240,3 +241,4 @@ def compute_all_technicals(spot_price: float, price_history: List[float] = None)
         "atr": atr,
         "pivots": pivots,
     }
+

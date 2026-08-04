@@ -1,9 +1,9 @@
 """
-File Overview: FastAPI router for options pricer BSM calculations and ticker mock/real data queries.
+File Overview: FastAPI router for options pricer BSM calculations and live ticker data queries.
 
 All Functions/Classes:
 - pricer_router: APIRouter for pricer services.
-- get_ticker_parameters: GET endpoint fetching real-time Redis or deterministic mock options parameters for a symbol.
+- get_ticker_parameters: GET endpoint fetching real-time Redis or dynamic live options parameters for a symbol.
 - calculate_bsm: POST endpoint executing BSM pricer and returning intermediate / final option edge parameters.
 """
 import math
@@ -45,7 +45,7 @@ def _generated_at() -> str:
 @router.get("/ticker/{symbol}", response_model=PricerTickerDataResponse)
 async def get_ticker_parameters(symbol: str):
     """
-    Get live or mock options pricing parameters for the BSM Pricer inputs.
+    Get live options pricing parameters for the BSM Pricer inputs.
     Tries to read live options chain cache from Redis first.
     """
     symbol_upper = symbol.strip().upper()
@@ -75,7 +75,7 @@ async def get_ticker_parameters(symbol: str):
         price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
         price_cached = await redis.get(price_key)
     except Exception as exc:
-        logger.warning("[%s] Failed connecting to Redis, falling back to mocks: %s", symbol_clean, exc)
+        logger.warning("[%s] Failed connecting to Redis, falling back to direct adapter fetch: %s", symbol_clean, exc)
 
     if not raw_cached:
         # Try live fetch
@@ -262,11 +262,9 @@ async def get_ticker_parameters(symbol: str):
                             
                             b_val = float(opt.get("bid", 0.0) or 0.0)
                             a_val = float(opt.get("ask", 0.0) or 0.0)
-                            if b_val <= 0 or a_val <= 0:
-                                spread_val = max(0.05, ltp_val * 0.02)
-                                b_val = round(ltp_val - spread_val / 2, 2)
-                                a_val = round(ltp_val + spread_val / 2, 2)
-                                
+                            b_qty = int(opt.get("bid_qty", 0) or 0)
+                            a_qty = int(opt.get("ask_qty", 0) or 0)
+                            
                             rows_by_strike[strike][side] = {
                                 "oi": int(opt.get("oi", 0) or 0),
                                 "chng_in_oi": int(opt.get("chng_in_oi", 0) or 0),
@@ -274,10 +272,10 @@ async def get_ticker_parameters(symbol: str):
                                 "iv": iv_val,
                                 "ltp": ltp_val,
                                 "chng": float(opt.get("change", 0.0) or 0.0),
-                                "bid_qty": int(opt.get("bid_qty", 0) or 100),
-                                "bid": b_val,
-                                "ask": a_val,
-                                "ask_qty": int(opt.get("ask_qty", 0) or 100)
+                                "bid_qty": b_qty if b_qty > 0 else None,
+                                "bid": b_val if b_val > 0 else None,
+                                "ask": a_val if a_val > 0 else None,
+                                "ask_qty": a_qty if a_qty > 0 else None
                             }
                             
                         sorted_rows = []
@@ -293,7 +291,7 @@ async def get_ticker_parameters(symbol: str):
                         symbol=symbol_clean,
                         stock_price=spot,
                         implied_volatility=iv,
-                        historical_volatility=round(iv * 0.88, 2),
+                        historical_volatility=0.0,
                         bid_price=bid,
                         ask_price=ask,
                         open_interest=int(nearest_strike_opt.get("oi", 1000)),

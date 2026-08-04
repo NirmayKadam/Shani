@@ -16,3 +16,8 @@ walkthrough.md
 implementation_plan.md
 artifacts/models--*
 artifacts/.locks/
+dump.rdb
+celerybeat-schedule
+.pytest_cache/
+.coverage
+tests/

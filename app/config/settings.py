@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Application
     AppEnv: str          = Field("development", validation_alias="APP_ENV")
     LogLevel: str        = Field("INFO", validation_alias="LOG_LEVEL")
+    AllowedOrigins: str  = Field("*", validation_alias="ALLOWED_ORIGINS")
 
     # Redis
     RedisUrl: str        = Field("redis://redis:6379/0", validation_alias="REDIS_URL")
@@ -48,6 +49,12 @@ class Settings(BaseSettings):
     def get_default_symbols_as_list(self) -> list[str]:
         """Parse DefaultSymbols into a clean list."""
         return [s.strip().upper() for s in self.DefaultSymbols.split(",") if s.strip()]
+
+    def get_allowed_origins_list(self) -> list[str]:
+        """Parse AllowedOrigins into a clean list."""
+        if not self.AllowedOrigins:
+            return ["*"]
+        return [o.strip() for o in self.AllowedOrigins.split(",") if o.strip()]
 
 
 @lru_cache()

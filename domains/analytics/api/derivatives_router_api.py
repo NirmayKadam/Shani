@@ -169,7 +169,12 @@ async def get_technicals(symbol: str, spot: Optional[float] = None):
     symbol_upper = symbol.strip().upper()
     symbol_clean = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol_upper)
 
-    spot_price = spot or 24774.30  # Default fallback spot
+    if spot is None or spot <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Spot price is required for technicals calculation of '{symbol_upper}'. Pass ?spot=<price> or ensure Redis has cached data."
+        )
+    spot_price = spot
 
     try:
         redis = await get_redis_client()
@@ -182,7 +187,26 @@ async def get_technicals(symbol: str, spot: Optional[float] = None):
     except Exception as exc:
         logger.warning("Redis fetch error in technicals for %s: %s", symbol_clean, exc)
 
-    technicals_data = compute_all_technicals(spot_price)
+    # Fetch real market daily OHLC price history via yfinance
+    price_history = []
+    try:
+        from domains.ingestion.infrastructure.outbound.nse_api_adapter import _to_yfinance_symbol
+        import yfinance as yf
+
+        yf_symbol = _to_yfinance_symbol(symbol_clean)
+
+        def _fetch_hist():
+            ticker = yf.Ticker(yf_symbol)
+            hist = ticker.history(period="3mo")
+            if not hist.empty and "Close" in hist:
+                return [float(x) for x in hist["Close"].dropna().tolist()]
+            return []
+
+        price_history = await asyncio.to_thread(_fetch_hist)
+    except Exception as hist_exc:
+        logger.warning("Failed fetching historical prices for %s technicals: %s", symbol_clean, hist_exc)
+
+    technicals_data = compute_all_technicals(spot_price, price_history=price_history)
     technicals_data["symbol"] = symbol_clean
     technicals_data["generated_at"] = _generated_at()
     technicals_data["source"] = "analytics_domain_engine"

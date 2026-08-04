@@ -39,5 +39,10 @@ RUN chmod +x /start.sh
 # Expose FastAPI port
 EXPOSE 8000
 
+# Container Healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
 # Start supervisor via wrapper script
 CMD ["/start.sh"]
+

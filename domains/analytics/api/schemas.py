@@ -132,10 +132,10 @@ class OptionChainSide(BaseModel):
     iv: Optional[float] = 0.0
     ltp: Optional[float] = 0.0
     chng: Optional[float] = 0.0
-    bid_qty: Optional[int] = 0
-    bid: Optional[float] = 0.0
-    ask: Optional[float] = 0.0
-    ask_qty: Optional[int] = 0
+    bid_qty: Optional[int] = None
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    ask_qty: Optional[int] = None
 
 
 class OptionChainRow(BaseModel):
