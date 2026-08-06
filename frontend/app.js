@@ -18,7 +18,8 @@ let appState = {
     dividendYield: 1.20,
     // ATM Option Strike Info
     atmStrike: 0.0,
-    lastPriceUpdated: null
+    lastPriceUpdated: null,
+    technicals: null
 };
 
 // WebSocket and inspection states
@@ -1034,17 +1035,24 @@ window.openStrikeModal = function(strikePrice) {
 };
 
 /**
- * Format Option Chain visible elements and export to a clean local CSV file
+ * Format Option Chain visible elements and export to a clean local XLSX file
  */
 function downloadCSV() {
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
     if (chainRows.length === 0) return;
 
-    let csvContent = "";
-    
-    // CSV Header row
-    csvContent += "CALLS - VOLUME,CALLS - IV,CALLS - BSM PRICE,CALLS - LTP,CALLS - BID QTY,CALLS - BID,CALLS - ASK,CALLS - ASK QTY,STRIKE,PUTS - BID QTY,PUTS - BID,PUTS - ASK,PUTS - ASK QTY,PUTS - LTP,PUTS - BSM PRICE,PUTS - IV,PUTS - VOLUME\r\n";
-    
+    if (typeof XLSX === 'undefined') {
+        alert("Excel export library not loaded yet. Please try again in a moment.");
+        return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // --- 1. Option Chain Sheet ---
+    const chainAoA = [
+        ["CALLS - VOLUME", "CALLS - IV", "CALLS - BSM PRICE", "CALLS - LTP", "CALLS - BID QTY", "CALLS - BID", "CALLS - ASK", "CALLS - ASK QTY", "STRIKE", "PUTS - BID QTY", "PUTS - BID", "PUTS - ASK", "PUTS - ASK QTY", "PUTS - LTP", "PUTS - BSM PRICE", "PUTS - IV", "PUTS - VOLUME"]
+    ];
+
     chainRows.forEach(row => {
         const strike = row.strike_price;
         const callIv = row.call?.iv || appState.volatility;
@@ -1052,10 +1060,10 @@ function downloadCSV() {
         const callBS = calculateBSM(appState.spot, strike, appState.daysToExpiry, appState.riskFreeRate, callIv, appState.dividendYield);
         const putBS = calculateBSM(appState.spot, strike, appState.daysToExpiry, appState.riskFreeRate, putIv, appState.dividendYield);
 
-        const values = [
+        chainAoA.push([
             row.call?.volume || 0,
             row.call?.iv || 0.0,
-            callBS.call.toFixed(2),
+            parseFloat(callBS.call.toFixed(2)),
             row.call?.ltp || 0.0,
             row.call?.bid_qty || 0,
             row.call?.bid || 0.0,
@@ -1067,23 +1075,153 @@ function downloadCSV() {
             row.put?.ask || 0.0,
             row.put?.ask_qty || 0,
             row.put?.ltp || 0.0,
-            putBS.put.toFixed(2),
+            parseFloat(putBS.put.toFixed(2)),
             row.put?.iv || 0.0,
             row.put?.volume || 0
-        ];
-        
-        csvContent += values.join(",") + "\r\n";
+        ]);
     });
+    
+    const wsChain = XLSX.utils.aoa_to_sheet(chainAoA);
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `option_chain_${appState.symbol}_${appState.selectedExpiry}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // Compute ATM strike for highlighting
+    let currentAtmStrike = appState.atmStrike;
+    if (!currentAtmStrike && chainRows.length > 0) {
+        currentAtmStrike = chainRows.reduce((prev, curr) => 
+            Math.abs(curr.strike_price - appState.spot) < Math.abs(prev.strike_price - appState.spot) ? curr : prev
+        ).strike_price;
+    }
+
+    // Apply styling to Option Chain
+    const range = XLSX.utils.decode_range(wsChain['!ref']);
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+        const strikeCellRef = XLSX.utils.encode_cell({c: 8, r: R});
+        const strikeVal = wsChain[strikeCellRef] ? wsChain[strikeCellRef].v : null;
+        
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+            const cellRef = XLSX.utils.encode_cell({c: C, r: R});
+            if (!wsChain[cellRef]) continue;
+            
+            // Initialize basic style object without empty fill (which causes black background)
+            wsChain[cellRef].s = { font: {} };
+            
+            if (R === 0) {
+                // Header row (Light Grey/Blue)
+                wsChain[cellRef].s.font.bold = true;
+                wsChain[cellRef].s.fill = { fgColor: { rgb: "D9E1F2" } };
+            } else {
+                // Strike Column Highlighting
+                if (C === 8) {
+                    if (strikeVal === currentAtmStrike) {
+                        // ATM Strike (Blue)
+                        wsChain[cellRef].s.fill = { fgColor: { rgb: "4A86E8" } };
+                        wsChain[cellRef].s.font.color = { rgb: "FFFFFF" };
+                        wsChain[cellRef].s.font.bold = true;
+                    } else {
+                        // Regular Strike (Light Blue)
+                        wsChain[cellRef].s.fill = { fgColor: { rgb: "C9DAF8" } };
+                        wsChain[cellRef].s.font.bold = true;
+                    }
+                }
+                
+                // ITM Calls (Left side - Green)
+                if (C < 8 && strikeVal <= currentAtmStrike) {
+                    wsChain[cellRef].s.fill = { fgColor: { rgb: "D9EAD3" } }; 
+                }
+                // ITM Puts (Right side - Red)
+                else if (C > 8 && strikeVal >= currentAtmStrike) {
+                    wsChain[cellRef].s.fill = { fgColor: { rgb: "F4CCCC" } }; 
+                }
+            }
+        }
+    }
+
+    XLSX.utils.book_append_sheet(wb, wsChain, "Option Chain");
+
+    // --- 2. Technicals Sheet ---
+    const techAoA = [];
+    if (appState.technicals) {
+        const t = appState.technicals;
+        techAoA.push(["Technical Indicator", "Value", "Signal"]);
+        
+        if (t.summary) {
+            techAoA.push(["Overall Signal", `${t.summary.bullish_count} Buy | ${t.summary.neutral_count} Neutral | ${t.summary.bearish_count} Sell`, t.summary.overall_signal]);
+            techAoA.push([]); // blank row
+        }
+        
+        if (t.rsi) techAoA.push(["RSI", t.rsi.value, t.rsi.signal || t.rsi.label || ""]);
+        if (t.macd) techAoA.push(["MACD", `${t.macd.macd} (Hist: ${t.macd.histogram})`, t.macd.signal || t.macd.label || ""]);
+        if (t.bollinger) techAoA.push(["Bollinger Bands", `Upper: ${t.bollinger.upper} | Lower: ${t.bollinger.lower}`, t.bollinger.signal || t.bollinger.label || ""]);
+        if (t.atr) techAoA.push(["ATR", t.atr, ""]);
+        
+        techAoA.push([]); // blank row
+        if (t.moving_averages) {
+            techAoA.push(["Moving Averages", "", ""]);
+            t.moving_averages.forEach(ma => {
+                techAoA.push([ma.name, ma.value, ma.signal]);
+            });
+        }
+        
+        techAoA.push([]); // blank row
+        if (t.pivots) {
+            techAoA.push(["Pivot Points", "", ""]);
+            techAoA.push(["R3", t.pivots.r3, ""]);
+            techAoA.push(["R2", t.pivots.r2, ""]);
+            techAoA.push(["R1", t.pivots.r1, ""]);
+            techAoA.push(["Pivot", t.pivots.p, ""]);
+            techAoA.push(["S1", t.pivots.s1, ""]);
+            techAoA.push(["S2", t.pivots.s2, ""]);
+            techAoA.push(["S3", t.pivots.s3, ""]);
+        }
+    } else {
+        techAoA.push(["Technicals Data Not Available", ""]);
+    }
+    
+    const wsTech = XLSX.utils.aoa_to_sheet(techAoA);
+
+    // Apply styling to Technicals Sheet
+    if (wsTech['!ref']) {
+        const techRange = XLSX.utils.decode_range(wsTech['!ref']);
+        for (let R = techRange.s.r; R <= techRange.e.r; ++R) {
+            
+            // Check if this is a subheader row (Value column is empty string)
+            const valCellRef = XLSX.utils.encode_cell({c: 1, r: R});
+            const isSubheader = wsTech[valCellRef] && wsTech[valCellRef].v === "" && R > 0;
+            
+            for (let C = techRange.s.c; C <= techRange.e.c; ++C) {
+                const cellRef = XLSX.utils.encode_cell({c: C, r: R});
+                if (!wsTech[cellRef]) continue;
+                
+                wsTech[cellRef].s = { font: {} };
+                const cellVal = String(wsTech[cellRef].v || "").toUpperCase();
+                
+                if (R === 0) {
+                    // Header row
+                    wsTech[cellRef].s.font.bold = true;
+                    wsTech[cellRef].s.fill = { fgColor: { rgb: "D9E1F2" } }; // Light blue
+                } else if (isSubheader) {
+                    // Subheader row
+                    wsTech[cellRef].s.font.bold = true;
+                    wsTech[cellRef].s.fill = { fgColor: { rgb: "EFEFEF" } }; // Light grey
+                } else {
+                    // Signal colors
+                    if (cellVal.includes("BULLISH") || cellVal === "BUY") {
+                        wsTech[cellRef].s.fill = { fgColor: { rgb: "D9EAD3" } }; // Green
+                        wsTech[cellRef].s.font.color = { rgb: "274E13" }; 
+                        wsTech[cellRef].s.font.bold = true;
+                    } else if (cellVal.includes("BEARISH") || cellVal === "SELL") {
+                        wsTech[cellRef].s.fill = { fgColor: { rgb: "F4CCCC" } }; // Red
+                        wsTech[cellRef].s.font.color = { rgb: "990000" };
+                        wsTech[cellRef].s.font.bold = true;
+                    }
+                }
+            }
+        }
+    }
+
+    XLSX.utils.book_append_sheet(wb, wsTech, "Technicals");
+
+    // --- 3. Export ---
+    XLSX.writeFile(wb, `AlphaStreams_${appState.symbol}_${appState.selectedExpiry}.xlsx`);
 }
 
 // ----------------------------------------------------
@@ -1393,6 +1531,7 @@ async function fetchAndRenderTechnicals(symbol) {
         const res = await fetch(url);
         if (res.ok) {
             const data = await res.json();
+            appState.technicals = data;
             renderTechnicalsData(data);
             return;
         }
