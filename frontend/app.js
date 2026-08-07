@@ -1087,18 +1087,20 @@ function downloadCSV() {
     const wsChain = XLSX.utils.aoa_to_sheet(chainAoA);
 
     // Compute ATM strike for highlighting
-    let currentAtmStrike = appState.atmStrike;
-    if (!currentAtmStrike && chainRows.length > 0) {
-        currentAtmStrike = chainRows.reduce((prev, curr) => 
+    let currentAtmStrikeRaw = appState.atmStrike;
+    if (!currentAtmStrikeRaw && chainRows.length > 0) {
+        currentAtmStrikeRaw = chainRows.reduce((prev, curr) => 
             Math.abs(curr.strike_price - appState.spot) < Math.abs(prev.strike_price - appState.spot) ? curr : prev
         ).strike_price;
     }
+    const currentAtmStrike = parseFloat(currentAtmStrikeRaw);
 
     // Apply styling to Option Chain
     const range = XLSX.utils.decode_range(wsChain['!ref']);
     for (let R = range.s.r; R <= range.e.r; ++R) {
         const strikeCellRef = XLSX.utils.encode_cell({c: 8, r: R});
-        const strikeVal = wsChain[strikeCellRef] ? wsChain[strikeCellRef].v : null;
+        const strikeValRaw = wsChain[strikeCellRef] ? wsChain[strikeCellRef].v : null;
+        const strikeVal = strikeValRaw !== null ? parseFloat(strikeValRaw) : null;
         
         for (let C = range.s.c; C <= range.e.c; ++C) {
             const cellRef = XLSX.utils.encode_cell({c: C, r: R});
