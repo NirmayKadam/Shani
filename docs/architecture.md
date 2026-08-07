@@ -43,8 +43,10 @@ AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principl
 
 1. **Ingestion Context (`domains/ingestion`)**: Establishes connections to external financial market APIs, maintains stateful sessions, rotates HTTP cookies, parses market payloads, and publishes raw tick data structures to the messaging layer.
 2. **Analytics Context (`domains/analytics`)**: The mathematical engine. Consumes ingestion event streams, executes analytical (BSM) and numerical (Crank-Nicolson PDE) option solvers, computes technical indicators, and updates read-optimized caches.
-3. **Application & Serving Context (`app/` / `frontend/`)**: Exposes REST and WebSocket gateways using FastAPI to interface with the web client. Serves static assets, provides caching mechanisms for endpoints, and manages low-latency pub/sub streaming to active web connections.
-4. **Shared Kernel (`shared/`)**: Provides cross-cutting facilities including database adapters, caching client configurations, global constants, symbol validation rules, and Celery task scheduler application context.
+3. **Notifications Context (`domains/notifications`)**: Real-time alert engine. Manages user-defined alert rules, evaluates price/IV/delta conditions against live market ticks, dispatches notifications via configurable channels (webhook, email), and enforces cooldown policies.
+4. **Historical OHLC Context (`domains/historical`)**: Historical candle persistence & server-side technical analysis engine. Stores immutable 1m/5m/1d bars in TimescaleDB hypertables with 90-day retention policies, computing deterministic RSI, MACD, Bollinger Bands, and ATR metrics.
+5. **Application & Serving Context (`app/` / `frontend/`)**: Exposes REST and WebSocket gateways using FastAPI to interface with the web client. Serves static assets, provides caching mechanisms for endpoints, and manages low-latency pub/sub streaming to active web connections.
+6. **Shared Kernel (`shared/`)**: Provides cross-cutting facilities including database adapters, caching client configurations, global constants, symbol validation rules, structured logging, middleware, and Celery task scheduler application context.
 
 ### Directory Taxonomy
 
@@ -59,19 +61,32 @@ MarketSentimentAnalysis2/
 │   │   ├── api/                       # REST endpoint adapters
 │   │   ├── application/               # Orchestrators and Celery tasks
 │   │   ├── domain/                    # Ingestion domain entities & DTOs
-│   │   └── infrastructure/            # Outbound adapters (NSE, Groww, yfinance)
-│   └── analytics/                     # Analytics Context
-│       ├── api/                       # REST, Technicals, Pricer & WS entry adapters
-│       ├── application/               # BSM, PDE & Technical indicator calculators
-│       ├── domain/                    # Quantitative domain models & entities
-│       └── infrastructure/            # Read-model subscribers & cache repositories
+│   │   ├── infrastructure/            # Outbound adapters (NSE, Groww, yfinance)
+│   │   ├── ports/                     # Inbound & outbound interface contracts
+│   │   └── tasks/                     # Celery task definitions
+│   ├── analytics/                     # Analytics Context
+│   │   ├── api/                       # REST, Technicals, Pricer & WS entry adapters
+│   │   ├── application/               # BSM, PDE & Technical indicator calculators
+│   │   ├── domain/                    # Quantitative domain models & entities
+│   │   ├── infrastructure/            # Read-model subscribers & cache repositories
+│   │   ├── ports/                     # Inbound & outbound interface contracts
+│   │   └── tasks/                     # Celery task definitions
+│   └── notifications/                 # Notifications Context
+│       ├── api/                       # Alert CRUD REST endpoints
+│       ├── application/               # Alert management service
+│       ├── domain/                    # Alert entities, value objects & rule matching
+│       ├── infrastructure/            # Persistence, channels & subscribers
+│       └── ports/                     # Inbound & outbound interface contracts
 ├── shared/                            # Shared Kernel
-│   ├── infrastructure/                # Redis connection pools & streaming bus
+│   ├── infrastructure/                # Redis connection pools, event bus & streaming
 │   ├── constants.py                   # Stream names, TTLs, and keys
+│   ├── exceptions/                    # Layered exception hierarchy (API, domain, infra)
+│   ├── logging/                       # Structured logging formatters & middleware
+│   ├── middleware/                     # Request ID, timing, metrics & auth middleware
 │   └── utils/                         # Symbol validation & timezone utilities
 ├── frontend/                          # Client web assets (HTML5, CSS3, Vanilla JS)
 ├── scripts/                           # Database migration & catalog tools
-├── tests/                             # Unit and integration test suites (65+ tests)
+├── tests/                             # Unit, integration & e2e test suites (80+ tests)
 ├── supervisord.conf                   # Multi-process container configuration
 ├── start.sh                           # Container startup script
 └── docker-compose.yml                 # Orchestration manifest
@@ -279,15 +294,18 @@ Matrix $\mathbf{A}$ is static and pre-factorized using SuperLU direct solver (`s
 
 | Table Name | Partitioning | Primary Columns | Purpose |
 |---|---|---|---|
-| `TickData` | Hypertable | `Timestamp`, `Symbol`, `StrikePrice`, `OptionType`, `LastPrice`, `Volume`, `ImpliedVolatility` | Tick database. |
-| `DetectedEvents` | Relational | `id` (UUID), `Timestamp`, `EventType`, `Payload` (JSONB) | Event anomaly log. |
-| `AlertRules` | Relational | `id` (UUID), `Symbol`, `ConditionType`, `Threshold`, `WebhookUrl` | User alerts. |
+| `TickData` | Hypertable | `Timestamp`, `Symbol`, `StrikePrice`, `LastPrice`, `Volume`, `ImpliedVolatility` | Tick database. |
+| `DetectedEvents` | Relational | `EventId` (UUID), `Symbol`, `EventType`, `DetectedAt` | Event anomaly log. |
+| `AlertRules` | Relational | `id` (UUID), `symbol`, `condition_type`, `threshold`, `channels`, `cooldown_seconds` | User-defined alert rules with webhook/email dispatch. |
+| `DomainEvents` | Relational | `EventId` (UUID), `EventType`, `Payload` (JSONB), `OccurredAt` | Cross-domain event audit log. |
 
 ### Redis Streams Messaging Architecture
 1. `stream:options.raw_fetched`: Ingestion worker pushes raw tick blocks.
 2. `stream:options.priced`: `OptionsPricingSubscriber` daemon consumes ticks, solves BSM/PDE, and writes processed results.
-3. `stream:dlq:refresh_request`: Dead-Letter Queue isolates processing failures after 3 retries.
-4. `market.options_updated.{symbol}` / `market.price_updated.{symbol}`: Ephemeral Pub/Sub channels mirror tick & chain updates to WebSocket hub (`/v1/ws/{symbol}`).
+3. `stream:analysis.refresh_requested`: Analytics domain requests ingestion refresh for a symbol.
+4. `stream:dlq:refresh_request`: Dead-Letter Queue isolates processing failures after 3 retries.
+5. `market.options_updated.{symbol}` / `market.price_updated.{symbol}`: Ephemeral Pub/Sub channels mirror tick & chain updates to WebSocket hub (`/v1/ws/{symbol}`).
+6. `alerts.dispatched.{symbol}`: Ephemeral Pub/Sub channel for alert notifications pushed to WebSocket clients.
 
 ---
 

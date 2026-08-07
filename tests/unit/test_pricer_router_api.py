@@ -77,7 +77,11 @@ class TestPricerTickerEndpoint:
             oi=2000,
             volume=500,
             ltp=85.0,
-            iv=0.20
+            iv=0.20,
+            bid=None,
+            bid_qty=None,
+            ask=None,
+            ask_qty=None
         )
         mock_adapter = AsyncMock()
         mock_adapter.fetch_option_chain.return_value = [mock_dto]

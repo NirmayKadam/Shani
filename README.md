@@ -25,6 +25,7 @@ To read the detailed system documentation, please refer to the following guides:
 - **Dynamic Instrument Search** — debounced autocomplete search across 2,000+ NSE equities and indices via a live instrument catalog.
 - **Real-Time WebSocket Push** — live price ticks, option chain updates, and technical indicator signal synchronization.
 - **Crank-Nicolson PDE Fair Pricing** — numerical PDE solver for European-style option fair values.
+- **Real-Time Alert Rules & Notifications** — user-defined alerts with price/IV/delta conditions, cooldown policies, and webhook/email dispatch channels.
 - **Single-Container Deployment** — everything (FastAPI, Celery, Redis, and TimescaleDB) runs in one Docker container via `supervisord`.
 
 ---

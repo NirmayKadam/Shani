@@ -33,6 +33,16 @@ if [ -z "$(ls -A /var/lib/postgresql/data)" ]; then
         echo "Running init_schema.sql..."
         su - postgres -c "psql -d NexusQuantDB -f /app/scripts/init_schema.sql"
     fi
+
+    if [ -f "/app/scripts/migration_add_notifications.sql" ]; then
+        echo "Running migration_add_notifications.sql..."
+        su - postgres -c "psql -d NexusQuantDB -f /app/scripts/migration_add_notifications.sql"
+    fi
+
+    if [ -f "/app/scripts/migration_add_ohlc.sql" ]; then
+        echo "Running migration_add_ohlc.sql..."
+        su - postgres -c "psql -d NexusQuantDB -f /app/scripts/migration_add_ohlc.sql"
+    fi
     
     # Stop PG
     su - postgres -c "/usr/lib/postgresql/15/bin/pg_ctl -D /var/lib/postgresql/data -m fast -w stop"

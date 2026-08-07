@@ -48,6 +48,7 @@ Supervisord manages the lifecycle of the following processes inside the single c
 | 5 | **Celery Beat** (Scheduler) | `celery -A shared.infrastructure.celery_app:celery_app beat` |
 | 6 | **Ingestion Orchestrator** | `python3 domains/ingestion/application/services/orchestrators/ingestion_orchestrator_service.py` |
 | 7 | **Options Subscriber** | `python3 domains/analytics/infrastructure/options_subscriber.py` |
+| 8 | **Notification Subscriber** | `python3 domains/notifications/infrastructure/subscribers/notification_subscriber.py` |
 
 ---
 

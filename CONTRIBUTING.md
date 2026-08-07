@@ -10,7 +10,6 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 - Python 3.11+
 - Docker & Docker Compose
-- A [NewsAPI](https://newsapi.org/) key (free tier)
 
 ### Local Development
 
@@ -23,7 +22,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 2. **Create environment file**
    ```bash
    cp .env.template .env
-   # Add your NEWS_API_KEY to .env
+   # Configure MARKET_DATA_PROVIDER and any adapter credentials in .env
    ```
 
 3. **Start the container**
@@ -47,8 +46,9 @@ This is a **Modular Monolith** following Domain-Driven Design (DDD) principles:
 
 ```
 domains/
-├── ingestion/     # Fetches data from external sources (Groww, NSE, NewsAPI, yfinance)
-├── analytics/     # Technical indicators, BSM & PDE options pricing, read-model updates
+├── ingestion/       # Fetches data from external sources (Groww, NSE, yfinance)
+├── analytics/       # Technical indicators, BSM & PDE options pricing, read-model updates
+├── notifications/   # Real-time alert rules, event matching, and dispatch channels
 ```
 
 Cross-domain communication uses **Redis Streams** (durable events). See `shared/infrastructure/event_bus/` for contracts.
@@ -78,7 +78,7 @@ Market data ingestion uses a **pluggable adapter factory** (`adapter_factory.py`
 
 ## Adding a New Market Data Provider
 
-1. Create a new adapter in `domains/ingestion/infrastructure/adapters/outbound/` (e.g., `zerodha_api_adapter.py`).
+1. Create a new adapter in `domains/ingestion/infrastructure/outbound/` (e.g., `zerodha_api_adapter.py`).
 2. Implement both `IMarketPriceSourcePort` and `IOptionChainSourcePort` interfaces.
 3. Add a fallback to `NseApiAdapter` for resilience (see `GrowwApiAdapter` as reference).
 4. Register the provider in `adapter_factory.py` with a new `MARKET_DATA_PROVIDER` value.
@@ -118,10 +118,12 @@ docker compose exec app python -m pytest tests/unit/test_groww_api_adapter.py -v
 | Category | Files |
 |---|---|
 | **Adapters** | `test_groww_api_adapter.py`, `test_nse_api_adapter.py` |
-| **Services** | `test_ingestion_service.py`, `test_sentiment_analyzer.py`, `test_sentiment_recompute.py` |
-| **Pricing** | `test_black_scholes.py`, `test_options_subscriber.py` |
-| **Utilities** | `test_symbol_validator.py`, `test_market_status.py` |
-| **Pipelines** | `test_api_endpoints.py`, `test_derivatives_pipeline.py`, `test_ingest_pipeline.py` |
+| **Services** | `test_ingestion_service.py`, `test_derivatives_orchestrator.py` |
+| **Pricing** | `test_black_scholes.py`, `test_options_subscriber.py`, `test_pricer_router_api.py` |
+| **Utilities** | `test_symbol_validator.py`, `test_market_status.py`, `test_channels.py` |
+| **Notifications** | `test_notification_domain.py`, `test_notification_subscriber.py`, `test_rule_matcher.py`, `test_alert_repository.py`, `test_notifications_api.py` |
+| **Routers** | `test_events_router_api.py`, `test_api_endpoints.py` |
+| **Pipelines** | `test_derivatives_pipeline.py`, `test_notifications_pipeline.py` |
 
 When adding a new adapter or service, add corresponding tests following the existing patterns in `tests/conftest.py` for shared fixtures.
 
