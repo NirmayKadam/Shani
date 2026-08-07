@@ -63,6 +63,7 @@ Market data ingestion uses a **pluggable adapter factory** (`adapter_factory.py`
 - **Logging**: Use `logging.getLogger(__name__)` — never `print()`.
 - **Async**: All FastAPI endpoints and Redis operations should be `async`.
 - **Domain boundaries**: Never import directly between `ingestion` and `analytics` domains. Use events.
+- **Zero Mock / Synthetic Data Policy**: Never insert fake prices, synthetic fallback ticks, or mock responses in domain, API, or infrastructure code. System must fail fast (`HTTP 503 Service Unavailable` or custom exceptions) or render explicit unavailable UI states when live data/services fail.
 
 ---
 

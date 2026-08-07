@@ -13,6 +13,7 @@ echo "[entrypoint] postgres is up - executing schema check"
 # (In case the volume was already initialized and docker-entrypoint-initdb.d skipped)
 export PGPASSWORD="${DB_PASSWORD:-postgres}"
 psql -h postgres -U "${DB_USER:-postgres}" -d NexusQuantDB -f ./scripts/init_schema.sql
+psql -h postgres -U "${DB_USER:-postgres}" -d NexusQuantDB -f ./scripts/migration_add_notifications.sql
 
 PIDS=()
 

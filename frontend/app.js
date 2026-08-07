@@ -608,6 +608,9 @@ function setupWebSocket(symbol) {
             } else if (msg.type === "options") {
                 console.log(`Real-time options update received for ${symbol}`);
                 fetchTickerDataBackground(symbol);
+            } else if (msg.type === "ALERT_NOTIFICATION" || msg.type === "alert") {
+                console.log(`Real-time alert notification received for ${symbol}:`, msg);
+                showAlertToast(msg.message || `${msg.symbol} alert triggered: ${msg.triggered_value}`);
             }
         } catch (err) {
             console.error("Error parsing WebSocket message:", err);
@@ -1714,10 +1717,121 @@ async function initApp() {
     startHeaderClock();
     setupAutocomplete();
     setupTabSwitching();
+    setupAlertsModal();
     await fetchTickerData("NIFTY");
 }
 
 window.onload = initApp;
+
+// --- Alerts & Notifications Modal & Toast Handlers ---
+function setupAlertsModal() {
+    const bellBtn = document.getElementById("notification-bell-btn");
+    const alertsModal = document.getElementById("alerts-modal");
+    const closeBtn = document.getElementById("alerts-modal-close");
+    const form = document.getElementById("create-alert-form");
+
+    if (!bellBtn || !alertsModal) return;
+
+    bellBtn.onclick = () => {
+        alertsModal.classList.add("show");
+        loadActiveAlertRules();
+    };
+
+    if (closeBtn) {
+        closeBtn.onclick = () => alertsModal.classList.remove("show");
+    }
+
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const symbol = document.getElementById("alert-symbol-input").value.trim().toUpperCase();
+            const condition = document.getElementById("alert-condition-select").value;
+            const threshold = parseFloat(document.getElementById("alert-threshold-input").value);
+            const cooldown = parseInt(document.getElementById("alert-cooldown-input").value, 10);
+
+            if (!symbol || isNaN(threshold)) {
+                alert("Please provide valid symbol and threshold value");
+                return;
+            }
+
+            try {
+                const res = await fetch("/v1/notifications/alerts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        symbol: symbol,
+                        condition_type: condition,
+                        threshold: threshold,
+                        cooldown_seconds: cooldown,
+                        channels: ["WEBSOCKET"]
+                    })
+                });
+                if (res.ok) {
+                    loadActiveAlertRules();
+                    document.getElementById("alert-threshold-input").value = "";
+                } else {
+                    alert("Failed to create alert rule");
+                }
+            } catch (err) {
+                console.error("Alert creation failed:", err);
+            }
+        };
+    }
+}
+
+async function loadActiveAlertRules() {
+    const listEl = document.getElementById("active-alerts-list");
+    if (!listEl) return;
+    try {
+        const res = await fetch("/v1/notifications/alerts");
+        if (res.ok) {
+            const rules = await res.json();
+            if (rules.length === 0) {
+                listEl.innerHTML = '<div style="color: #94a3b8; font-size: 13px; font-style: italic;">No alert rules configured.</div>';
+                return;
+            }
+            listEl.innerHTML = rules.map(r => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-bottom: 6px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
+                    <div>
+                        <strong style="color: #6366f1;">${r.symbol}</strong>: ${r.condition_type} &gt; ${r.threshold} (Cooldown: ${r.cooldown_seconds}s)
+                    </div>
+                    <button onclick="deleteAlertRule('${r.id}')" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer;">Delete</button>
+                </div>
+            `).join("");
+        }
+    } catch (err) {
+        console.error("Failed to load active alert rules:", err);
+    }
+}
+
+window.deleteAlertRule = async function(ruleId) {
+    try {
+        const res = await fetch(`/v1/notifications/alerts/${ruleId}`, { method: "DELETE" });
+        if (res.ok) {
+            loadActiveAlertRules();
+        }
+    } catch (err) {
+        console.error("Failed to delete alert rule:", err);
+    }
+};
+
+function showAlertToast(message) {
+    const badge = document.getElementById("alert-badge-count");
+    if (badge) {
+        const cnt = parseInt(badge.textContent || "0", 10) + 1;
+        badge.textContent = cnt;
+        badge.style.display = "inline-block";
+    }
+
+    const toast = document.createElement("div");
+    toast.style.cssText = "position: fixed; bottom: 20px; right: 20px; background: #1e1b4b; border: 1px solid #6366f1; color: white; padding: 14px 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 9999; font-size: 13px; font-weight: 500;";
+    toast.innerHTML = `<strong style="color: #818cf8;">🔔 Market Alert</strong><br>${message}`;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.remove();
+    }, 6000);
+}
 
 
 

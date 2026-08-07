@@ -20,5 +20,9 @@ class RawTickDTO(BaseDTO):
     volume: int
     ltp: float
     iv: float = 0.0
+    bid: float = 0.0
+    bid_qty: int = 0
+    ask: float = 0.0
+    ask_qty: int = 0
     underlying_price: float = 0.0
     timestamp: datetime

@@ -36,17 +36,19 @@ CREATE TABLE IF NOT EXISTS DetectedEvents (
 );
 CREATE INDEX IF NOT EXISTS idx_events_symbol_time ON DetectedEvents (Symbol, DetectedAt DESC);
 
--- Alert rules (user-defined)
+-- Alert rules (user-defined V2)
 CREATE TABLE IF NOT EXISTS AlertRules (
-    RuleId          UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
-    Symbol          VARCHAR(20)     NOT NULL,
-    ConditionField  VARCHAR(30)     NOT NULL,
-    ConditionOp     VARCHAR(10)     NOT NULL,
-    ConditionValue  TEXT            NOT NULL,
-    WebhookUrl      TEXT,
-    CooldownSecs    INT             DEFAULT 300,
-    IsActive        BOOLEAN         DEFAULT TRUE,
-    CreatedAt       TIMESTAMPTZ     DEFAULT NOW()
+    id UUID PRIMARY KEY,
+    symbol VARCHAR(32) NOT NULL,
+    condition_type VARCHAR(32) NOT NULL,
+    threshold DOUBLE PRECISION NOT NULL,
+    channels TEXT[] NOT NULL,
+    cooldown_seconds INT NOT NULL DEFAULT 300,
+    last_triggered_at TIMESTAMPTZ NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    webhook_url TEXT NULL,
+    email_destination TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Domain events log

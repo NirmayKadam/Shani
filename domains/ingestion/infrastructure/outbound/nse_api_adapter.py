@@ -237,21 +237,26 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                     volume=t["volume"],
                     ltp=t["last_price"],
                     iv=t.get("iv", 0.0),
+                    bid=float(t.get("bid", 0.0) or 0.0),
+                    bid_qty=int(t.get("bid_qty", 0) or 0),
+                    ask=float(t.get("ask", 0.0) or 0.0),
+                    ask_qty=int(t.get("ask_qty", 0) or 0),
                     underlying_price=spot_price,
                     timestamp=datetime.now(timezone.utc)
                 ))
         return dtos
 
     async def _fetch_option_chain_raw(self, symbol: str) -> Optional[dict]:
-        # Precedence 1: Yahoo Finance
-        yf_data = await self._fetch_yfinance_options_fallback(symbol)
-        if yf_data and yf_data.get("chains"):
-            logger.info("[%s] Option chain retrieved via Yahoo Finance", symbol)
-            return yf_data
+        # Precedence 1: NSE Webscraper API (includes real bid/ask orderbook depth)
+        logger.info("[%s] Attempting option chain retrieval via NSE Webscraper", symbol)
+        nse_data = await self._fetch_nse_webscraper_options(symbol)
+        if nse_data and nse_data.get("chains"):
+            logger.info("[%s] Option chain retrieved via NSE Webscraper with real bid/ask quotes", symbol)
+            return nse_data
 
-        # Precedence 2: NSE Webscraper API
-        logger.info("[%s] Fallback: Attempting option chain retrieval via NSE Webscraper", symbol)
-        return await self._fetch_nse_webscraper_options(symbol)
+        # Precedence 2: Yahoo Finance Fallback
+        logger.info("[%s] Fallback: Attempting option chain retrieval via Yahoo Finance", symbol)
+        return await self._fetch_yfinance_options_fallback(symbol)
 
     async def _fetch_nse_webscraper_options(self, symbol: str, retry_count: int = 0) -> Optional[dict]:
         session = await self._ensure_session()
@@ -335,9 +340,19 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 opt = ticker.option_chain(exp)
                 ticks = []
                 for _, r in opt.calls.iterrows():
-                    ticks.append({"strike": float(r["strike"]), "type": "CE", "last_price": float(r["lastPrice"]), "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)), "expiry": exp})
+                    ticks.append({
+                        "strike": float(r["strike"]), "type": "CE", "last_price": float(r["lastPrice"]),
+                        "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)),
+                        "bid": float(r.get("bid", 0.0) or 0.0), "ask": float(r.get("ask", 0.0) or 0.0),
+                        "expiry": exp
+                    })
                 for _, r in opt.puts.iterrows():
-                    ticks.append({"strike": float(r["strike"]), "type": "PE", "last_price": float(r["lastPrice"]), "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)), "expiry": exp})
+                    ticks.append({
+                        "strike": float(r["strike"]), "type": "PE", "last_price": float(r["lastPrice"]),
+                        "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)),
+                        "bid": float(r.get("bid", 0.0) or 0.0), "ask": float(r.get("ask", 0.0) or 0.0),
+                        "expiry": exp
+                    })
                 chains[exp] = ticks
             
             return {"symbol": symbol.upper(), "spot_price": float(spot), "expiry_dates": list(expiries), "chains": chains}
@@ -363,10 +378,16 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 if opt:
                     lp = opt.get("lastPrice", 0)
                     if lp > 0:
+                        bid_p = float(opt.get("buyPrice1", 0.0) or opt.get("bid", 0.0) or 0.0)
+                        bid_q = int(opt.get("buyQuantity1", 0) or opt.get("bid_qty", 0) or 0)
+                        ask_p = float(opt.get("sellPrice1", 0.0) or opt.get("ask", 0.0) or 0.0)
+                        ask_q = int(opt.get("sellQuantity1", 0) or opt.get("ask_qty", 0) or 0)
                         chains[expiry].append({
                             "strike": float(strike), "type": opt_key, "last_price": float(lp),
                             "oi": int(opt.get("openInterest", 0)), "volume": int(opt.get("totalTradedVolume", 0)),
-                            "iv": float(opt.get("impliedVolatility", 0.0)), "expiry": expiry
+                            "iv": float(opt.get("impliedVolatility", 0.0)),
+                            "bid": bid_p, "bid_qty": bid_q, "ask": ask_p, "ask_qty": ask_q,
+                            "expiry": expiry
                         })
         return {"symbol": symbol.upper(), "spot_price": float(underlying), "expiry_dates": expiry_dates_raw, "chains": chains}
 

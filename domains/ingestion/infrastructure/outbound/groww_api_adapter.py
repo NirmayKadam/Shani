@@ -89,7 +89,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             logger.info("Access token in settings is expired. Cleared to refresh dynamically.")
             self._access_token = ""
 
-        if self.api_key and self.secret_key and GROWW_SDK_AVAILABLE:
+        if (self.totp_secret or (self.api_key and self.secret_key)) and GROWW_SDK_AVAILABLE:
             try:
                 loop = asyncio.get_running_loop()
                 token = await loop.run_in_executor(

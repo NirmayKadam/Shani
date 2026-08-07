@@ -35,7 +35,12 @@
                     <a href="#" id="tab-technicals" class="dash-nav-link">Technicals</a>
                 </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <button id="notification-bell-btn" style="position: relative; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer; color: #f8fafc; padding: 7px 12px; display: flex; align-items: center; gap: 6px;" title="Real-Time Alerts">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                    <span style="font-size: 13px; font-weight: 600;">Alerts</span>
+                    <span id="alert-badge-count" style="display: none; background: #ef4444; color: white; border-radius: 10px; font-size: 10px; padding: 1px 6px; font-weight: 700;">0</span>
+                </button>
                 <div id="user-profile-badge" style="display: flex; align-items: center; gap: 10px; color: #f8fafc; font-size: 14px; font-weight: 500;">
                     <div id="user-avatar" style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #f37021, #d8560c); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: white; box-shadow: 0 2px 8px rgba(243, 112, 33, 0.4);">?</div>
                     <span id="user-name-display">Loading...</span>
@@ -1136,8 +1141,50 @@
         }
     </script>
 
-    <!-- Excel Export Library (with styling support) -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <!-- Notification Alert Rules Modal -->
+    <div id="alerts-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Real-Time Market Alerts & Notifications</h2>
+                <span class="close-btn" id="alerts-modal-close">&times;</span>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <form id="create-alert-form" style="margin-bottom: 24px; background: rgba(255, 255, 255, 0.03); padding: 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);">
+                    <h4 style="margin: 0 0 12px 0; color: #6366f1;">Create Market Alert Rule</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                        <div>
+                            <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Symbol</label>
+                            <input type="text" id="alert-symbol-input" value="NIFTY" style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; border: 1px solid #334155; color: white;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Condition</label>
+                            <select id="alert-condition-select" style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; border: 1px solid #334155; color: white;">
+                                <option value="ABOVE_PRICE">Price Above Threshold</option>
+                                <option value="BELOW_PRICE">Price Below Threshold</option>
+                                <option value="IV_SPIKE">Implied Volatility Spike (%)</option>
+                                <option value="DELTA_BREACH">Delta Breach</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                        <div>
+                            <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Threshold Value</label>
+                            <input type="number" id="alert-threshold-input" step="0.01" placeholder="e.g. 24500" style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; border: 1px solid #334155; color: white;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Cooldown (Seconds)</label>
+                            <input type="number" id="alert-cooldown-input" value="300" style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; border: 1px solid #334155; color: white;">
+                        </div>
+                    </div>
+                    <button type="submit" style="width: 100%; padding: 10px; background: #6366f1; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Save Alert Rule</button>
+                </form>
+                <h4 style="margin: 0 0 12px 0; color: #e2e8f0;">Active Alert Rules</h4>
+                <div id="active-alerts-list" style="max-height: 200px; overflow-y: auto;">
+                    <div style="color: #94a3b8; font-size: 13px; font-style: italic;">No alert rules configured.</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Main Application Script -->
     <script src="/app.js?v=2.5.0"></script>

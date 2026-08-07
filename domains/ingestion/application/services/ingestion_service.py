@@ -97,6 +97,10 @@ class IngestionService:
                 "oi": dto.oi,
                 "volume": dto.volume,
                 "iv": dto.iv,
+                "bid": dto.bid,
+                "bid_qty": dto.bid_qty,
+                "ask": dto.ask,
+                "ask_qty": dto.ask_qty,
                 "expiry": dto.expiry
             })
 
