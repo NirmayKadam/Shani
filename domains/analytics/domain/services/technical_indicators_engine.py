@@ -1,14 +1,13 @@
 """
-File Overview: Technical Indicators Engine calculating RSI, MACD, Bollinger Bands, and ATR from OHLC candles.
-Pure domain service with zero synthetic or mock fallbacks.
+File Overview: Technical Indicators Engine calculating RSI, MACD, Bollinger Bands, and ATR from price series/OHLC data.
+Vectorized domain service in analytics bounded context with zero synthetic or mock fallbacks.
 """
 import numpy as np
 from typing import Dict, List, Any, Optional
-from domains.historical.domain.entities import CandleEntity
 
 
 class TechnicalIndicatorsEngine:
-    """Calculates quantitative technical indicators from valid historical CandleEntity lists."""
+    """Calculates quantitative technical indicators from price arrays or candle lists."""
 
     @staticmethod
     def calculate_rsi(prices: List[float], period: int = 14) -> Optional[float]:
@@ -85,7 +84,7 @@ class TechnicalIndicatorsEngine:
         }
 
     @classmethod
-    def compute_all_indicators(cls, candles: List[CandleEntity]) -> Dict[str, Any]:
+    def compute_all_indicators(cls, candles: Any) -> Dict[str, Any]:
         """Compute complete technical suite for a candle series."""
         if not candles:
             return {
@@ -95,7 +94,7 @@ class TechnicalIndicatorsEngine:
                 "candle_count": 0,
             }
 
-        closes = [c.close for c in candles]
+        closes = [getattr(c, "close", c) if hasattr(c, "close") else float(c) for c in candles]
         rsi = cls.calculate_rsi(closes)
         macd = cls.calculate_macd(closes)
         bb = cls.calculate_bollinger_bands(closes)

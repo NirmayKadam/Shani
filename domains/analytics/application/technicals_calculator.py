@@ -1,38 +1,24 @@
 """
-File Overview: Technical Indicator Calculator Engine.
+File Overview: Technical Indicator Calculator Engine in Analytics Application Layer.
 
 Computes technical indicators (RSI, MACD, Moving Averages, Bollinger Bands, ATR, Pivot Points)
 and assigns color-coded signals (Bullish, Bearish, Neutral) along with a composite summary.
+Delegates core mathematical computations to TechnicalIndicatorsEngine domain service.
 """
 
 import math
 from typing import List, Dict, Any
 
+from domains.analytics.domain.services.technical_indicators_engine import (
+    TechnicalIndicatorsEngine,
+)
+
 
 def calculate_rsi(prices: List[float], period: int = 14) -> Dict[str, Any]:
-    """Calculate Relative Strength Index (RSI)."""
-    if len(prices) < period + 1:
+    """Calculate Relative Strength Index (RSI) using domain math engine."""
+    val = TechnicalIndicatorsEngine.calculate_rsi(prices, period)
+    if val is None:
         val = 50.0
-    else:
-        gains = []
-        losses = []
-        for i in range(1, len(prices)):
-            change = prices[i] - prices[i - 1]
-            if change >= 0:
-                gains.append(change)
-                losses.append(0.0)
-            else:
-                gains.append(0.0)
-                losses.append(abs(change))
-        
-        avg_gain = sum(gains[-period:]) / period
-        avg_loss = sum(losses[-period:]) / period
-        
-        if avg_loss == 0:
-            val = 100.0
-        else:
-            rs = avg_gain / avg_loss
-            val = 100.0 - (100.0 / (1.0 + rs))
 
     val = round(val, 2)
     if val >= 70:
@@ -67,7 +53,7 @@ def calculate_ema(prices: List[float], period: int) -> float:
         return 0.0
     if len(prices) < period:
         return calculate_sma(prices, len(prices))
-    
+
     k = 2.0 / (period + 1)
     ema = sum(prices[:period]) / period
     for price in prices[period:]:
@@ -76,15 +62,19 @@ def calculate_ema(prices: List[float], period: int) -> float:
 
 
 def calculate_macd(prices: List[float]) -> Dict[str, Any]:
-    """Calculate MACD (12, 26, 9)."""
-    ema12 = calculate_ema(prices, 12)
-    ema26 = calculate_ema(prices, 26)
-    macd_line = round(ema12 - ema26, 2)
-    
-    # Calculate MACD signal line over historical window if available
-    signal_line = round(macd_line * 0.8, 2)
-    histogram = round(macd_line - signal_line, 2)
-    
+    """Calculate MACD (12, 26, 9) using domain math engine."""
+    macd_res = TechnicalIndicatorsEngine.calculate_macd(prices)
+    macd_line = macd_res.get("macd")
+    signal_line = macd_res.get("signal")
+    histogram = macd_res.get("histogram")
+
+    if macd_line is None:
+        ema12 = calculate_ema(prices, 12)
+        ema26 = calculate_ema(prices, 26)
+        macd_line = round(ema12 - ema26, 2)
+        signal_line = round(macd_line * 0.8, 2)
+        histogram = round(macd_line - signal_line, 2)
+
     if histogram > 0 and macd_line > 0:
         signal = "BULLISH"
         label = "Strong Bullish"
@@ -110,20 +100,27 @@ def calculate_macd(prices: List[float]) -> Dict[str, Any]:
     }
 
 
-def calculate_bollinger_bands(prices: List[float], period: int = 20, num_std: float = 2.0) -> Dict[str, Any]:
-    """Calculate Bollinger Bands (20, 2)."""
-    if not prices:
-        return {"upper": 0, "middle": 0, "lower": 0, "signal": "NEUTRAL", "label": "Neutral"}
-    
-    middle = calculate_sma(prices, period)
-    window = prices[-period:] if len(prices) >= period else prices
-    variance = sum((x - middle) ** 2 for x in window) / max(len(window) - 1, 1)
-    std_dev = math.sqrt(variance)
-    
-    upper = round(middle + (num_std * std_dev), 2)
-    lower = round(middle - (num_std * std_dev), 2)
-    current_price = prices[-1]
-    
+def calculate_bollinger_bands(
+    prices: List[float], period: int = 20, num_std: float = 2.0
+) -> Dict[str, Any]:
+    """Calculate Bollinger Bands (20, 2) using domain math engine."""
+    bb_res = TechnicalIndicatorsEngine.calculate_bollinger_bands(prices, period, num_std)
+    upper = bb_res.get("upper")
+    middle = bb_res.get("middle")
+    lower = bb_res.get("lower")
+
+    if upper is None or middle is None or lower is None:
+        if not prices:
+            return {"upper": 0, "middle": 0, "lower": 0, "signal": "NEUTRAL", "label": "Neutral"}
+        middle = calculate_sma(prices, period)
+        window = prices[-period:] if len(prices) >= period else prices
+        variance = sum((x - middle) ** 2 for x in window) / max(len(window) - 1, 1)
+        std_dev = math.sqrt(variance)
+        upper = round(middle + (num_std * std_dev), 2)
+        lower = round(middle - (num_std * std_dev), 2)
+
+    current_price = prices[-1] if prices else 0.0
+
     if current_price >= upper:
         signal = "BEARISH"
         label = "Upper Band (Overbought)"
@@ -165,7 +162,7 @@ def compute_all_technicals(spot_price: float, price_history: List[float] = None)
         price_history = [spot_price]
 
     current_price = price_history[-1]
-    
+
     # 1. Oscillators
     rsi_data = calculate_rsi(price_history)
     macd_data = calculate_macd(price_history)
@@ -241,4 +238,5 @@ def compute_all_technicals(spot_price: float, price_history: List[float] = None)
         "atr": atr,
         "pivots": pivots,
     }
+
 

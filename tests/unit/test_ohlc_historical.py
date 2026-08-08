@@ -4,7 +4,7 @@ Unit tests for Historical OHLC domain entities, TimescaleDB repository, and Tech
 import pytest
 from datetime import datetime, timezone
 from domains.historical.domain.entities import CandleEntity
-from domains.historical.domain.services.technical_indicators_engine import TechnicalIndicatorsEngine
+from domains.analytics.domain.services.technical_indicators_engine import TechnicalIndicatorsEngine
 
 
 def test_candle_entity_creation():

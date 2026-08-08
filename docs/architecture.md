@@ -42,9 +42,9 @@ AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principl
 ### Active Bounded Contexts
 
 1. **Ingestion Context (`domains/ingestion`)**: Establishes connections to external financial market APIs, maintains stateful sessions, rotates HTTP cookies, parses market payloads, and publishes raw tick data structures to the messaging layer.
-2. **Analytics Context (`domains/analytics`)**: The mathematical engine. Consumes ingestion event streams, executes analytical (BSM) and numerical (Crank-Nicolson PDE) option solvers, computes technical indicators, and updates read-optimized caches.
+2. **Analytics Context (`domains/analytics`)**: The mathematical engine. Consumes ingestion event streams, executes analytical (BSM) and numerical (Crank-Nicolson PDE) option solvers, computes technical indicator formulas (RSI, MACD, Bollinger Bands, ATR, Pivots), and updates read-optimized caches.
 3. **Notifications Context (`domains/notifications`)**: Real-time alert engine. Manages user-defined alert rules, evaluates price/IV/delta conditions against live market ticks, dispatches notifications via configurable channels (webhook, email), and enforces cooldown policies.
-4. **Historical OHLC Context (`domains/historical`)**: Historical candle persistence & server-side technical analysis engine. Stores immutable 1m/5m/1d bars in TimescaleDB hypertables with 90-day retention policies, computing deterministic RSI, MACD, Bollinger Bands, and ATR metrics.
+4. **Historical OHLC Context (`domains/historical`)**: Historical candle persistence & data query engine. Stores immutable 1m/5m/1d bars in TimescaleDB hypertables with 90-day retention policies and provides clean OHLC data series to analytical solvers.
 5. **Application & Serving Context (`app/` / `frontend/`)**: Exposes REST and WebSocket gateways using FastAPI to interface with the web client. Serves static assets, provides caching mechanisms for endpoints, and manages low-latency pub/sub streaming to active web connections.
 6. **Shared Kernel (`shared/`)**: Provides cross-cutting facilities including database adapters, caching client configurations, global constants, symbol validation rules, structured logging, middleware, and Celery task scheduler application context.
 
@@ -99,69 +99,98 @@ MarketSentimentAnalysis2/
 ```mermaid
 graph TD
     subgraph External [External Market Sources]
-        GrowwAPI([Groww API - Primary Quotes])
-        NseAPI([NSE India API - Market Fallback])
-        YfAPI([yfinance - Historical OHLC & Fallback])
+        NseAPI([NSE India API - Primary Webscraper / Orderbook L2])
+        GrowwAPI([Groww API - Fallback Adapter])
+        YfAPI([yfinance - Fallback Quote Source])
     end
 
     subgraph DockerContainer [Docker Container - supervisord Process Manager]
         subgraph Ingestion [Ingestion Context]
             CeleryTasks[Celery Tasks - Ingestion Worker]
+            IngestionService[IngestionService - Price & Options Orchestrator]
             AdapterFactory[Adapter Factory - Pluggable Outbound Ports]
-            GrowwAdapter[GrowwApiAdapter - Outbound Client]
-            NseAdapter[NseApiAdapter - Stateful Client / Session Cache]
+            NseAdapter[NseApiAdapter - Primary Webscraper / Cookie Session]
+            GrowwAdapter[GrowwApiAdapter - Fallback Outbound Client]
         end
 
-        subgraph OptionsPipeline [Options Analytics Pipeline]
+        subgraph OptionsPipeline [Analytics Bounded Context - Mathematical Engine]
             RawTicks["stream:options.raw_fetched"]
             OptionsSub[Options Pricing Sub - Core Subscriber Daemon]
+            BSMPricer[BsmCalculatorDomainService - Analytical BSM & Greeks]
             CNPricer[Crank-Nicolson PDE Numerical Solver]
-            BSMPricer[Black-Scholes-Merton Analytical Engine]
+            IndicatorsEngine[TechnicalIndicatorsEngine - Vectorized RSI, MACD, BB, ATR Math]
             PricedTicks["stream:options.priced"]
         end
 
-        subgraph Database [Historical Store]
-            TimescaleDB[(TimescaleDB - PostgreSQL Hypertable)]
+        subgraph NotificationsPipeline [Notifications Bounded Context]
+            NotificationSub[NotificationSubscriber - Consumer Daemon]
+            RuleEngine[RuleMatcherDomainService - Condition Engine]
+            ChannelDispatch[Channel Adapters - WS, Webhook, Email Celery]
+        end
+
+        subgraph HistoricalContext [Historical OHLC Bounded Context - Data Layer]
+            OhlcIngestion[OHLC Candle Aggregator & Backfill Service]
+            TimescaleOhlcRepo[TimescaleOhlcRepository - Hypertable Bar Persistence & Query Adapter]
+        end
+
+        subgraph Database [Historical & Hypertable Store]
+            TimescaleDB[(TimescaleDB - OhlcCandles & NotificationLogs Hypertables)]
         end
 
         subgraph CachePubSub [Cache & Live Broadcast]
-            RedisCache[(Redis Cache - Key-Value Store)]
-            RedisPubSub[(Redis Pub/Sub - Ephemeral Broadcast)]
+            RedisCache[(Redis Cache - Snapshot & Surface Store)]
+            RedisPubSub[(Redis Pub/Sub - Ephemeral Channel Broadcast)]
         end
 
         subgraph Serving [API & WebSocket Serving]
-            FastAPI[FastAPI Web Server - uvicorn / REST API]
-            WSHub[WebSocket Hub - ASGI Connection Link]
+            FastAPI[FastAPI Web Server - Uvicorn REST Routers]
+            WSHub[WebSocket Hub - Real-time Toast & Tick Push]
         end
     end
 
     subgraph UserClient [Client Browser]
-        WebUI[Web UI Dashboard - HTML/CSS/JS]
+        WebUI[Web UI Dashboard - Options & Alert Terminal]
     end
 
     %% Flow lines
+    NseAPI -.->|HTTP GET / Orderbook Depth| NseAdapter
     GrowwAPI -.->|HTTP POST/GET| GrowwAdapter
-    NseAPI -.->|HTTP GET / Session Cookies| NseAdapter
     YfAPI -.->|OHLC Fetch| NseAdapter
 
-    CeleryTasks -->|Invoke via Port| AdapterFactory
-    AdapterFactory --> GrowwAdapter
+    CeleryTasks -->|Invoke via Port| IngestionService
+    IngestionService --> AdapterFactory
     AdapterFactory --> NseAdapter
-    GrowwAdapter -.->|Fallback on fail| NseAdapter
+    AdapterFactory --> GrowwAdapter
+    NseAdapter -.->|Fallback on fail| GrowwAdapter
 
-    CeleryTasks ==|Publish raw ticks|==> RawTicks
-    CeleryTasks -->|Save raw options ticks| TimescaleDB
+    IngestionService ==|Publish raw option ticks|==> RawTicks
+    IngestionService ==|Direct publish spot price ticks|==> RedisPubSub
+    IngestionService ==|Cache price & options snapshots|==> RedisCache
+
     RawTicks ==|Consume raw ticks|==> OptionsSub
+    RawTicks ==|Build 1m/5m candles|==> OhlcIngestion
+
+    OptionsSub -->|Solve BSM & Greeks| BSMPricer
     OptionsSub -->|Evaluate PDE| CNPricer
-    OptionsSub -->|Evaluate Greeks| BSMPricer
     
-    OptionsSub ==|Update cache read model|==> RedisCache
-    OptionsSub ==|Publish priced ticks|==> PricedTicks
-    OptionsSub ==|Broadcast updates|==> RedisPubSub
+    OptionsSub ==|Cache priced chain|==> RedisCache
+    OptionsSub ==|Publish priced stream|==> PricedTicks
+    OptionsSub ==|Broadcast option updates|==> RedisPubSub
 
-    RedisCache <-->|Read cache| FastAPI
-    RedisPubSub ==|Push updates|==> WSHub
+    PricedTicks ==|Consume priced stream|==> NotificationSub
+    NotificationSub -->|Match active rules| RuleEngine
+    RuleEngine -->|Trigger alerts| ChannelDispatch
+    ChannelDispatch -->|Publish alert toast| RedisPubSub
+    ChannelDispatch -->|Async POST / SMTP| CeleryTasks
+    ChannelDispatch -->|Log alert| TimescaleDB
 
+    OhlcIngestion -->|Bulk insert OHLC candles| TimescaleDB
+    TimescaleDB -->|Query candle history| IndicatorsEngine
+    IndicatorsEngine -->|Serve indicators REST| FastAPI
+
+    RedisCache <-->|Read cache & option chains| FastAPI
+    RedisPubSub ==|Push price, options & alerts|==> WSHub
+    WSHub ==|WebSocket stream /ws/{symbol}|==> WebUI
 ```
 
 ### Ports & Adapters End-to-End Execution Sequence
@@ -214,6 +243,44 @@ graph TD
 2. **Fetch (Outbound Port -> Outbound Adapter):** `IngestionService` invokes `IOptionChainSourcePort.fetch_option_chain(symbol)`. Dependency Injection resolves concrete adapter (`GrowwApiAdapter` / `NseApiAdapter`), returning `RawTickDTO`.
 3. **Publish Stream (Outbound Port -> Outbound Adapter):** `IngestionService` invokes `IEventBusPort.publish("stream:options.raw_fetched", data)`. `RedisEventBusAdapter` pushes payload to Redis Stream.
 4. **Broadcast (Driven Consumer -> Driving Gateway):** `OptionsPricingSubscriber` consumes stream, computes math domain, pushes to Redis Pub/Sub. FastAPI WebSocket gateway (`/v1/ws/{symbol}`) relays payload to UI.
+
+### Real-Time Live Data WebSocket & Pub/Sub Fan-Out Flow
+
+```mermaid
+sequenceDiagram
+    participant ExternalAPI as External Market APIs
+    participant Ingestion as Ingestion Domain
+    participant RedisStreams as Redis Streams / Cache
+    participant PDE as Analytics Domain (PDE/BSM)
+    participant PubSub as Redis Pub/Sub
+    participant EventRouter as FastAPI WS Gateway
+    participant Frontend as Frontend (app.js)
+
+    %% 1. Direct Spot Price Flow (Ingestion -> Pub/Sub -> WS -> Frontend)
+    rect rgb(240, 248, 255)
+        note over ExternalAPI, Frontend: 1. Spot Price Tick Flow (Direct Ingestion Push)
+        ExternalAPI->>Ingestion: Fetch Live Spot Price
+        Ingestion->>RedisStreams: Cache snapshot (market:price:{symbol})
+        Ingestion->>PubSub: Publish market.price_updated.{symbol}
+        PubSub->>EventRouter: Global Listener (psubscribe)
+        EventRouter->>Frontend: Push WS {"type": "price", "data": {...}}
+        Frontend->>Frontend: Update spot & re-solve client BSM/Greeks
+    end
+
+    %% 2. Processed Options Pricing Flow (Ingestion -> Stream -> Analytics -> Pub/Sub -> WS -> Frontend)
+    rect rgb(255, 248, 240)
+        note over ExternalAPI, Frontend: 2. Processed Option Chain Flow (Async Analytics Pipeline)
+        ExternalAPI->>Ingestion: Fetch Option Chain Raw Ticks
+        Ingestion->>RedisStreams: Push stream:options.raw_fetched
+        PDE->>RedisStreams: Read stream:options.raw_fetched
+        PDE->>PDE: Solve Crank-Nicolson PDE & Analytical BSM
+        PDE->>RedisStreams: Cache priced chain (market:options:priced:{symbol})
+        PDE->>PubSub: Publish market.options_updated.{symbol}
+        PubSub->>EventRouter: Global Listener (psubscribe)
+        EventRouter->>Frontend: Push WS {"type": "options", "data": {...}}
+        Frontend->>RedisStreams: GET /v1/pricer/ticker/{symbol} (Render Grid)
+    end
+```
 
 ---
 
@@ -288,15 +355,17 @@ Matrix $\mathbf{A}$ is static and pre-factorized using SuperLU direct solver (`s
 
 ## 5. Storage & Event Streaming Infrastructure
 
-### TimescaleDB Hypertables
-* **`TickData` Table**: Partitioned on `Timestamp` column with 1-day chunks (`chunk_time_interval => INTERVAL '1 day'`).
-* **Retention Policy**: Automatic data retention drops chunks older than 7 days.
+### TimescaleDB Hypertables & Relational Persistence
+* **`OhlcCandles` Hypertable**: Partitioned on `timestamp` column. Auto-retention policy drops 1m/5m/1d candles older than 90 days.
+* **`NotificationLogs` Hypertable**: Partitioned on `timestamp` column. Auto-retention policy purges triggered alert log entries older than 14 days.
+* **`TickData` Hypertable**: Partitioned on `timestamp` column. Automatic data retention drops raw tick chunks older than 7 days.
 
-| Table Name | Partitioning | Primary Columns | Purpose |
+| Table Name | Partitioning | Primary Columns | Purpose & Retention |
 |---|---|---|---|
-| `TickData` | Hypertable | `Timestamp`, `Symbol`, `StrikePrice`, `LastPrice`, `Volume`, `ImpliedVolatility` | Tick database. |
-| `DetectedEvents` | Relational | `EventId` (UUID), `Symbol`, `EventType`, `DetectedAt` | Event anomaly log. |
-| `AlertRules` | Relational | `id` (UUID), `symbol`, `condition_type`, `threshold`, `channels`, `cooldown_seconds` | User-defined alert rules with webhook/email dispatch. |
+| `OhlcCandles` | Hypertable | `symbol`, `timestamp`, `timeframe`, `open`, `high`, `low`, `close`, `volume` | Historical 1m/5m/1d candles (90-day retention). |
+| `NotificationLogs` | Hypertable | `id`, `rule_id`, `symbol`, `condition_type`, `triggered_value`, `threshold`, `message`, `status`, `timestamp` | Triggered alert audit log (14-day retention). |
+| `AlertRules` | Relational | `id`, `symbol`, `condition_type`, `threshold`, `channels`, `cooldown_seconds`, `is_active` | User-defined alert rules & destinations. |
+| `TickData` | Hypertable | `Timestamp`, `Symbol`, `StrikePrice`, `LastPrice`, `Volume`, `ImpliedVolatility` | Raw tick database (7-day retention). |
 | `DomainEvents` | Relational | `EventId` (UUID), `EventType`, `Payload` (JSONB), `OccurredAt` | Cross-domain event audit log. |
 
 ### Redis Streams Messaging Architecture
