@@ -1226,7 +1226,10 @@ function downloadCSV() {
     XLSX.utils.book_append_sheet(wb, wsTech, "Technicals");
 
     // --- 3. Export ---
-    XLSX.writeFile(wb, `AlphaStreams_${appState.symbol}_${appState.selectedExpiry}.xlsx`);
+    const now = new Date();
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const formattedDate = `${months[now.getMonth()]} ${String(now.getDate()).padStart(2, '0')} ${now.getFullYear()}`;
+    XLSX.writeFile(wb, `AlphaStreams_${appState.symbol}_${appState.selectedExpiry} - ${formattedDate}.xlsx`);
 }
 
 // ----------------------------------------------------
