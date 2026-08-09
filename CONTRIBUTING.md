@@ -15,8 +15,8 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 1. **Clone the repo**
    ```bash
-   git clone https://github.com/NirmayKadam/MarketSentimentAnalysis2.git
-   cd MarketSentimentAnalysis2
+   git clone https://github.com/NirmayKadam/AlphaStreams---Quantitative-Analytics-Tool-for-Options.git
+   cd AlphaStreams---Quantitative-Analytics-Tool-for-Options
    ```
 
 2. **Create environment file**
