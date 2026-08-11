@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaStreams — Options Ingestion & Greeks Terminal</title>
+    <title>Shani — Options Ingestion & Greeks Terminal</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css?v=2.6.4">
 </head>
-<body style="opacity: 0; transition: opacity 0.3s ease;">
+<body class="light-theme" style="opacity: 0; transition: opacity 0.3s ease;">
     <!-- Background Particle Canvas -->
     <canvas id="bg-canvas"></canvas>
 
@@ -19,16 +19,8 @@
         <div class="nse-container" style="max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 32px;">
                 <a href="/" style="text-decoration: none; display: flex; align-items: center; gap: 12px;">
-                    <div style="width: 34px; height: 34px; flex-shrink: 0;">
-                        <svg viewBox="0 0 200 200" width="100%" height="100%">
-                            <path d="M 100,32 C 104,32 107,34 110,39 L 173,142 C 176,147 174,153 168,155 C 166,156 163,156 161,156 L 39,156 C 33,156 28,151 28,145 C 28,142 29,140 31,137 L 90,39 C 93,34 96,32 100,32 Z" fill="none" stroke="#f37021" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
-                            <path d="M 25,120 C 55,90 75,130 105,100 C 135,70 155,115 185,85" fill="none" stroke="#06b6d4" stroke-width="10" stroke-linecap="round" />
-                            <path d="M 15,135 C 45,105 70,145 100,115 C 130,85 150,130 180,100" fill="none" stroke="#06b6d4" stroke-width="6" stroke-linecap="round" opacity="0.7" />
-                            <circle cx="100" cy="32" r="6" fill="#ff7a00" />
-                            <circle cx="102" cy="103" r="5" fill="#06b6d4" />
-                        </svg>
-                    </div>
-                    <span class="logo-brand-text">Alpha<span style="color: #06b6d4; -webkit-text-fill-color: initial;">Streams</span></span>
+                    <img src="/Shani-logo.svg" alt="Shani Logo" style="width: 34px; height: 34px; flex-shrink: 0;">
+                    <span class="logo-brand-text">Shani</span>
                 </a>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <a href="/" class="dash-nav-link">Home</a>
@@ -79,8 +71,20 @@
                     </select>
                 </div>
                 <div class="filter-group">
+                    <label for="custom-expiry-date">Custom Expiry / DTE</label>
+                    <div class="custom-expiry-wrapper">
+                        <input type="date" id="custom-expiry-date" title="Custom Expiry Date">
+                        <div class="preset-btn-group">
+                            <button type="button" id="btn-exp-7" class="btn-preset" title="7 Days to Expiry">7D</button>
+                            <button type="button" id="btn-exp-14" class="btn-preset" title="14 Days to Expiry">14D</button>
+                            <button type="button" id="btn-exp-30" class="btn-preset" title="30 Days to Expiry">30D</button>
+                        </div>
+                        <span id="terminal-dte-badge" class="dte-badge" title="Days to Expiry">30 DTE</span>
+                    </div>
+                </div>
+                <div class="filter-group action-group">
                     <label style="visibility: hidden;">Action</label>
-                    <button id="main-search-btn" style="padding: 7px 16px; background-color: #f37021; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 13px;">Search</button>
+                    <button id="main-search-btn" class="main-search-action-btn">Search</button>
                 </div>
             </div>
         </div>
@@ -304,12 +308,12 @@
         </div>
     </div>
 
-    <!-- Premium AlphaStreams Brand Footer -->
+    <!-- Premium Shani Brand Footer -->
     <footer class="nse-footer">
         <div class="nse-container footer-grid">
             <div class="footer-brand-section">
                 <div class="footer-logo">
-                    <span class="logo-accent">Alpha</span>Streams
+                    <span class="logo-accent">Shani</span>
                 </div>
                 <p class="footer-desc">Professional-grade derivatives analytics and real-time options chain valuation using advanced Black-Scholes-Merton models.</p>
                 <div class="footer-socials">
@@ -338,7 +342,7 @@
         
         <div class="footer-bottom-bar">
             <div class="nse-container bottom-bar-content">
-                <p class="footer-copyright">&copy; 2026 AlphaStreams Option Chain Analytics. All rights reserved.</p>
+                <p class="footer-copyright">&copy; 2026 Shani Option Chain Analytics. All rights reserved.</p>
                 <div class="footer-bottom-meta">
                     <span class="footer-best-view">Best viewed in modern web browsers</span>
                     <span class="footer-divider">|</span>
@@ -454,7 +458,7 @@
     <div id="info-modal" class="modal">
         <div class="modal-content info-modal-content">
             <div class="modal-header info-modal-header">
-                <h2>AlphaStreams Information & Regulatory Center</h2>
+                <h2>Shani Information & Regulatory Center</h2>
                 <span class="close-btn" id="info-modal-close">&times;</span>
             </div>
             <div class="info-modal-tabs">
@@ -466,7 +470,7 @@
                 <!-- User Manual Tab -->
                 <div id="user-manual" class="info-tab-content active">
                     <h3 class="info-section-title">Website User Guide</h3>
-                    <p class="info-p">Welcome to <strong>AlphaStreams Option Chain Analytics</strong>. This dashboard replicates the official National Stock Exchange of India (NSE) equity derivatives option chain layout, enhanced with real-time derivative valuations, theoretical Black-Scholes-Merton (BSM) prices, and real-time Greek computations.</p>
+                    <p class="info-p">Welcome to <strong>Shani Option Chain Analytics</strong>. This dashboard replicates the official National Stock Exchange of India (NSE) equity derivatives option chain layout, enhanced with real-time derivative valuations, theoretical Black-Scholes-Merton (BSM) prices, and real-time Greek computations.</p>
                     
                     <div class="guide-grid">
                         <div class="guide-card">
@@ -534,16 +538,16 @@
                         <p>All Black-Scholes-Merton (BSM) prices, Greeks (Delta, Gamma, Vega, Theta, Rho), and implied volatility calculations rendered on this website are simulated mathematical approximations. They are for educational, research, and analytical purposes only. They do not constitute actual exchange trading advice, quotes, or transactional execution services.</p>
 
                         <h4>2. No Financial Advice or Recommendations</h4>
-                        <p>AlphaStreams is not a registered SEBI Investment Adviser (IA) or Research Analyst (RA). No calculations, outputs, search indexes, or pricing sheets on this website constitute investment, legal, tax, or trading advice, or a recommendation to buy, sell, or write any stock, derivative, or option contract. Users are entirely responsible for their own investment and trading decisions.</p>
+                        <p>Shani is not a registered SEBI Investment Adviser (IA) or Research Analyst (RA). No calculations, outputs, search indexes, or pricing sheets on this website constitute investment, legal, tax, or trading advice, or a recommendation to buy, sell, or write any stock, derivative, or option contract. Users are entirely responsible for their own investment and trading decisions.</p>
 
                         <h4>3. Exchange Data Source Limitation</h4>
-                        <p>Market data (LTP, OI, Volume, bid/ask spreads) displayed on this platform is processed through an automated ingestion catalog. While we strive to maintain high-quality tracking, data may be subject to ingestion latencies, inaccuracies, or standard transmission errors. AlphaStreams makes no warranties regarding the accuracy, completeness, or timeliness of data. For live execution, cross-reference data directly with official platforms of the National Stock Exchange of India (NSE India).</p>
+                        <p>Market data (LTP, OI, Volume, bid/ask spreads) displayed on this platform is processed through an automated ingestion catalog. While we strive to maintain high-quality tracking, data may be subject to ingestion latencies, inaccuracies, or standard transmission errors. Shani makes no warranties regarding the accuracy, completeness, or timeliness of data. For live execution, cross-reference data directly with official platforms of the National Stock Exchange of India (NSE India).</p>
 
                         <h4>4. Assumption of Valuation Risks</h4>
                         <p>Derivative pricing models make mathematical assumptions (e.g., constant volatility, log-normal distributions, constant interest rates) that frequently deviate from real-world market dynamics. Financial markets are subject to extreme tail risks, high volatility, bid-ask slippages, and liquidity dry-outs. Users who leverage these models assume all associated financial risks.</p>
 
                         <h4>5. Intellectual Property</h4>
-                        <p>NSE, NIFTY, and related stock symbols are trademarks of the National Stock Exchange of India Limited and/or its affiliates. AlphaStreams is an independent analytical application and is not affiliated, endorsed, or partnered with NSE India.</p>
+                        <p>NSE, NIFTY, and related stock symbols are trademarks of the National Stock Exchange of India Limited and/or its affiliates. Shani is an independent analytical application and is not affiliated, endorsed, or partnered with NSE India.</p>
                     </div>
                 </div>
 
@@ -1089,26 +1093,15 @@
                         </div>
                     </div>
 
-                    <div class="input-card" style="display: flex; flex-direction: column; justify-content: space-between;">
-                        <div>
-                            <div class="input-header" style="margin-bottom: 4px;">
-                                <label for="bsm-days">Days to Expiry</label>
-                                <input type="number" id="bsm-days" step="1" value="30">
-                            </div>
-                            <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30" aria-label="Days to Expiry Slider" title="Days to Expiry Slider">
-                            <div class="range-labels" style="margin-bottom: 8px;">
-                                <span>1 Day</span>
-                                <span>365 Days</span>
-                            </div>
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-days">Days to Expiry</label>
+                            <input type="number" id="bsm-days" step="1" value="30">
                         </div>
-                        <!-- Expiry Date presets and custom picker moved directly here -->
-                        <div style="display: flex; gap: 4px; align-items: center; justify-content: space-between; margin-top: auto; border-top: 1px dashed var(--border-color); padding-top: 8px;">
-                            <div style="display: flex; gap: 3px;">
-                                <button id="btn-exp-7" class="btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: auto;">7D</button>
-                                <button id="btn-exp-14" class="btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: auto;">14D</button>
-                                <button id="btn-exp-30" class="btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: auto;">30D</button>
-                            </div>
-                            <input type="date" id="custom-expiry-date" title="Custom Expiry Date" style="padding: 2px; font-size: 10px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; width: 95px; outline: none; cursor: pointer;">
+                        <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30" aria-label="Days to Expiry Slider" title="Days to Expiry Slider">
+                        <div class="range-labels">
+                            <span>1 Day</span>
+                            <span>365 Days</span>
                         </div>
                     </div>
 

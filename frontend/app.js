@@ -28,7 +28,7 @@ let appState = {
     technicals: null,
     // Layout and Theme configuration
     layoutMode: "standard",
-    theme: "dark"
+    theme: "light"
 };
 
 // WebSocket and inspection states
@@ -539,6 +539,24 @@ async function fetchTickerData(symbol) {
         } else {
             appState.selectedExpiry = "";
         }
+        
+        // Compute initial days to expiry from selectedExpiry
+        let initialDays = data.expiry_days > 0 ? data.expiry_days : 30;
+        if (appState.selectedExpiry) {
+            try {
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const exp = new Date(appState.selectedExpiry + 'T00:00:00');
+                exp.setHours(0,0,0,0);
+                initialDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
+            } catch (e) {
+                initialDays = data.expiry_days > 0 ? data.expiry_days : 30;
+            }
+        }
+        appState.daysToExpiry = initialDays;
+        
+        // Sync custom expiry UI and badge
+        syncCustomExpiryUI(initialDays, appState.selectedExpiry);
         
         // Populate inputs in UI
         elements.underlyingSymbol.textContent = appState.symbol;
@@ -1484,7 +1502,7 @@ function downloadCSV() {
     const sumYield   = simActive ? appState.dividendYield   : (appState.marketYield || 0.0);
 
     const summaryAoA = [
-        ["AlphaStreams — Export Summary"],
+        ["Shani — Export Summary"],
         [],
         ["Export Date", exportDate],
         ["Export Time", exportTime],
@@ -1655,7 +1673,7 @@ function downloadCSV() {
     const now = new Date();
     const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const formattedDate = `${months[now.getMonth()]} ${String(now.getDate()).padStart(2, '0')} ${now.getFullYear()}`;
-    XLSX.writeFile(wb, `AlphaStreams_${appState.symbol}_${appState.selectedExpiry} - ${formattedDate}.xlsx`);
+    XLSX.writeFile(wb, `Shani_${appState.symbol}_${appState.selectedExpiry} - ${formattedDate}.xlsx`);
 }
 
 // ----------------------------------------------------
@@ -1732,9 +1750,75 @@ window.addEventListener("click", function(event) {
 // Bind sliders to number boxes and state values
 bindSlider(elements.bsmSpot, elements.bsmSpotSlider, "spot", recalculateAndRender);
 bindSlider(elements.bsmVol, elements.bsmVolSlider, "volatility", recalculateAndRender);
-bindSlider(elements.bsmDays, elements.bsmDaysSlider, "daysToExpiry", recalculateAndRender);
+bindSlider(elements.bsmDays, elements.bsmDaysSlider, "daysToExpiry", () => {
+    syncCustomExpiryUI(appState.daysToExpiry);
+    recalculateAndRender();
+});
 bindSlider(elements.bsmRate, elements.bsmRateSlider, "riskFreeRate", recalculateAndRender);
 bindSlider(elements.bsmDiv, elements.bsmDivSlider, "dividendYield", recalculateAndRender);
+
+// Custom Expiry Date & DTE UI Synchronization
+function syncCustomExpiryUI(days, dateStr) {
+    if (days < 1) days = 1;
+    appState.daysToExpiry = days;
+    
+    if (elements.bsmDays) elements.bsmDays.value = days;
+    if (elements.bsmDaysSlider) elements.bsmDaysSlider.value = days;
+    
+    const dteBadge = document.getElementById("terminal-dte-badge");
+    if (dteBadge) {
+        dteBadge.textContent = `${days} DTE`;
+    }
+    
+    const customDateInput = document.getElementById("custom-expiry-date");
+    if (customDateInput) {
+        if (dateStr) {
+            customDateInput.value = dateStr;
+        } else {
+            const targetDate = new Date();
+            targetDate.setDate(targetDate.getDate() + days);
+            const y = targetDate.getFullYear();
+            const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+            const d = String(targetDate.getDate()).padStart(2, '0');
+            customDateInput.value = `${y}-${m}-${d}`;
+        }
+    }
+    
+    const btn7 = document.getElementById("btn-exp-7");
+    const btn14 = document.getElementById("btn-exp-14");
+    const btn30 = document.getElementById("btn-exp-30");
+    if (btn7) btn7.classList.toggle("active", days === 7);
+    if (btn14) btn14.classList.toggle("active", days === 14);
+    if (btn30) btn30.classList.toggle("active", days === 30);
+}
+
+function setPresetExpiry(days) {
+    const today = new Date();
+    const targetDate = new Date();
+    targetDate.setDate(today.getDate() + days);
+    const y = targetDate.getFullYear();
+    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const d = String(targetDate.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+    
+    appState.applySimulation = true;
+    if (elements.applySimulationToggle) {
+        elements.applySimulationToggle.checked = true;
+    }
+    
+    if (elements.expirySelect) {
+        for (let i = 0; i < elements.expirySelect.options.length; i++) {
+            if (elements.expirySelect.options[i].value === dateStr) {
+                elements.expirySelect.selectedIndex = i;
+                appState.selectedExpiry = dateStr;
+                break;
+            }
+        }
+    }
+    
+    syncCustomExpiryUI(days, dateStr);
+    recalculateAndRender();
+}
 
 // Listeners for selectors
 elements.expirySelect.addEventListener("change", (e) => {
@@ -1742,49 +1826,59 @@ elements.expirySelect.addEventListener("change", (e) => {
     appState.selectedStrike = "ALL"; // Reset strike filter on expiry change
     
     // Estimate expiry days automatically based on select date
+    let diffDays = 30;
     try {
         const today = new Date();
         today.setHours(0,0,0,0);
-        const exp = new Date(appState.selectedExpiry);
+        const exp = new Date(appState.selectedExpiry + 'T00:00:00');
         exp.setHours(0,0,0,0);
-        const diffDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
-        
-        appState.daysToExpiry = diffDays;
-        elements.bsmDays.value = diffDays;
-        elements.bsmDaysSlider.value = diffDays;
+        diffDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
     } catch (err) {
         console.error(err);
+        diffDays = 30;
     }
     
+    syncCustomExpiryUI(diffDays, appState.selectedExpiry);
     recalculateAndRender();
 });
 
 // Custom Date & Presets Handlers
-function updateDaysToExpiry(days) {
-    if (days < 1) days = 1;
-    appState.daysToExpiry = days;
-    elements.bsmDays.value = days;
-    elements.bsmDaysSlider.value = days;
-    recalculateAndRender();
-}
-
 const customDateInput = document.getElementById("custom-expiry-date");
 if (customDateInput) {
     customDateInput.addEventListener("change", (e) => {
-        const selected = new Date(e.target.value);
+        const val = e.target.value;
+        if (!val) return;
+        const selected = new Date(val + 'T00:00:00');
         if (isNaN(selected.getTime())) return;
+        
         const today = new Date();
         today.setHours(0,0,0,0);
         selected.setHours(0,0,0,0);
-        const diff = Math.round((selected - today) / (1000 * 60 * 60 * 24));
-        updateDaysToExpiry(diff);
+        const diff = Math.max(Math.round((selected - today) / (1000 * 60 * 60 * 24)), 1);
+        
+        if (elements.expirySelect) {
+            for (let i = 0; i < elements.expirySelect.options.length; i++) {
+                if (elements.expirySelect.options[i].value === val) {
+                    elements.expirySelect.selectedIndex = i;
+                    appState.selectedExpiry = val;
+                    break;
+                }
+            }
+        }
+        
+        appState.applySimulation = true;
+        if (elements.applySimulationToggle) {
+            elements.applySimulationToggle.checked = true;
+        }
+        
+        syncCustomExpiryUI(diff, val);
+        recalculateAndRender();
     });
 }
 
-document.getElementById("btn-exp-7")?.addEventListener("click", () => updateDaysToExpiry(7));
-document.getElementById("btn-exp-14")?.addEventListener("click", () => updateDaysToExpiry(14));
-document.getElementById("btn-exp-30")?.addEventListener("click", () => updateDaysToExpiry(30));
-
+document.getElementById("btn-exp-7")?.addEventListener("click", () => setPresetExpiry(7));
+document.getElementById("btn-exp-14")?.addEventListener("click", () => setPresetExpiry(14));
+document.getElementById("btn-exp-30")?.addEventListener("click", () => setPresetExpiry(30));
 
 // Search button trigger
 document.getElementById("main-search-btn").addEventListener("click", () => {
@@ -1824,7 +1918,7 @@ elements.resetMarketBtn.addEventListener("click", () => {
     try {
         const today = new Date();
         today.setHours(0,0,0,0);
-        const exp = new Date(appState.selectedExpiry);
+        const exp = new Date(appState.selectedExpiry + 'T00:00:00');
         exp.setHours(0,0,0,0);
         appState.daysToExpiry = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
     } catch (e) {
@@ -1852,6 +1946,7 @@ elements.resetMarketBtn.addEventListener("click", () => {
     elements.bsmDiv.value = appState.dividendYield;
     elements.bsmDivSlider.value = appState.dividendYield;
     
+    syncCustomExpiryUI(appState.daysToExpiry, appState.selectedExpiry);
     recalculateAndRender();
 });
 
@@ -2151,8 +2246,8 @@ function initThemeSystem() {
     
     if (!themeBtn || !darkIcon || !lightIcon) return;
     
-    // Read cached preference or default to dark
-    let currentTheme = localStorage.getItem("alphaStreamsTheme") || "dark";
+    // Read cached preference or default to light
+    let currentTheme = localStorage.getItem("shaniTheme") || "light";
     appState.theme = currentTheme;
     
     function applyTheme(theme) {
@@ -2174,7 +2269,7 @@ function initThemeSystem() {
     themeBtn.onclick = () => {
         const newTheme = appState.theme === "dark" ? "light" : "dark";
         appState.theme = newTheme;
-        localStorage.setItem("alphaStreamsTheme", newTheme);
+        localStorage.setItem("shaniTheme", newTheme);
         applyTheme(newTheme);
     };
 }

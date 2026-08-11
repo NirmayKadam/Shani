@@ -1,4 +1,4 @@
-/* --- AlphaStreams V2 Premium Landing Page Script --- */
+/* --- Shani Premium Landing Page Script --- */
 document.addEventListener("DOMContentLoaded", () => {
     // 1. Particle Canvas Streaming Background
     initCanvasBackground();

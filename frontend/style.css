@@ -88,13 +88,13 @@ body {
 }
 
 /* --- Brand Header Layout & Clock --- */
-.alphastreams-brand-header {
+.shani-brand-header {
     background-color: #ffffff;
     padding: 8px 0;
     border-bottom: 1px solid #e2e8f0;
 }
 
-.alphastreams-brand-header .nse-container {
+.shani-brand-header .nse-container {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -144,7 +144,7 @@ body {
 }
 
 @media (max-width: 480px) {
-    .alphastreams-brand-header .nse-container {
+    .shani-brand-header .nse-container {
         justify-content: center;
         text-align: center;
     }
@@ -1785,8 +1785,7 @@ body.light-theme #greeks-modal .puts-super th {
     border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
-
-
+#user-profile-badge {
     cursor: pointer;
     padding: 4px 10px;
     border-radius: 20px;
@@ -2182,15 +2181,60 @@ body.light-theme .super-header th.strike-super {
 }
 
 /* Preset Expiry Action Buttons */
+.custom-expiry-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 3px 8px;
+    height: 36px;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.custom-expiry-wrapper:focus-within {
+    border-color: var(--accent-orange);
+    box-shadow: 0 0 0 2px rgba(243, 112, 33, 0.15);
+}
+
+#custom-expiry-date {
+    padding: 2px 4px !important;
+    border: none !important;
+    border-radius: 4px !important;
+    font-size: 12.5px !important;
+    background-color: transparent !important;
+    color: var(--text-primary) !important;
+    outline: none;
+    cursor: pointer;
+    font-family: inherit;
+    height: 28px;
+}
+
+.preset-btn-group {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    border-left: 1px solid var(--border-color);
+    padding-left: 6px;
+    margin-left: 2px;
+}
+
 .btn-preset {
-    padding: 4px 8px;
-    font-size: 12px;
+    padding: 3px 7px;
+    font-size: 11px;
+    font-weight: 700;
     border: 1px solid var(--border-color) !important;
     border-radius: 4px;
-    background-color: var(--bg-input) !important;
-    color: var(--text-primary) !important;
+    background-color: var(--bg-card) !important;
+    color: var(--text-secondary) !important;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-preset:hover {
@@ -2199,21 +2243,59 @@ body.light-theme .super-header th.strike-super {
     color: #ffffff !important;
 }
 
-/* Custom Expiry Date Selector */
-#custom-expiry-date {
-    padding: 4px 8px !important;
-    border: 1px solid var(--border-color) !important;
-    border-radius: 4px !important;
-    font-size: 13px !important;
-    background-color: var(--bg-input) !important;
-    color: var(--text-primary) !important;
-    outline: none;
-    transition: all 0.2s ease;
+.btn-preset.active {
+    background-color: var(--accent-orange) !important;
+    border-color: var(--accent-orange) !important;
+    color: #ffffff !important;
+    box-shadow: 0 1px 4px rgba(243, 112, 33, 0.4);
 }
 
-#custom-expiry-date:focus {
-    border-color: var(--accent-orange) !important;
-    box-shadow: 0 0 0 2px rgba(243, 112, 33, 0.15) !important;
+.dte-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Courier New', Courier, monospace;
+    background-color: rgba(99, 102, 241, 0.15);
+    color: var(--accent-indigo);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    white-space: nowrap;
+    height: 24px;
+    letter-spacing: 0.3px;
+}
+
+body.light-theme .dte-badge {
+    background-color: #eef2ff;
+    color: #4f46e5;
+    border-color: #c7d2fe;
+}
+
+.main-search-action-btn {
+    padding: 0 18px;
+    height: 36px;
+    background-color: #f37021;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+}
+
+.main-search-action-btn:hover {
+    background-color: #d8560c;
+    box-shadow: 0 2px 8px rgba(243, 112, 33, 0.35);
+}
+
+.main-search-action-btn:active {
+    transform: translateY(1px);
 }
 
 /* Background Particle Canvas */
