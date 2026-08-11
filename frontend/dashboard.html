@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Option Chain (Equity Derivatives) - NSE India Clone</title>
+    <title>AlphaStreams — Options Ingestion & Greeks Terminal</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css?v=2.5.0">
-
-
+    <link rel="stylesheet" href="/style.css?v=2.6.4">
 </head>
 <body style="opacity: 0; transition: opacity 0.3s ease;">
+    <!-- Background Particle Canvas -->
+    <canvas id="bg-canvas"></canvas>
+
     <!-- Top Brand Navbar -->
-    <header class="dashboard-header" style="background-color: rgba(10, 8, 23, 0.85); border-bottom: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); sticky: top; position: sticky; top: 0; z-index: 100; padding: 14px 0;">
+    <header class="dashboard-header">
         <div class="nse-container" style="max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 32px;">
                 <a href="/" style="text-decoration: none; display: flex; align-items: center; gap: 12px;">
@@ -27,7 +28,7 @@
                             <circle cx="102" cy="103" r="5" fill="#06b6d4" />
                         </svg>
                     </div>
-                    <span style="font-size: 20px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #ffffff 30%, #f37021 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Alpha<span style="color: #06b6d4; -webkit-text-fill-color: initial;">Streams</span></span>
+                    <span class="logo-brand-text">Alpha<span style="color: #06b6d4; -webkit-text-fill-color: initial;">Streams</span></span>
                 </a>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <a href="/" class="dash-nav-link">Home</a>
@@ -36,16 +37,20 @@
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 16px;">
-                <button id="notification-bell-btn" style="position: relative; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer; color: #f8fafc; padding: 7px 12px; display: flex; align-items: center; gap: 6px;" title="Real-Time Alerts">
+                <button id="notification-bell-btn" class="ast-nav-btn" title="Real-Time Alerts">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
                     <span style="font-size: 13px; font-weight: 600;">Alerts</span>
                     <span id="alert-badge-count" style="display: none; background: #ef4444; color: white; border-radius: 10px; font-size: 10px; padding: 1px 6px; font-weight: 700;">0</span>
                 </button>
-                <div id="user-profile-badge" style="display: flex; align-items: center; gap: 10px; color: #f8fafc; font-size: 14px; font-weight: 500;">
+                <div id="user-profile-badge" style="display: flex; align-items: center; gap: 10px; color: var(--text-primary); font-size: 14px; font-weight: 500; cursor: pointer;">
                     <div id="user-avatar" style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #f37021, #d8560c); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: white; box-shadow: 0 2px 8px rgba(243, 112, 33, 0.4);">?</div>
                     <span id="user-name-display">Loading...</span>
                 </div>
-                <button id="logout-btn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer; color: #f8fafc; font-family: inherit; font-size: 13px; font-weight: 600; padding: 7px 16px; transition: all 0.2s ease;">Logout</button>
+                <button id="theme-toggle-btn" class="theme-toggle-btn" title="Toggle Light/Dark Theme">
+                    <svg id="theme-toggle-dark-icon" style="display:none;" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c.44-.06.9-.1 1.36-.1A9 9 0 0 0 12 3z"/></svg>
+                    <svg id="theme-toggle-light-icon" style="display:none;" viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0V3a1 1 0 0 1 1-1zm0 16a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1zm9-7a1 1 0 0 1-1 1h-2a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1zm-16 0a1 1 0 0 1-1 1H3a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1zm14.85-6.9a1 1 0 0 1 0 1.41l-1.41 1.41a1 1 0 1 1-1.41-1.41l1.41-1.41a1 1 0 0 1 1.41 0zM6.9 14.85a1 1 0 0 1 0 1.41l-1.41 1.41a1 1 0 0 1-1.41-1.41l1.41-1.41a1 1 0 0 1 1.41 0zm11.05 0a1 1 0 0 1 1.41 0l1.41 1.41a1 1 0 0 1-1.41 1.41l-1.41-1.41a1 1 0 0 1 0-1.41zM6.9 6.9a1 1 0 0 1 1.41 0L9.72 8.3a1 1 0 1 1-1.41 1.41L6.9 8.3a1 1 0 0 1 0-1.41z"/></svg>
+                </button>
+                <button id="logout-btn" class="ast-nav-btn">Logout</button>
             </div>
         </div>
     </header>
@@ -54,13 +59,10 @@
     <div id="option-chain-view-container" class="nse-container main-content">
         <!-- Header -->
         <div class="nse-header">
-            <h1 class="nse-title">Option Chain (Equity Derivatives)</h1>
-            <!-- <div class="nse-header-links">
-                <a href="#" class="nse-link orange-text">Futures contracts</a>
-            </div> -->
+            <h1 class="nse-title">Options Chain & Greeks Real-Time Terminal</h1>
         </div>
 
-        <!-- Filters Section -->
+        <!-- Filters Box -->
         <div class="nse-filters-box">
             <div class="filter-row">
                 <div class="filter-group">
@@ -72,22 +74,7 @@
                 </div>
                 <div class="filter-group">
                     <label for="expiry-select">Expiry Date</label>
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <select id="expiry-select" style="min-width: 140px;">
-                            <!-- Populated dynamically -->
-                        </select>
-                        <div class="preset-expiries" style="display: flex; gap: 4px;">
-                            <button id="btn-exp-7" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">7D</button>
-                            <button id="btn-exp-14" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">14D</button>
-                            <button id="btn-exp-30" class="btn-preset" style="padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">30D</button>
-                        </div>
-                        <input type="date" id="custom-expiry-date" title="Custom Expiry Date" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
-                    </div>
-                </div>
-                <div class="filter-group">
-                    <label for="strike-select">Strike Price</label>
-                    <select id="strike-select">
-                        <option value="ALL">Select</option>
+                    <select id="expiry-select" style="min-width: 140px;">
                         <!-- Populated dynamically -->
                     </select>
                 </div>
@@ -99,13 +86,13 @@
         </div>
 
         <!-- Watchlist Bar -->
-        <div class="nse-watchlist-bar" style="background-color: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px 16px; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+        <div class="nse-watchlist-bar">
             <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;" id="watchlist-container">
-                <span style="font-weight: 600; color: #1a237e; margin-right: 8px;">
+                <span style="font-weight: 600; color: var(--text-primary); margin-right: 8px;">
                     <i class="fas fa-star" style="color: #f59e0b; margin-right: 4px;"></i> My Watchlist:
                 </span>
                 <div id="watchlist-items" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <span style="color: #6b7280; font-size: 13px; font-style: italic;" id="watchlist-empty-msg">Loading...</span>
+                    <span style="color: var(--text-secondary); font-size: 13px; font-style: italic;" id="watchlist-empty-msg">Loading...</span>
                 </div>
             </div>
             <button id="add-to-watchlist-btn" style="padding: 6px 12px; background-color: #10b981; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px; transition: background-color 0.2s;">
@@ -128,12 +115,24 @@
                     </svg>
                 </button>
             </div>
-            <div class="nse-action-links">
+            <div class="nse-action-links" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <div class="ast-view-controls">
+                    <button id="view-standard-btn" class="ast-view-btn active" title="Calls & Puts Side-by-Side">Standard</button>
+                    <button id="view-calls-btn" class="ast-view-btn" title="Call Options Only">Calls Only</button>
+                    <button id="view-puts-btn" class="ast-view-btn" title="Put Options Only">Puts Only</button>
+                    <button id="view-greeks-btn" class="ast-view-btn" title="Inlined Greeks Details">Greeks</button>
+                </div>
+                <div class="ast-view-controls">
+                    <button id="toggle-full-chain-btn" class="ast-view-btn" title="Toggle between 40 strikes and Full Option Chain">Show Full Chain</button>
+                </div>
+                <span class="divider">|</span>
                 <a href="/user_manual.html" id="user-manual-btn" class="nse-action-link">User Manual</a>
                 <span class="divider">|</span>
                 <a href="/terms.html" id="terms-btn" class="nse-action-link">Terms of Use</a>
                 <span class="divider">|</span>
-                <a href="#" class="nse-action-link">Best View</a>
+                <button id="open-bsm-modal-btn" class="nse-csv-btn" style="background-color: var(--accent-indigo); border-color: var(--accent-indigo); color: white;" title="Open BSM Control Panel">
+                    BSM Control Panel
+                </button>
                 <span class="divider">|</span>
                 <button id="download-csv-btn" class="nse-csv-btn">
                     <svg viewBox="0 0 24 24" width="14" height="14">
@@ -144,138 +143,8 @@
             </div>
         </div>
 
-        <!-- BSM Control Panel -->
-        <div class="bsm-control-panel">
-            <div class="panel-header">
-                <h3>Black-Scholes-Merton (BSM) Control Panel</h3>
-                <button id="reset-market-btn" class="btn-secondary">Reset to Market Values</button>
-            </div>
-            <div class="panel-body">
-                <div class="inputs-grid">
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-spot">Spot Price (<span id="spot-currency">INR</span>)</label>
-                            <input type="number" id="bsm-spot" step="0.01" value="0.00">
-                        </div>
-                        <input type="range" id="bsm-spot-slider" min="0" max="0" step="0.01" aria-label="Spot Price Slider" title="Spot Price Slider">
-                        <div class="range-labels">
-                            <span id="spot-min-lbl">--</span>
-                            <span id="spot-max-lbl">--</span>
-                        </div>
-                    </div>
 
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-vol">Volatility (σ %)</label>
-                            <input type="number" id="bsm-vol" step="0.1" value="0.0">
-                        </div>
-                        <input type="range" id="bsm-vol-slider" min="1" max="100" step="0.1" value="15" aria-label="Volatility Slider" title="Volatility Slider">
-                        <div class="range-labels">
-                            <span>1.0%</span>
-                            <span>100.0%</span>
-                        </div>
-                    </div>
 
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-days">Days to Expiry</label>
-                            <input type="number" id="bsm-days" step="1" value="30">
-                        </div>
-                        <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30" aria-label="Days to Expiry Slider" title="Days to Expiry Slider">
-                        <div class="range-labels">
-                            <span>1 Day</span>
-                            <span>365 Days</span>
-                        </div>
-                    </div>
-
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-rate">Risk-Free Rate (%)</label>
-                            <input type="number" id="bsm-rate" step="0.01" value="6.50">
-                        </div>
-                        <input type="range" id="bsm-rate-slider" min="0" max="15" step="0.05" value="6.5" aria-label="Risk-Free Rate Slider" title="Risk-Free Rate Slider">
-                        <div class="range-labels">
-                            <span>0.0%</span>
-                            <span>15.0%</span>
-                        </div>
-                    </div>
-
-                    <div class="input-card">
-                        <div class="input-header">
-                            <label for="bsm-div">Dividend Yield (%)</label>
-                            <input type="number" id="bsm-div" step="0.01" value="0.00">
-                        </div>
-                        <input type="range" id="bsm-div-slider" min="0" max="10" step="0.05" value="0" aria-label="Dividend Yield Slider" title="Dividend Yield Slider">
-                        <div class="range-labels">
-                            <span>0.0%</span>
-                            <span>10.0%</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ATM Outputs Summary -->
-                <div class="atm-summary-box">
-                    <div class="atm-title">At-The-Money (ATM) BSM Analytics</div>
-                    <div class="atm-metrics-grid">
-                        <div class="atm-metric-column">
-                            <div class="column-title calls-label">ATM Call Option</div>
-                            <div class="metric-row">
-                                <span class="lbl">BSM Price:</span>
-                                <span id="atm-call-price" class="val font-mono bold">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Delta (Δ):</span>
-                                <span id="atm-call-delta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Theta (θ/day):</span>
-                                <span id="atm-call-theta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Rho (ρ):</span>
-                                <span id="atm-call-rho" class="val font-mono">--</span>
-                            </div>
-                        </div>
-
-                        <div class="atm-metric-column center-column">
-                            <div class="column-title">Common Greeks</div>
-                            <div class="metric-row center-row">
-                                <span class="lbl">ATM Strike:</span>
-                                <span id="atm-strike-val" class="val font-mono bold highlight-text">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Gamma (Γ):</span>
-                                <span id="atm-gamma" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Vega (ν):</span>
-                                <span id="atm-vega" class="val font-mono">--</span>
-                            </div>
-                        </div>
-
-                        <div class="atm-metric-column">
-                            <div class="column-title puts-label">ATM Put Option</div>
-                            <div class="metric-row">
-                                <span class="lbl">BSM Price:</span>
-                                <span id="atm-put-price" class="val font-mono bold">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Delta (Δ):</span>
-                                <span id="atm-put-delta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Theta (θ/day):</span>
-                                <span id="atm-put-theta" class="val font-mono">--</span>
-                            </div>
-                            <div class="metric-row">
-                                <span class="lbl">Rho (ρ):</span>
-                                <span id="atm-put-rho" class="val font-mono">--</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <!-- Option Chain Container -->
         <div class="nse-table-outer-wrapper">
@@ -327,14 +196,14 @@
         <div class="tech-card tech-summary-card">
             <div class="tech-summary-header">
                 <div>
-                    <h2 style="margin:0 0 6px 0; font-size: 22px; color: #1a237e; font-weight: 700;">
+                    <h2 style="margin:0 0 6px 0; font-size: 22px; color: var(--text-primary); font-weight: 700;">
                         Technical Indicators & Market Bias (<span id="tech-symbol-lbl">NIFTY</span>)
                     </h2>
-                    <p style="margin: 0; color: #6b7280; font-size: 13px;">Real-time quantitative indicators, moving averages, and oscillator signals.</p>
+                    <p style="margin: 0; color: var(--text-secondary); font-size: 13px;">Real-time quantitative indicators, moving averages, and oscillator signals.</p>
                 </div>
                 <div class="tech-overall-badge-wrapper">
                     <span class="tech-badge badge-neutral" id="tech-overall-badge">--</span>
-                    <span style="font-size: 12px; color: #4b5563; font-weight: 600; display: block; text-align: center; margin-top: 4px;" id="tech-summary-counts">--</span>
+                    <span style="font-size: 12px; color: var(--text-secondary); font-weight: 600; display: block; text-align: center; margin-top: 4px;" id="tech-summary-counts">--</span>
                 </div>
             </div>
         </div>
@@ -1014,13 +883,13 @@
                 itemsContainer.innerHTML = '';
                 
                 if (currentWatchlist.length === 0) {
-                    itemsContainer.innerHTML = '<span style="color: #6b7280; font-size: 13px; font-style: italic;">No symbols added yet.</span>';
+                    itemsContainer.innerHTML = '<span style="color: var(--text-secondary); font-size: 13px; font-style: italic;">No symbols added yet.</span>';
                     return;
                 }
 
                 currentWatchlist.forEach(item => {
                     const badge = document.createElement('div');
-                    badge.style.cssText = 'background-color: white; border: 1px solid #d1d5db; border-radius: 16px; padding: 4px 10px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer; color: #1f2937; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: border-color 0.2s;';
+                    badge.className = 'ast-watchlist-badge';
                     
                     // Click badge to search
                     badge.addEventListener('click', () => {
@@ -1030,22 +899,16 @@
                         }
                     });
                     
-                    // Hover effect
-                    badge.addEventListener('mouseenter', () => badge.style.borderColor = '#10b981');
-                    badge.addEventListener('mouseleave', () => badge.style.borderColor = '#d1d5db');
-
                     const symbolText = document.createElement('span');
                     symbolText.textContent = item.symbol;
                     
                     const removeBtn = document.createElement('span');
+                    removeBtn.className = 'remove-btn';
                     removeBtn.innerHTML = '&times;';
-                    removeBtn.style.cssText = 'color: #9ca3af; font-size: 14px; margin-left: 2px; padding: 0 2px; border-radius: 50%; display: flex; align-items: center; justify-content: center; height: 16px; width: 16px; transition: color 0.2s, background-color 0.2s;';
                     
                     // Remove click handler
                     removeBtn.addEventListener('click', async (e) => {
                         e.stopPropagation(); // prevent searching
-                        removeBtn.style.color = 'white';
-                        removeBtn.style.backgroundColor = '#ef4444';
                         
                         const { error } = await supabase
                             .from('watchlists')
@@ -1056,15 +919,8 @@
                             loadWatchlist();
                         } else {
                             console.error('Error deleting from watchlist:', error);
-                            // reset styling on error
-                            removeBtn.style.color = '#9ca3af';
-                            removeBtn.style.backgroundColor = 'transparent';
                         }
                     });
-                    
-                    // Remove hover
-                    removeBtn.addEventListener('mouseenter', () => { removeBtn.style.color = '#ef4444'; });
-                    removeBtn.addEventListener('mouseleave', () => { removeBtn.style.color = '#9ca3af'; });
 
                     badge.appendChild(symbolText);
                     badge.appendChild(removeBtn);
@@ -1186,11 +1042,175 @@
         </div>
     </div>
 
+    <!-- BSM Control Panel Modal -->
+    <div id="bsm-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+            <div class="modal-header" style="background-color: var(--bg-card-header); padding: 12px 18px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-primary);">Black-Scholes-Merton (BSM) Control Panel</h2>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button id="reset-market-btn" class="btn-secondary">Reset to Market Values</button>
+                    <span class="close-btn" id="bsm-modal-close" style="font-size: 24px; cursor: pointer; color: var(--text-secondary);">&times;</span>
+                </div>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <!-- Apply Simulation toggle -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 12px 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 6px;">
+                    <span style="font-size: 12.5px; color: var(--text-secondary); font-weight: 500;">
+                        Enable this toggle to apply these simulated custom parameters to the main Option Chain table's BSM pricing column.
+                    </span>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700; font-size: 13px; color: var(--accent-orange);">
+                        <input type="checkbox" id="apply-simulation-toggle" style="width: 16px; height: 16px; cursor: pointer;">
+                        Apply Simulation to Table
+                    </label>
+                </div>
+                
+                <div class="inputs-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 15px; margin-bottom: 18px;">
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-spot">Spot Price (<span id="spot-currency">INR</span>)</label>
+                            <input type="number" id="bsm-spot" step="0.01" value="0.00">
+                        </div>
+                        <input type="range" id="bsm-spot-slider" min="0" max="0" step="0.01" aria-label="Spot Price Slider" title="Spot Price Slider">
+                        <div class="range-labels">
+                            <span id="spot-min-lbl">--</span>
+                            <span id="spot-max-lbl">--</span>
+                        </div>
+                    </div>
+
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-vol">Volatility (σ %)</label>
+                            <input type="number" id="bsm-vol" step="0.1" value="0.0">
+                        </div>
+                        <input type="range" id="bsm-vol-slider" min="1" max="100" step="0.1" value="15" aria-label="Volatility Slider" title="Volatility Slider">
+                        <div class="range-labels">
+                            <span>1.0%</span>
+                            <span>100.0%</span>
+                        </div>
+                    </div>
+
+                    <div class="input-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div class="input-header" style="margin-bottom: 4px;">
+                                <label for="bsm-days">Days to Expiry</label>
+                                <input type="number" id="bsm-days" step="1" value="30">
+                            </div>
+                            <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30" aria-label="Days to Expiry Slider" title="Days to Expiry Slider">
+                            <div class="range-labels" style="margin-bottom: 8px;">
+                                <span>1 Day</span>
+                                <span>365 Days</span>
+                            </div>
+                        </div>
+                        <!-- Expiry Date presets and custom picker moved directly here -->
+                        <div style="display: flex; gap: 4px; align-items: center; justify-content: space-between; margin-top: auto; border-top: 1px dashed var(--border-color); padding-top: 8px;">
+                            <div style="display: flex; gap: 3px;">
+                                <button id="btn-exp-7" class="btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: auto;">7D</button>
+                                <button id="btn-exp-14" class="btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: auto;">14D</button>
+                                <button id="btn-exp-30" class="btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: auto;">30D</button>
+                            </div>
+                            <input type="date" id="custom-expiry-date" title="Custom Expiry Date" style="padding: 2px; font-size: 10px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; width: 95px; outline: none; cursor: pointer;">
+                        </div>
+                    </div>
+
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-rate">Risk-Free Rate (%)</label>
+                            <input type="number" id="bsm-rate" step="0.01" value="6.50">
+                        </div>
+                        <input type="range" id="bsm-rate-slider" min="0" max="15" step="0.05" value="6.5" aria-label="Risk-Free Rate Slider" title="Risk-Free Rate Slider">
+                        <div class="range-labels">
+                            <span>0.0%</span>
+                            <span>15.0%</span>
+                        </div>
+                    </div>
+
+                    <div class="input-card">
+                        <div class="input-header">
+                            <label for="bsm-div">Dividend Yield (%)</label>
+                            <input type="number" id="bsm-div" step="0.01" value="0.00">
+                        </div>
+                        <input type="range" id="bsm-div-slider" min="0" max="10" step="0.05" value="0" aria-label="Dividend Yield Slider" title="Dividend Yield Slider">
+                        <div class="range-labels">
+                            <span>0.0%</span>
+                            <span>10.0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">
+                    <button id="bsm-calculate-btn" style="padding: 8px 24px; background-color: var(--accent-indigo); color: white; border: none; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.backgroundColor='var(--accent-orange)'" onmouseout="this.style.backgroundColor='var(--accent-indigo)'">Calculate</button>
+                </div>
+
+                <!-- ATM Outputs Summary -->
+                <div class="atm-summary-box">
+                    <div class="atm-title">At-The-Money (ATM) BSM Analytics</div>
+                    <div class="atm-metrics-grid">
+                        <div class="atm-metric-column">
+                            <div class="column-title calls-label">ATM Call Option</div>
+                            <div class="metric-row">
+                                <span class="lbl">BSM Price:</span>
+                                <span id="atm-call-price" class="val font-mono bold">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Delta (Δ):</span>
+                                <span id="atm-call-delta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Theta (θ/day):</span>
+                                <span id="atm-call-theta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Rho (ρ):</span>
+                                <span id="atm-call-rho" class="val font-mono">--</span>
+                            </div>
+                        </div>
+
+                        <div class="atm-metric-column center-column">
+                            <div class="column-title">Common Greeks</div>
+                            <div class="metric-row center-row">
+                                <span class="lbl">ATM Strike:</span>
+                                <span id="atm-strike-val" class="val font-mono bold highlight-text">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Gamma (Γ):</span>
+                                <span id="atm-gamma" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Vega (ν):</span>
+                                <span id="atm-vega" class="val font-mono">--</span>
+                            </div>
+                        </div>
+
+                        <div class="atm-metric-column">
+                            <div class="column-title puts-label">ATM Put Option</div>
+                            <div class="metric-row">
+                                <span class="lbl">BSM Price:</span>
+                                <span id="atm-put-price" class="val font-mono bold">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Delta (Δ):</span>
+                                <span id="atm-put-delta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Theta (θ/day):</span>
+                                <span id="atm-put-theta" class="val font-mono">--</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="lbl">Rho (ρ):</span>
+                                <span id="atm-put-rho" class="val font-mono">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Excel Export Library (SheetJS with Style Support) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
     <!-- Main Application Script -->
-    <script src="/app.js?v=2.5.0"></script>
+    <script src="/app.js?v=2.6.4"></script>
 
 
 

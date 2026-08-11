@@ -6,10 +6,16 @@
 let appState = {
     symbol: "NIFTY",
     marketSpot: 0.0,
+    marketVol: 15.0,
+    marketDays: 30,
+    marketRate: 6.50,
+    marketYield: 1.20,
     optionChains: {},  // Map of expiry_date -> list of OptionChainRow
     expiryDates: [],
     selectedExpiry: "",
     selectedStrike: "ALL",
+    showFullChain: false,
+    applySimulation: false,
     // Model parameters
     spot: 0.0,
     volatility: 12.8,
@@ -19,7 +25,10 @@ let appState = {
     // ATM Option Strike Info
     atmStrike: 0.0,
     lastPriceUpdated: null,
-    technicals: null
+    technicals: null,
+    // Layout and Theme configuration
+    layoutMode: "standard",
+    theme: "dark"
 };
 
 // WebSocket and inspection states
@@ -32,13 +41,19 @@ const elements = {
     symbolSearchInput: document.getElementById("symbol-search-input"),
     searchSuggestions: document.getElementById("search-suggestions"),
     expirySelect: document.getElementById("expiry-select"),
-    strikeSelect: document.getElementById("strike-select"),
     underlyingSymbol: document.getElementById("underlying-symbol"),
     underlyingPrice: document.getElementById("underlying-price"),
     underlyingTime: document.getElementById("underlying-time"),
     underlyingTimeElapsed: document.getElementById("underlying-time-elapsed"),
     reloadBtn: document.getElementById("reload-btn"),
     downloadCsvBtn: document.getElementById("download-csv-btn"),
+    
+    // BSM Modal elements
+    openBsmModalBtn: document.getElementById("open-bsm-modal-btn"),
+    bsmModal: document.getElementById("bsm-modal"),
+    bsmModalClose: document.getElementById("bsm-modal-close"),
+    applySimulationToggle: document.getElementById("apply-simulation-toggle"),
+    toggleFullChainBtn: document.getElementById("toggle-full-chain-btn"),
     
     // BSM Controls
     bsmSpot: document.getElementById("bsm-spot"),
@@ -60,6 +75,7 @@ const elements = {
     bsmDivSlider: document.getElementById("bsm-div-slider"),
     
     resetMarketBtn: document.getElementById("reset-market-btn"),
+    bsmCalculateBtn: document.getElementById("bsm-calculate-btn"),
     
     // ATM Outputs
     atmStrikeVal: document.getElementById("atm-strike-val"),
@@ -266,6 +282,17 @@ function formatNumber(num, decimals = 2, defaultVal = "-") {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals
     });
+}
+
+/**
+ * Automatically enable simulation flag and check UI toggle
+ */
+function activateSimulation() {
+    appState.applySimulation = true;
+    const applyToggle = elements.applySimulationToggle || document.getElementById("apply-simulation-toggle");
+    if (applyToggle) {
+        applyToggle.checked = true;
+    }
 }
 
 /**
@@ -478,11 +505,32 @@ async function fetchTickerData(symbol) {
         appState.optionChains = data.option_chains || {};
         appState.expiryDates = data.expiry_dates || [];
         
+        // Reset full chain show
+        appState.showFullChain = false;
+        const fullChainBtn = elements.toggleFullChainBtn || document.getElementById("toggle-full-chain-btn");
+        if (fullChainBtn) {
+            fullChainBtn.classList.remove("active");
+            fullChainBtn.textContent = "Show Full Chain";
+        }
+        
+        // Reset simulation states
+        appState.applySimulation = false;
+        const applyToggle = elements.applySimulationToggle || document.getElementById("apply-simulation-toggle");
+        if (applyToggle) {
+            applyToggle.checked = false;
+        }
+
+        // Bind live/market metrics
+        appState.marketVol = data.implied_volatility > 0 ? data.implied_volatility : (data.historical_volatility > 0 ? data.historical_volatility : 25.0);
+        appState.marketDays = data.expiry_days > 0 ? data.expiry_days : 30;
+        appState.marketRate = data.risk_free_rate || (appState.symbol === "AAPL" || appState.symbol === "TSLA" ? 5.25 : 6.50);
+        appState.marketYield = data.dividend_yield || 0.0;
+        
         // Bind dynamic model values
-        appState.volatility = data.implied_volatility > 0 ? data.implied_volatility : (data.historical_volatility > 0 ? data.historical_volatility : 25.0);
-        appState.daysToExpiry = data.expiry_days > 0 ? data.expiry_days : 30;
-        appState.riskFreeRate = data.risk_free_rate || (appState.symbol === "AAPL" || appState.symbol === "TSLA" ? 5.25 : 6.50);
-        appState.dividendYield = data.dividend_yield || 0.0;
+        appState.volatility = appState.marketVol;
+        appState.daysToExpiry = appState.marketDays;
+        appState.riskFreeRate = appState.marketRate;
+        appState.dividendYield = appState.marketYield;
         appState.spot = appState.marketSpot;
         
         // Select nearest expiry date by default
@@ -578,8 +626,6 @@ function setupWebSocket(symbol) {
                         return;
                     }
                     const newPrice = priceData.last_price;
-                    const isSpotSynced = Math.abs(appState.spot - appState.marketSpot) < 0.01 || appState.spot === 0;
-                    
                     appState.marketSpot = newPrice;
                     elements.underlyingPrice.textContent = formatNumber(newPrice, 2);
                     
@@ -592,7 +638,7 @@ function setupWebSocket(symbol) {
                     elements.spotMinLbl.textContent = formatNumber(spotMin, 2);
                     elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
                     
-                    if (isSpotSynced) {
+                    if (!appState.applySimulation) {
                         appState.spot = newPrice;
                         elements.bsmSpot.value = appState.spot;
                         elements.bsmSpotSlider.value = appState.spot;
@@ -656,10 +702,12 @@ async function fetchTickerDataBackground(symbol) {
             return;
         }
         
-        // Check if user is synced with market spot price
-        const isSpotSynced = Math.abs(appState.spot - appState.marketSpot) < 0.01 || appState.spot === 0;
-        
         appState.marketSpot = data.stock_price;
+        appState.marketVol = data.implied_volatility > 0 ? data.implied_volatility : (data.historical_volatility > 0 ? data.historical_volatility : 25.0);
+        appState.marketDays = data.expiry_days > 0 ? data.expiry_days : 30;
+        appState.marketRate = data.risk_free_rate || (appState.symbol === "AAPL" || appState.symbol === "TSLA" ? 5.25 : 6.50);
+        appState.marketYield = data.dividend_yield || 0.0;
+        
         appState.optionChains = data.option_chains || {};
         
         elements.underlyingPrice.textContent = formatNumber(appState.marketSpot, 2);
@@ -673,10 +721,23 @@ async function fetchTickerDataBackground(symbol) {
         elements.spotMinLbl.textContent = formatNumber(spotMin, 2);
         elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
         
-        if (isSpotSynced) {
+        if (!appState.applySimulation) {
             appState.spot = data.stock_price;
+            appState.volatility = appState.marketVol;
+            appState.daysToExpiry = appState.marketDays;
+            appState.riskFreeRate = appState.marketRate;
+            appState.dividendYield = appState.marketYield;
+            
             elements.bsmSpot.value = appState.spot;
             elements.bsmSpotSlider.value = appState.spot;
+            elements.bsmVol.value = appState.volatility;
+            elements.bsmVolSlider.value = appState.volatility;
+            elements.bsmDays.value = appState.daysToExpiry;
+            elements.bsmDaysSlider.value = appState.daysToExpiry;
+            elements.bsmRate.value = appState.riskFreeRate;
+            elements.bsmRateSlider.value = appState.riskFreeRate;
+            elements.bsmDiv.value = appState.dividendYield;
+            elements.bsmDivSlider.value = appState.dividendYield;
         }
         
         recalculateAndRender();
@@ -702,20 +763,6 @@ function updateGreeksModalIfOpen() {
 /**
  * Re-populate Strike select dropdown options dynamically
  */
-function populateStrikesDropdown() {
-    elements.strikeSelect.innerHTML = '<option value="ALL">Select</option>';
-    const chainRows = appState.optionChains[appState.selectedExpiry] || [];
-    chainRows.forEach(row => {
-        const opt = document.createElement("option");
-        opt.value = row.strike_price;
-        opt.textContent = formatNumber(row.strike_price, 0);
-        if (row.strike_price.toString() === appState.selectedStrike.toString()) {
-            opt.selected = true;
-        }
-        elements.strikeSelect.appendChild(opt);
-    });
-}
-
 /**
  * Populate Expiry date dropdown options dynamically
  */
@@ -750,29 +797,160 @@ function populateDropdowns() {
             elements.expirySelect.appendChild(opt);
         });
     }
-
-    // 2. Strike Price Filter Dropdown
-    populateStrikesDropdown();
 }
 
 let isFirstLoad = true;
 
 /**
+ * Dynamically adjust table headers based on current layout mode
+ */
+function updateTableHeaders() {
+    const tableEl = document.getElementById("option-chain-table");
+    if (!tableEl) return;
+    
+    let theadHtml = "";
+    const layout = appState.layoutMode || "standard";
+    
+    if (layout === "standard") {
+        theadHtml = `
+            <tr class="super-header">
+                <th colspan="9" class="calls-super">CALLS</th>
+                <th class="strike-super">STRIKE</th>
+                <th colspan="9" class="puts-super">PUTS</th>
+            </tr>
+            <tr class="sub-header">
+                <th title="Chart Link"></th>
+                <th title="Volume">VOLUME</th>
+                <th title="Implied Volatility">IV</th>
+                <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
+                <th title="Last Traded Price">LTP</th>
+                <th title="Bid Quantity">BID QTY</th>
+                <th title="Bid Price">BID</th>
+                <th title="Ask Price">ASK</th>
+                <th title="Ask Quantity">ASK QTY</th>
+                <th title="Strike Price" class="strike-col">STRIKE</th>
+                <th title="Bid Quantity">BID QTY</th>
+                <th title="Bid Price">BID</th>
+                <th title="Ask Price">ASK</th>
+                <th title="Ask Quantity">ASK QTY</th>
+                <th title="Last Traded Price">LTP</th>
+                <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
+                <th title="Implied Volatility">IV</th>
+                <th title="Volume">VOLUME</th>
+                <th title="Chart Link"></th>
+            </tr>
+        `;
+    } else if (layout === "calls") {
+        theadHtml = `
+            <tr class="super-header">
+                <th colspan="9" class="calls-super">CALL OPTIONS ONLY</th>
+                <th class="strike-super">STRIKE</th>
+            </tr>
+            <tr class="sub-header">
+                <th title="Chart Link"></th>
+                <th title="Volume">VOLUME</th>
+                <th title="Implied Volatility">IV</th>
+                <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
+                <th title="Last Traded Price">LTP</th>
+                <th title="Bid Quantity">BID QTY</th>
+                <th title="Bid Price">BID</th>
+                <th title="Ask Price">ASK</th>
+                <th title="Ask Quantity">ASK QTY</th>
+                <th title="Strike Price" class="strike-col">STRIKE</th>
+            </tr>
+        `;
+    } else if (layout === "puts") {
+        theadHtml = `
+            <tr class="super-header">
+                <th class="strike-super">STRIKE</th>
+                <th colspan="9" class="puts-super">PUT OPTIONS ONLY</th>
+            </tr>
+            <tr class="sub-header">
+                <th title="Strike Price" class="strike-col">STRIKE</th>
+                <th title="Bid Quantity">BID QTY</th>
+                <th title="Bid Price">BID</th>
+                <th title="Ask Price">ASK</th>
+                <th title="Ask Quantity">ASK QTY</th>
+                <th title="Last Traded Price">LTP</th>
+                <th title="BSM Theoretical Price" class="bs-col">BS PRICE</th>
+                <th title="Implied Volatility">IV</th>
+                <th title="Volume">VOLUME</th>
+                <th title="Chart Link"></th>
+            </tr>
+        `;
+    } else if (layout === "greeks") {
+        theadHtml = `
+            <tr class="super-header">
+                <th colspan="6" class="calls-super">CALL GREEKS</th>
+                <th class="strike-super">STRIKE</th>
+                <th colspan="6" class="puts-super">PUT GREEKS</th>
+            </tr>
+            <tr class="sub-header">
+                <th title="Delta">DELTA</th>
+                <th title="Gamma">GAMMA</th>
+                <th title="Vega">VEGA</th>
+                <th title="Theta">THETA</th>
+                <th title="Last Traded Price">LTP</th>
+                <th title="Implied Volatility">IV</th>
+                <th title="Strike Price" class="strike-col">STRIKE</th>
+                <th title="Implied Volatility">IV</th>
+                <th title="Last Traded Price">LTP</th>
+                <th title="Delta">DELTA</th>
+                <th title="Gamma">GAMMA</th>
+                <th title="Vega">VEGA</th>
+                <th title="Theta">THETA</th>
+            </tr>
+        `;
+    }
+    
+    let thead = tableEl.querySelector("thead");
+    if (!thead) {
+        thead = document.createElement("thead");
+        tableEl.insertBefore(thead, tableEl.firstChild);
+    }
+    thead.innerHTML = theadHtml;
+}
+
+/**
  * Locate ATM strike and calculate option chain values and dynamic layouts
  */
 function recalculateAndRender() {
+    updateTableHeaders();
+    
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
     if (chainRows.length === 0) {
         const symbolText = appState.symbol ? appState.symbol : "selected instrument";
-        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #ea580c; background-color: rgba(234, 88, 12, 0.04);">Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
+        const layout = appState.layoutMode || "standard";
+        const colsCount = layout === "standard" ? 19 : (layout === "greeks" ? 13 : 10);
+        elements.tableBody.innerHTML = `<tr><td colspan="${colsCount}" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: var(--accent-orange); background-color: rgba(243, 112, 33, 0.04);">Option chain is not available for ${symbolText} in the Indian market.</td></tr>`;
         return;
     }
 
-    // 1. Locate ATM strike (closest to Spot Price)
+    // 1. Resolve active calculation parameters (live vs. simulated)
+    let liveDays = appState.marketDays || 30;
+    if (appState.selectedExpiry) {
+        try {
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const exp = new Date(appState.selectedExpiry);
+            exp.setHours(0,0,0,0);
+            liveDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
+        } catch (e) {
+            liveDays = appState.marketDays || 30;
+        }
+    }
+
+    const activeSpot = appState.applySimulation ? appState.spot : appState.marketSpot;
+    const activeVol = appState.applySimulation ? appState.volatility : (appState.marketVol || 25.0);
+    const activeDays = appState.applySimulation ? appState.daysToExpiry : liveDays;
+    const activeRate = appState.applySimulation ? appState.riskFreeRate : (appState.marketRate || 6.50);
+    const activeYield = appState.applySimulation ? appState.dividendYield : (appState.marketYield || 0.0);
+
+    // 2. Locate ATM strike (closest to Active Spot Price)
     let minDiff = Infinity;
     let atmStrike = 0.0;
     chainRows.forEach(row => {
-        const diff = Math.abs(row.strike_price - appState.spot);
+        const diff = Math.abs(row.strike_price - activeSpot);
         if (diff < minDiff) {
             minDiff = diff;
             atmStrike = row.strike_price;
@@ -781,7 +959,8 @@ function recalculateAndRender() {
     appState.atmStrike = atmStrike;
     elements.atmStrikeVal.textContent = formatNumber(atmStrike, 0);
 
-    // 2. Compute ATM Analytics
+    // 3. Compute ATM Analytics (for Modal & Controls) using modal/simulated values
+    // Modal ALWAYS displays the inputs specified on the control sliders
     const atmMetrics = calculateBSM(
         appState.spot,
         atmStrike,
@@ -805,15 +984,12 @@ function recalculateAndRender() {
     elements.atmPutTheta.textContent = formatNumber(atmMetrics.thetaPut, 4);
     elements.atmPutRho.textContent = formatNumber(atmMetrics.rhoPut, 4);
 
-    // 3. Render Option Chain table body
+    // 4. Render Option Chain table body
     elements.tableBody.innerHTML = "";
     
-    // Filter strikes if select filter is active
+    // Slice options table (Full chain vs. 20 strikes ATM +/-)
     let rowsToRender = chainRows;
-    if (appState.selectedStrike !== "ALL") {
-        const sVal = parseFloat(appState.selectedStrike);
-        rowsToRender = chainRows.filter(r => Math.abs(r.strike_price - sVal) < 0.01);
-    } else {
+    if (!appState.showFullChain) {
         // Show 20 rows above ATM, 20 rows below ATM (total 41)
         const atmIndex = chainRows.findIndex(r => r.strike_price === atmStrike);
         if (atmIndex !== -1) {
@@ -823,24 +999,30 @@ function recalculateAndRender() {
         }
     }
 
+    // Calculate maximum volume for dynamic progress bars
+    let maxVolume = 1;
+    rowsToRender.forEach(row => {
+        if (row.call?.volume && row.call.volume > maxVolume) maxVolume = row.call.volume;
+        if (row.put?.volume && row.put.volume > maxVolume) maxVolume = row.put.volume;
+    });
+
     rowsToRender.forEach(row => {
         const strike = row.strike_price;
         const isATM = strike === atmStrike;
         
-        // Calculate BSM values for specific strike
-        // Use smile volatility (smile formula or parsed iv from option chains)
-        const callIv = row.call?.iv || appState.volatility;
-        const putIv = row.put?.iv || appState.volatility;
+        // Calculate BSM values for specific strike using the active parameters
+        const callIv = row.call?.iv || activeVol;
+        const putIv = row.put?.iv || activeVol;
         
-        const callBS = calculateBSM(appState.spot, strike, appState.daysToExpiry, appState.riskFreeRate, callIv, appState.dividendYield);
-        const putBS = calculateBSM(appState.spot, strike, appState.daysToExpiry, appState.riskFreeRate, putIv, appState.dividendYield);
+        const callBS = calculateBSM(activeSpot, strike, activeDays, activeRate, callIv, activeYield);
+        const putBS = calculateBSM(activeSpot, strike, activeDays, activeRate, putIv, activeYield);
 
         const tr = document.createElement("tr");
         if (isATM) tr.className = "atm-strike-row";
 
-        // ITM Shading: Calls ITM if strike < spot, Puts ITM if strike > spot
-        const callItmClass = strike < appState.spot ? "itm-shaded" : "";
-        const putItmClass = strike > appState.spot ? "itm-shaded" : "";
+        // Call ITM if strike < activeSpot, Put ITM if strike > activeSpot
+        const callItmClass = strike < activeSpot ? "itm-call-shaded" : "";
+        const putItmClass = strike > activeSpot ? "itm-put-shaded" : "";
 
         // Net Change style helpers
         const cChgClass = row.call?.chng < 0 ? "negative-val" : (row.call?.chng > 0 ? "positive-val" : "");
@@ -873,45 +1055,143 @@ function recalculateAndRender() {
             }
         }
 
-        tr.innerHTML = `
-            <!-- CALLS -->
-            <td class="chart-cell">
-                <button class="chart-icon-btn" title="View Chart" onclick="openStrikeModal(${strike})">
-                    <svg viewBox="0 0 24 24" width="12" height="12">
-                        <path d="M5 9.2h3V19H5zM10.5 5h3v14h-3zm5.5 8h3v6h-3z"/>
-                    </svg>
-                </button>
-            </td>
-            <td class="${callItmClass}">${formatNumber(row.call?.volume, 0, "-")}</td>
-            <td class="${callItmClass}">${formatNumber(row.call?.iv, 2, "-")}</td>
-            <td class="${callItmClass} bs-field ${callBsClass}" title="${callBsTitle}">${formatNumber(callBS.call, 2)}</td>
-            <td class="${callItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.call?.ltp, 2, "-")}</td>
-            <td class="${callItmClass}">${formatNumber(row.call?.bid_qty, 0, "-")}</td>
-            <td class="${callItmClass}">${formatNumber(row.call?.bid, 2, "-")}</td>
-            <td class="${callItmClass}">${formatNumber(row.call?.ask, 2, "-")}</td>
-            <td class="${callItmClass}">${formatNumber(row.call?.ask_qty, 0, "-")}</td>
-            
-            <!-- CENTER STRIKE -->
-            <td class="strike-cell" onclick="openStrikeModal(${strike})">${formatNumber(strike, 2)}</td>
-            
-            <!-- PUTS -->
-            <td class="${putItmClass}">${formatNumber(row.put?.bid_qty, 0, "-")}</td>
-            <td class="${putItmClass}">${formatNumber(row.put?.bid, 2, "-")}</td>
-            <td class="${putItmClass}">${formatNumber(row.put?.ask, 2, "-")}</td>
-            <td class="${putItmClass}">${formatNumber(row.put?.ask_qty, 0, "-")}</td>
-            <td class="${putItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.put?.ltp, 2, "-")}</td>
-            <td class="${putItmClass} bs-field ${putBsClass}" title="${putBsTitle}">${formatNumber(putBS.put, 2)}</td>
-            <td class="${putItmClass}">${formatNumber(row.put?.iv, 2, "-")}</td>
-            <td class="${putItmClass}">${formatNumber(row.put?.volume, 0, "-")}</td>
-            <td class="chart-cell">
-                <button class="chart-icon-btn" title="View Chart" onclick="openStrikeModal(${strike})">
-                    <svg viewBox="0 0 24 24" width="12" height="12">
-                        <path d="M5 9.2h3V19H5zM10.5 5h3v14h-3zm5.5 8h3v6h-3z"/>
-                    </svg>
-                </button>
-            </td>
-        `;
-        
+        // Inline Progress Bar HTML generators
+        const callVolPct = row.call?.volume ? (row.call.volume / maxVolume) * 100 : 0;
+        const putVolPct = row.put?.volume ? (row.put.volume / maxVolume) * 100 : 0;
+        const volumeBgCall = row.call?.volume ? `<div class="ast-bar-bg ast-bar-left" style="width: ${callVolPct}%"></div>` : "";
+        const volumeBgPut = row.put?.volume ? `<div class="ast-bar-bg ast-bar-right" style="width: ${putVolPct}%"></div>` : "";
+
+        // Build inner HTML based on Layout Mode
+        const layout = appState.layoutMode || "standard";
+        let rowHtml = "";
+
+        if (layout === "standard") {
+            rowHtml = `
+                <!-- CALLS -->
+                <td class="chart-cell">
+                    <button class="chart-icon-btn" title="View Chart" onclick="openStrikeModal(${strike})">
+                        <svg viewBox="0 0 24 24" width="12" height="12">
+                            <path d="M5 9.2h3V19H5zM10.5 5h3v14h-3zm5.5 8h3v6h-3z"/>
+                        </svg>
+                    </button>
+                </td>
+                <td class="${callItmClass} ast-bar-cell">
+                    <div class="ast-bar-container ast-right-align">
+                        ${volumeBgCall}
+                        <span class="ast-bar-value">${formatNumber(row.call?.volume, 0, "-")}</span>
+                    </div>
+                </td>
+                <td class="${callItmClass}">${formatNumber(row.call?.iv, 2, "-")}</td>
+                <td class="${callItmClass} bs-field ${callBsClass}" title="${callBsTitle}">${formatNumber(callBS.call, 2)}</td>
+                <td class="${callItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.call?.ltp, 2, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.bid_qty, 0, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.bid, 2, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.ask, 2, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.ask_qty, 0, "-")}</td>
+                
+                <!-- CENTER STRIKE -->
+                <td class="strike-cell" onclick="openStrikeModal(${strike})">${formatNumber(strike, 2)}</td>
+                
+                <!-- PUTS -->
+                <td class="${putItmClass}">${formatNumber(row.put?.bid_qty, 0, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.bid, 2, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.ask, 2, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.ask_qty, 0, "-")}</td>
+                <td class="${putItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.put?.ltp, 2, "-")}</td>
+                <td class="${putItmClass} bs-field ${putBsClass}" title="${putBsTitle}">${formatNumber(putBS.put, 2)}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.iv, 2, "-")}</td>
+                <td class="${putItmClass} ast-bar-cell">
+                    <div class="ast-bar-container ast-right-align">
+                        ${volumeBgPut}
+                        <span class="ast-bar-value">${formatNumber(row.put?.volume, 0, "-")}</span>
+                    </div>
+                </td>
+                <td class="chart-cell">
+                    <button class="chart-icon-btn" title="View Chart" onclick="openStrikeModal(${strike})">
+                        <svg viewBox="0 0 24 24" width="12" height="12">
+                            <path d="M5 9.2h3V19H5zM10.5 5h3v14h-3zm5.5 8h3v6h-3z"/>
+                        </svg>
+                    </button>
+                </td>
+            `;
+        } else if (layout === "calls") {
+            rowHtml = `
+                <!-- CALLS ONLY -->
+                <td class="chart-cell">
+                    <button class="chart-icon-btn" title="View Chart" onclick="openStrikeModal(${strike})">
+                        <svg viewBox="0 0 24 24" width="12" height="12">
+                            <path d="M5 9.2h3V19H5zM10.5 5h3v14h-3zm5.5 8h3v6h-3z"/>
+                        </svg>
+                    </button>
+                </td>
+                <td class="${callItmClass} ast-bar-cell">
+                    <div class="ast-bar-container ast-right-align">
+                        ${volumeBgCall}
+                        <span class="ast-bar-value">${formatNumber(row.call?.volume, 0, "-")}</span>
+                    </div>
+                </td>
+                <td class="${callItmClass}">${formatNumber(row.call?.iv, 2, "-")}</td>
+                <td class="${callItmClass} bs-field ${callBsClass}" title="${callBsTitle}">${formatNumber(callBS.call, 2)}</td>
+                <td class="${callItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.call?.ltp, 2, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.bid_qty, 0, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.bid, 2, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.ask, 2, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.ask_qty, 0, "-")}</td>
+                
+                <!-- STRIKE -->
+                <td class="strike-cell" onclick="openStrikeModal(${strike})">${formatNumber(strike, 2)}</td>
+            `;
+        } else if (layout === "puts") {
+            rowHtml = `
+                <!-- STRIKE -->
+                <td class="strike-cell" onclick="openStrikeModal(${strike})">${formatNumber(strike, 2)}</td>
+                
+                <!-- PUTS ONLY -->
+                <td class="${putItmClass}">${formatNumber(row.put?.bid_qty, 0, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.bid, 2, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.ask, 2, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.ask_qty, 0, "-")}</td>
+                <td class="${putItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.put?.ltp, 2, "-")}</td>
+                <td class="${putItmClass} bs-field ${putBsClass}" title="${putBsTitle}">${formatNumber(putBS.put, 2)}</td>
+                <td class="${putItmClass}">${formatNumber(row.put?.iv, 2, "-")}</td>
+                <td class="${putItmClass} ast-bar-cell">
+                    <div class="ast-bar-container ast-right-align">
+                        ${volumeBgPut}
+                        <span class="ast-bar-value">${formatNumber(row.put?.volume, 0, "-")}</span>
+                    </div>
+                </td>
+                <td class="chart-cell">
+                    <button class="chart-icon-btn" title="View Chart" onclick="openStrikeModal(${strike})">
+                        <svg viewBox="0 0 24 24" width="12" height="12">
+                            <path d="M5 9.2h3V19H5zM10.5 5h3v14h-3zm5.5 8h3v6h-3z"/>
+                        </svg>
+                    </button>
+                </td>
+            `;
+        } else if (layout === "greeks") {
+            rowHtml = `
+                <!-- CALL GREEKS -->
+                <td class="${callItmClass}">${formatNumber(callBS.deltaCall, 4, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(callBS.gamma, 4, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(callBS.vega, 4, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(callBS.thetaCall, 4, "-")}</td>
+                <td class="${callItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.call?.ltp, 2, "-")}</td>
+                <td class="${callItmClass}">${formatNumber(row.call?.iv, 2, "-")}</td>
+                
+                <!-- CENTER STRIKE -->
+                <td class="strike-cell" onclick="openStrikeModal(${strike})">${formatNumber(strike, 2)}</td>
+                
+                <!-- PUT GREEKS -->
+                <td class="${putItmClass}">${formatNumber(row.put?.iv, 2, "-")}</td>
+                <td class="${putItmClass} link-blue" onclick="openStrikeModal(${strike})">${formatNumber(row.put?.ltp, 2, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(putBS.deltaPut, 4, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(putBS.gamma, 4, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(putBS.vega, 4, "-")}</td>
+                <td class="${putItmClass}">${formatNumber(putBS.thetaPut, 4, "-")}</td>
+            `;
+        }
+
+        tr.innerHTML = rowHtml;
         elements.tableBody.appendChild(tr);
     });
 
@@ -936,11 +1216,30 @@ window.openStrikeModal = function(strikePrice) {
     const row = chainRows.find(r => Math.abs(r.strike_price - strikePrice) < 0.01);
     if (!row) return;
 
-    const callIv = row.call?.iv || appState.volatility;
-    const putIv = row.put?.iv || appState.volatility;
+    let liveDays = appState.marketDays || 30;
+    if (appState.selectedExpiry) {
+        try {
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const exp = new Date(appState.selectedExpiry);
+            exp.setHours(0,0,0,0);
+            liveDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
+        } catch (e) {
+            liveDays = appState.marketDays || 30;
+        }
+    }
 
-    const callBS = calculateBSM(appState.spot, strikePrice, appState.daysToExpiry, appState.riskFreeRate, callIv, appState.dividendYield);
-    const putBS = calculateBSM(appState.spot, strikePrice, appState.daysToExpiry, appState.riskFreeRate, putIv, appState.dividendYield);
+    const activeSpot = appState.applySimulation ? appState.spot : appState.marketSpot;
+    const activeVol = appState.applySimulation ? appState.volatility : (appState.marketVol || 25.0);
+    const activeDays = appState.applySimulation ? appState.daysToExpiry : liveDays;
+    const activeRate = appState.applySimulation ? appState.riskFreeRate : (appState.marketRate || 6.50);
+    const activeYield = appState.applySimulation ? appState.dividendYield : (appState.marketYield || 0.0);
+
+    const callIv = row.call?.iv || activeVol;
+    const putIv = row.put?.iv || activeVol;
+
+    const callBS = calculateBSM(activeSpot, strikePrice, activeDays, activeRate, callIv, activeYield);
+    const putBS = calculateBSM(activeSpot, strikePrice, activeDays, activeRate, putIv, activeYield);
 
     // Call and Put edge: Fair theoretical minus LTP
     const callEdge = row.call?.ltp ? callBS.call - row.call.ltp : null;
@@ -998,11 +1297,11 @@ window.openStrikeModal = function(strikePrice) {
     elements.modalPTheta.textContent = formatNumber(putBS.thetaPut, 4);
     elements.modalPRho.textContent = formatNumber(putBS.rhoPut, 4);
 
-    elements.modalInSpot.textContent = formatNumber(appState.spot, 2);
+    elements.modalInSpot.textContent = formatNumber(activeSpot, 2);
     elements.modalInVol.textContent = formatNumber((callIv + putIv) / 2, 2) + "%";
-    elements.modalInDays.textContent = appState.daysToExpiry;
-    elements.modalInRate.textContent = formatNumber(appState.riskFreeRate, 2) + "%";
-    elements.modalInDiv.textContent = formatNumber(appState.dividendYield, 2) + "%";
+    elements.modalInDays.textContent = activeDays;
+    elements.modalInRate.textContent = formatNumber(activeRate, 2) + "%";
+    elements.modalInDiv.textContent = formatNumber(activeYield, 2) + "%";
     
     elements.modalD1.textContent = formatNumber(callBS.d1, 4);
     elements.modalD2.textContent = formatNumber(callBS.d2, 4);
@@ -1058,10 +1357,28 @@ function downloadCSV() {
 
     chainRows.forEach(row => {
         const strike = row.strike_price;
-        const callIv = row.call?.iv || appState.volatility;
-        const putIv = row.put?.iv || appState.volatility;
-        const callBS = calculateBSM(appState.spot, strike, appState.daysToExpiry, appState.riskFreeRate, callIv, appState.dividendYield);
-        const putBS = calculateBSM(appState.spot, strike, appState.daysToExpiry, appState.riskFreeRate, putIv, appState.dividendYield);
+        let liveDays = appState.marketDays || 30;
+        if (appState.selectedExpiry) {
+            try {
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const exp = new Date(appState.selectedExpiry);
+                exp.setHours(0,0,0,0);
+                liveDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
+            } catch (e) {
+                liveDays = appState.marketDays || 30;
+            }
+        }
+        const activeSpot = appState.applySimulation ? appState.spot : appState.marketSpot;
+        const activeVol = appState.applySimulation ? appState.volatility : (appState.marketVol || 25.0);
+        const activeDays = appState.applySimulation ? appState.daysToExpiry : liveDays;
+        const activeRate = appState.applySimulation ? appState.riskFreeRate : (appState.marketRate || 6.50);
+        const activeYield = appState.applySimulation ? appState.dividendYield : (appState.marketYield || 0.0);
+
+        const callIv = row.call?.iv || activeVol;
+        const putIv = row.put?.iv || activeVol;
+        const callBS = calculateBSM(activeSpot, strike, activeDays, activeRate, callIv, activeYield);
+        const putBS = calculateBSM(activeSpot, strike, activeDays, activeRate, putIv, activeYield);
 
         chainAoA.push([
             row.call?.volume || 0,
@@ -1089,8 +1406,9 @@ function downloadCSV() {
     // Compute ATM strike for highlighting
     let currentAtmStrikeRaw = appState.atmStrike;
     if (!currentAtmStrikeRaw && chainRows.length > 0) {
+        const activeSpot = appState.applySimulation ? appState.spot : appState.marketSpot;
         currentAtmStrikeRaw = chainRows.reduce((prev, curr) => 
-            Math.abs(curr.strike_price - appState.spot) < Math.abs(prev.strike_price - appState.spot) ? curr : prev
+            Math.abs(curr.strike_price - activeSpot) < Math.abs(prev.strike_price - activeSpot) ? curr : prev
         ).strike_price;
     }
     const currentAtmStrike = parseFloat(currentAtmStrikeRaw);
@@ -1142,7 +1460,115 @@ function downloadCSV() {
 
     XLSX.utils.book_append_sheet(wb, wsChain, "Option Chain");
 
-    // --- 2. Technicals Sheet ---
+    // --- 2. Export Summary Sheet (Metadata) ---
+    const exportNow = new Date();
+    const exportDate = exportNow.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+    const exportTime = exportNow.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+
+    // Resolve active BSM parameters (same logic as chain rendering)
+    let summaryLiveDays = appState.marketDays || 30;
+    if (appState.selectedExpiry) {
+        try {
+            const td = new Date(); td.setHours(0,0,0,0);
+            const ex = new Date(appState.selectedExpiry); ex.setHours(0,0,0,0);
+            summaryLiveDays = Math.max(Math.round((ex - td) / (1000 * 60 * 60 * 24)), 1);
+        } catch (e) { summaryLiveDays = appState.marketDays || 30; }
+    }
+    const simActive = !!appState.applySimulation;
+    const sourceLabel = simActive ? "BSM Custom Simulation" : "Market Data (Live)";
+
+    const sumSpot    = simActive ? appState.spot           : appState.marketSpot;
+    const sumVol     = simActive ? appState.volatility     : (appState.marketVol || 25.0);
+    const sumDays    = simActive ? appState.daysToExpiry    : summaryLiveDays;
+    const sumRate    = simActive ? appState.riskFreeRate    : (appState.marketRate || 6.50);
+    const sumYield   = simActive ? appState.dividendYield   : (appState.marketYield || 0.0);
+
+    const summaryAoA = [
+        ["AlphaStreams — Export Summary"],
+        [],
+        ["Export Date", exportDate],
+        ["Export Time", exportTime],
+        [],
+        ["Symbol", appState.symbol || "N/A"],
+        ["Expiry", appState.selectedExpiry || "N/A"],
+        [],
+        ["Parameter Source", sourceLabel],
+        ["BSM Simulation Active?", simActive ? "YES" : "NO"],
+        [],
+        ["Parameter", "Value", "Source"],
+        ["Spot Price",        sumSpot,                    simActive ? "Custom" : "Market"],
+        ["Volatility (%)",    sumVol,                     simActive ? "Custom" : "Market"],
+        ["Days to Expiry",    sumDays,                    simActive ? "Custom" : "Market"],
+        ["Risk-Free Rate (%)", sumRate,                   simActive ? "Custom" : "Market"],
+        ["Dividend Yield (%)", sumYield,                  simActive ? "Custom" : "Market"],
+    ];
+
+    // If simulation active, also show market reference values for comparison
+    if (simActive) {
+        summaryAoA.push([]);
+        summaryAoA.push(["Market Reference Values (before override)"]);
+        summaryAoA.push(["Market Spot",          appState.marketSpot]);
+        summaryAoA.push(["Market Volatility",    appState.marketVol || "N/A"]);
+        summaryAoA.push(["Market Days to Expiry", summaryLiveDays]);
+        summaryAoA.push(["Market Risk-Free Rate", appState.marketRate || "N/A"]);
+        summaryAoA.push(["Market Dividend Yield", appState.marketYield || "N/A"]);
+    }
+
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoA);
+
+    // Style summary sheet
+    if (wsSummary['!ref']) {
+        const sumRange = XLSX.utils.decode_range(wsSummary['!ref']);
+        for (let R = sumRange.s.r; R <= sumRange.e.r; ++R) {
+            for (let C = sumRange.s.c; C <= sumRange.e.c; ++C) {
+                const ref = XLSX.utils.encode_cell({c: C, r: R});
+                if (!wsSummary[ref]) continue;
+                wsSummary[ref].s = { font: {} };
+
+                // Title row
+                if (R === 0) {
+                    wsSummary[ref].s.font.bold = true;
+                    wsSummary[ref].s.font.sz = 14;
+                    wsSummary[ref].s.fill = { fgColor: { rgb: "4A86E8" } };
+                    wsSummary[ref].s.font.color = { rgb: "FFFFFF" };
+                }
+                // Parameter table header
+                if (R === 11) {
+                    wsSummary[ref].s.font.bold = true;
+                    wsSummary[ref].s.fill = { fgColor: { rgb: "D9E1F2" } };
+                }
+                // "Parameter Source" row highlight
+                if (R === 8) {
+                    wsSummary[ref].s.font.bold = true;
+                    if (simActive) {
+                        wsSummary[ref].s.fill = { fgColor: { rgb: "FCE5CD" } }; // Orange tint for custom
+                    } else {
+                        wsSummary[ref].s.fill = { fgColor: { rgb: "D9EAD3" } }; // Green tint for market
+                    }
+                }
+                // Source column color coding in param rows
+                if (C === 2 && R >= 12 && R <= 16) {
+                    const val = String(wsSummary[ref].v || "");
+                    if (val === "Custom") {
+                        wsSummary[ref].s.fill = { fgColor: { rgb: "FCE5CD" } };
+                        wsSummary[ref].s.font.bold = true;
+                    } else if (val === "Market") {
+                        wsSummary[ref].s.fill = { fgColor: { rgb: "D9EAD3" } };
+                        wsSummary[ref].s.font.bold = true;
+                    }
+                }
+            }
+        }
+        // Set column widths
+        wsSummary['!cols'] = [{ wch: 30 }, { wch: 25 }, { wch: 12 }];
+    }
+
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Export Summary");
+
+    // Reorder sheets: Export Summary first
+    wb.SheetNames = ["Export Summary", ...wb.SheetNames.filter(n => n !== "Export Summary")];
+
+    // --- 3. Technicals Sheet ---
     const techAoA = [];
     if (appState.technicals) {
         const t = appState.technicals;
@@ -1330,12 +1756,6 @@ elements.expirySelect.addEventListener("change", (e) => {
         console.error(err);
     }
     
-    populateStrikesDropdown(); // Re-populate strikes dropdown for the new expiry
-    recalculateAndRender();
-});
-
-elements.strikeSelect.addEventListener("change", (e) => {
-    appState.selectedStrike = e.target.value;
     recalculateAndRender();
 });
 
@@ -1411,8 +1831,14 @@ elements.resetMarketBtn.addEventListener("click", () => {
         appState.daysToExpiry = 30;
     }
     
-    appState.riskFreeRate = (appState.symbol === "AAPL" || appState.symbol === "TSLA") ? 5.25 : 6.50;
-    appState.dividendYield = (appState.symbol === "AAPL") ? 0.55 : (appState.symbol === "NIFTY") ? 1.20 : 0.00;
+    appState.riskFreeRate = appState.marketRate || ((appState.symbol === "AAPL" || appState.symbol === "TSLA") ? 5.25 : 6.50);
+    appState.dividendYield = appState.marketYield || 0.0;
+    
+    // Reset simulation toggles
+    appState.applySimulation = false;
+    if (elements.applySimulationToggle) {
+        elements.applySimulationToggle.checked = false;
+    }
     
     // Refresh control visual values
     elements.bsmSpot.value = appState.spot;
@@ -1717,16 +2143,253 @@ document.addEventListener("click", (e) => {
     }
 });
 
+// --- Theme Switching System ---
+function initThemeSystem() {
+    const themeBtn = document.getElementById("theme-toggle-btn");
+    const darkIcon = document.getElementById("theme-toggle-dark-icon");
+    const lightIcon = document.getElementById("theme-toggle-light-icon");
+    
+    if (!themeBtn || !darkIcon || !lightIcon) return;
+    
+    // Read cached preference or default to dark
+    let currentTheme = localStorage.getItem("alphaStreamsTheme") || "dark";
+    appState.theme = currentTheme;
+    
+    function applyTheme(theme) {
+        if (theme === "light") {
+            document.body.classList.add("light-theme");
+            darkIcon.style.display = "block";
+            lightIcon.style.display = "none";
+        } else {
+            document.body.classList.remove("light-theme");
+            darkIcon.style.display = "none";
+            lightIcon.style.display = "block";
+        }
+    }
+    
+    // Initial apply
+    applyTheme(currentTheme);
+    
+    // Toggle on click
+    themeBtn.onclick = () => {
+        const newTheme = appState.theme === "dark" ? "light" : "dark";
+        appState.theme = newTheme;
+        localStorage.setItem("alphaStreamsTheme", newTheme);
+        applyTheme(newTheme);
+    };
+}
+
+// --- Layout Switcher System ---
+function initLayoutSystem() {
+    const stdBtn = document.getElementById("view-standard-btn");
+    const callsBtn = document.getElementById("view-calls-btn");
+    const putsBtn = document.getElementById("view-puts-btn");
+    const greeksBtn = document.getElementById("view-greeks-btn");
+    
+    const buttons = [stdBtn, callsBtn, putsBtn, greeksBtn];
+    
+    function setBtnActive(activeBtn) {
+        buttons.forEach(btn => {
+            if (btn) btn.classList.remove("active");
+        });
+        if (activeBtn) activeBtn.classList.add("active");
+    }
+    
+    if (stdBtn) {
+        stdBtn.onclick = () => {
+            appState.layoutMode = "standard";
+            setBtnActive(stdBtn);
+            recalculateAndRender();
+        };
+    }
+    if (callsBtn) {
+        callsBtn.onclick = () => {
+            appState.layoutMode = "calls";
+            setBtnActive(callsBtn);
+            recalculateAndRender();
+        };
+    }
+    if (putsBtn) {
+        putsBtn.onclick = () => {
+            appState.layoutMode = "puts";
+            setBtnActive(putsBtn);
+            recalculateAndRender();
+        };
+    }
+    if (greeksBtn) {
+        greeksBtn.onclick = () => {
+            appState.layoutMode = "greeks";
+            setBtnActive(greeksBtn);
+            recalculateAndRender();
+        };
+    }
+}
+
+// Background Particle Canvas streaming
+function initCanvasBackground() {
+    const canvas = document.getElementById("bg-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
+
+    window.addEventListener("resize", () => {
+        width = (canvas.width = window.innerWidth);
+        height = (canvas.height = window.innerHeight);
+    });
+
+    // Particle definition
+    class Particle {
+        constructor() {
+            this.x = Math.random() * width;
+            this.y = Math.random() * height;
+            this.size = Math.random() * 1.5 + 0.5;
+            this.speedX = Math.random() * 0.8 + 0.2; // Move right
+            this.speedY = (Math.random() - 0.5) * 0.1;
+            
+            // Adjust colors/opacities depending on light theme
+            const colors = [
+                "rgba(99, 102, 241, 0.45)", // Indigo
+                "rgba(6, 182, 212, 0.45)",  // Teal
+                "rgba(243, 112, 33, 0.35)"   // Orange
+            ];
+            this.color = colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        update() {
+            this.x += this.speedX;
+            this.y += this.speedY;
+
+            // Loop around screen edge
+            if (this.x > width) {
+                this.x = 0;
+                this.y = Math.random() * height;
+            }
+            if (this.y > height || this.y < 0) {
+                this.y = Math.random() * height;
+            }
+        }
+
+        draw() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fillStyle = this.color;
+            ctx.fill();
+        }
+    }
+
+    // Create particle array
+    const particles = [];
+    const particleCount = Math.min(100, Math.floor(width / 15));
+    for (let i = 0; i < particleCount; i++) {
+        particles.push(new Particle());
+    }
+
+    // Draw connecting lines if particles are close
+    function connect() {
+        let maxDistance = 100;
+        const isLight = document.body.classList.contains("light-theme");
+        const lineOpacityMultiplier = isLight ? 0.18 : 0.08;
+        
+        for (let a = 0; a < particles.length; a++) {
+            for (let b = a; b < particles.length; b++) {
+                let distSq = (particles[a].x - particles[b].x) ** 2 + 
+                             (particles[a].y - particles[b].y) ** 2;
+                if (distSq < maxDistance ** 2) {
+                    let opacity = 1 - Math.sqrt(distSq) / maxDistance;
+                    ctx.strokeStyle = `rgba(99, 102, 241, ${opacity * lineOpacityMultiplier})`;
+                    ctx.lineWidth = 0.5;
+                    ctx.beginPath();
+                    ctx.moveTo(particles[a].x, particles[a].y);
+                    ctx.lineTo(particles[b].x, particles[b].y);
+                    ctx.stroke();
+                }
+            }
+        }
+    }
+
+    // Animation loop
+    function animate() {
+        ctx.clearRect(0, 0, width, height);
+        particles.forEach(p => {
+            p.update();
+            p.draw();
+        });
+        connect();
+        requestAnimationFrame(animate);
+    }
+
+    animate();
+}
+
 // App Entry Point
 async function initApp() {
+    initCanvasBackground();
     startHeaderClock();
     setupAutocomplete();
     setupTabSwitching();
     setupAlertsModal();
+    setupBsmModal();
+    initThemeSystem();
+    initLayoutSystem();
     await fetchTickerData("NIFTY");
 }
 
 window.onload = initApp;
+
+function setupBsmModal() {
+    const modal = elements.bsmModal || document.getElementById("bsm-modal");
+    const openBtn = elements.openBsmModalBtn || document.getElementById("open-bsm-modal-btn");
+    const closeBtn = elements.bsmModalClose || document.getElementById("bsm-modal-close");
+    const applyToggle = elements.applySimulationToggle || document.getElementById("apply-simulation-toggle");
+    const fullChainBtn = elements.toggleFullChainBtn || document.getElementById("toggle-full-chain-btn");
+
+    if (openBtn && modal) {
+        openBtn.onclick = () => {
+            modal.classList.add("show");
+        };
+    }
+
+    if (closeBtn && modal) {
+        closeBtn.onclick = () => modal.classList.remove("show");
+    }
+
+    window.addEventListener("click", (event) => {
+        if (event.target === modal) {
+            modal.classList.remove("show");
+        }
+    });
+
+    if (applyToggle) {
+        applyToggle.addEventListener("change", (e) => {
+            appState.applySimulation = e.target.checked;
+            recalculateAndRender();
+        });
+    }
+
+    if (fullChainBtn) {
+        fullChainBtn.addEventListener("click", () => {
+            appState.showFullChain = !appState.showFullChain;
+            if (appState.showFullChain) {
+                fullChainBtn.classList.add("active");
+                fullChainBtn.textContent = "Show ATM +/- 20";
+            } else {
+                fullChainBtn.classList.remove("active");
+                fullChainBtn.textContent = "Show Full Chain";
+            }
+            recalculateAndRender();
+        });
+    }
+
+    const calculateBtn = elements.bsmCalculateBtn || document.getElementById("bsm-calculate-btn");
+    if (calculateBtn) {
+        calculateBtn.addEventListener("click", () => {
+            activateSimulation();
+            recalculateAndRender();
+        });
+    }
+}
 
 // --- Alerts & Notifications Modal & Toast Handlers ---
 function setupAlertsModal() {
