@@ -2428,6 +2428,7 @@ async function initApp() {
     setupBsmModal();
     initThemeSystem();
     initLayoutSystem();
+    initResearchExportModal();
     await fetchTickerData("NIFTY");
 }
 
@@ -2594,6 +2595,125 @@ function showAlertToast(message) {
     setTimeout(() => {
         toast.remove();
     }, 6000);
+}
+
+// --- Multi-Day Historical Research Export Modal Handler ---
+function formatLocalDate(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function initResearchExportModal() {
+    const openBtn = document.getElementById("open-research-export-btn");
+    const downloadCsvBtn = document.getElementById("download-csv-btn");
+    const modal = document.getElementById("research-export-modal");
+    const closeBtn = document.getElementById("research-export-modal-close");
+    const triggerBtn = document.getElementById("trigger-research-export-btn");
+
+    const symbolInput = document.getElementById("research-export-symbol");
+    const startDateInput = document.getElementById("research-export-start-date");
+    const endDateInput = document.getElementById("research-export-end-date");
+    const layoutSelect = document.getElementById("research-export-layout");
+
+    function setupDefaultDates(daysBack = 10) {
+        if (symbolInput) {
+            symbolInput.value = appState.symbol || "NIFTY";
+        }
+        const today = new Date();
+        const past = new Date(today);
+        past.setDate(today.getDate() - daysBack);
+
+        if (endDateInput) {
+            endDateInput.value = formatLocalDate(today);
+        }
+        if (startDateInput) {
+            startDateInput.value = formatLocalDate(past);
+        }
+    }
+
+    if (openBtn && modal) {
+        openBtn.addEventListener("click", () => {
+            setupDefaultDates(10);
+            modal.classList.add("show");
+        });
+    }
+
+    // Bind Quick Preset Buttons inside modal
+    if (modal) {
+        const presetBtns = modal.querySelectorAll(".preset-btn");
+        presetBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                const days = parseInt(btn.getAttribute("data-days") || "10", 10);
+                setupDefaultDates(days);
+            });
+        });
+    }
+
+    if (closeBtn && modal) {
+        closeBtn.addEventListener("click", () => {
+            modal.classList.remove("show");
+        });
+    }
+
+    window.addEventListener("click", (e) => {
+        if (e.target === modal) {
+            modal.classList.remove("show");
+        }
+    });
+
+    if (triggerBtn) {
+        triggerBtn.addEventListener("click", async () => {
+            const sym = symbolInput ? symbolInput.value.trim().toUpperCase() : "NIFTY";
+            const startDt = startDateInput ? startDateInput.value : "";
+            const endDt = endDateInput ? endDateInput.value : "";
+            const layout = layoutSelect ? layoutSelect.value : "separate_tabs";
+
+            if (!startDt || !endDt) {
+                alert("Please select both Start Date and End Date.");
+                return;
+            }
+
+            if (new Date(startDt) > new Date(endDt)) {
+                alert("Start Date must be before or equal to End Date.");
+                return;
+            }
+
+            triggerBtn.disabled = true;
+            const originalHtml = triggerBtn.innerHTML;
+            triggerBtn.innerHTML = `<span>Generating Multi-Day Excel...</span>`;
+
+            try {
+                const url = `/v1/export/research-eod?symbol=${encodeURIComponent(sym)}&start_date=${encodeURIComponent(startDt)}&end_date=${encodeURIComponent(endDt)}&layout_mode=${encodeURIComponent(layout)}`;
+                const resp = await fetch(url);
+
+                if (!resp.ok) {
+                    const errJson = await resp.json().catch(() => ({ detail: "Export failed" }));
+                    alert(`Export Error: ${errJson.detail || resp.statusText}`);
+                    return;
+                }
+
+                const blob = await resp.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = downloadUrl;
+                a.download = `AlphaStreams_${sym}_${startDt}_to_${endDt}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+
+                if (modal) modal.classList.remove("show");
+            } catch (err) {
+                console.error("Research Export Error:", err);
+                alert(`Export Failed: ${err.message}`);
+            } finally {
+                triggerBtn.disabled = false;
+                triggerBtn.innerHTML = originalHtml;
+            }
+        });
+    }
 }
 
 

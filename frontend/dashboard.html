@@ -144,6 +144,15 @@
                     </svg>
                     Download (.xlsx)
                 </button>
+                <span class="divider">|</span>
+                <button id="open-research-export-btn" class="nse-csv-btn" style="background-color: #2563eb; border-color: #2563eb; color: white;" title="Download Multi-Day Research Excel">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Multi-Day Export
+                </button>
             </div>
         </div>
 
@@ -449,6 +458,59 @@
                             <tr><td>Ask Quantity</td><td id="modal-p-ask-qty" class="font-mono">--</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Multi-Day Research Export Modal -->
+    <div id="research-export-modal" class="modal">
+        <div class="modal-content" style="max-width: 520px; padding: 24px;">
+            <div class="modal-header" style="padding-bottom: 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 18px; font-weight: 700; color: var(--text-primary);">
+                    Multi-Day Historical Research Export
+                </h2>
+                <span class="close-btn" id="research-export-modal-close" style="cursor: pointer; font-size: 24px; color: var(--text-secondary);">&times;</span>
+            </div>
+            <div class="modal-body" style="padding-top: 16px;">
+                <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5;">
+                    Generate a multi-sheet Excel file (.xlsx) for a custom date period.
+                    Includes full Option Chains, Black-Scholes theoretical pricing, and Technical Indicators for each trading day.
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                    <div>
+                        <label for="research-export-symbol" style="font-size: 13px; font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 6px;">Symbol</label>
+                        <input type="text" id="research-export-symbol" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); font-weight: 600;" value="NIFTY">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div>
+                            <label for="research-export-start-date" style="font-size: 13px; font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 6px;">Start Date</label>
+                            <input type="date" id="research-export-start-date" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);">
+                        </div>
+                        <div>
+                            <label for="research-export-end-date" style="font-size: 13px; font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 6px;">End Date</label>
+                            <input type="date" id="research-export-end-date" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);">
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <span style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Quick Presets:</span>
+                        <button type="button" class="preset-btn" data-days="7" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-card-header); color: var(--text-primary); cursor: pointer;">Past 7 Days</button>
+                        <button type="button" class="preset-btn" data-days="14" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-card-header); color: var(--text-primary); cursor: pointer;">Past 14 Days</button>
+                        <button type="button" class="preset-btn" data-days="30" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-card-header); color: var(--text-primary); cursor: pointer;">Past 30 Days</button>
+                    </div>
+                    <div>
+                        <label for="research-export-layout" style="font-size: 13px; font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 6px;">Excel Layout Mode</label>
+                        <select id="research-export-layout" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);">
+                            <option value="separate_tabs">Separate Tabs (2 Sheets per Day: Option Chain + Technicals)</option>
+                            <option value="combined_per_day">Combined (1 Sheet per Day: Option Chain & Technicals)</option>
+                        </select>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button id="trigger-research-export-btn" style="width: 100%; padding: 10px; background-color: var(--accent-indigo); color: white; border: none; border-radius: 6px; font-weight: 700; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            Download Research Excel (.xlsx)
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1203,7 +1265,7 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
     <!-- Main Application Script -->
-    <script src="/app.js?v=2.6.4"></script>
+    <script src="/app.js?v=2.7.0"></script>
 
 
 

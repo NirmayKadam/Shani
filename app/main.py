@@ -32,6 +32,7 @@ from domains.analytics.api.events_router_api import router as events_router
 from domains.analytics.api.derivatives_router_api import router as derivatives_router
 from domains.analytics.api.symbols_router_api import router as symbols_router
 from domains.analytics.api.pricer_router_api import router as pricer_router
+from domains.analytics.api.export_research_api import router as export_research_router
 from domains.ingestion.api.nse_options_router_api import nse_options_router_api
 from domains.notifications.api.router import router as notifications_router
 from app.config.settings import get_settings
@@ -107,6 +108,7 @@ app.include_router(events_router, prefix="/v1")
 app.include_router(derivatives_router, prefix="/v1")
 app.include_router(symbols_router, prefix="/v1")
 app.include_router(pricer_router, prefix="/v1")
+app.include_router(export_research_router, prefix="/v1")
 app.include_router(nse_options_router_api, prefix="/v1/ingestion")
 app.include_router(notifications_router)
 
