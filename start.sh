@@ -14,10 +14,10 @@ if [ -z "$(ls -A /var/lib/postgresql/data)" ]; then
     # Enable TimescaleDB in postgresql.conf
     echo "shared_preload_libraries = 'timescaledb'" >> /var/lib/postgresql/data/postgresql.conf
     
-    # Allow connections from any IP if needed (optional since all in one container, but good for local dev)
-    echo "listen_addresses = '*'" >> /var/lib/postgresql/data/postgresql.conf
-    echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
-    echo "host all all ::/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+    # Restrict connection access to local loopback (in-container)
+    echo "listen_addresses = '127.0.0.1,localhost'" >> /var/lib/postgresql/data/postgresql.conf
+    echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
+    echo "host all all ::1/128 md5" >> /var/lib/postgresql/data/pg_hba.conf
     
     # Start PG temporarily to run init script
     su - postgres -c "/usr/lib/postgresql/15/bin/pg_ctl -D /var/lib/postgresql/data -w start"
@@ -28,20 +28,10 @@ if [ -z "$(ls -A /var/lib/postgresql/data)" ]; then
     su - postgres -c "psql -c \"ALTER ROLE ${DB_USER:-postgres} SUPERUSER;\"" || true
     su - postgres -c "psql -d NexusQuantDB -c \"CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;\"" || true
 
-    # Run the init_schema.sql if available
-    if [ -f "/app/scripts/init_schema.sql" ]; then
-        echo "Running init_schema.sql..."
-        su - postgres -c "psql -d NexusQuantDB -f /app/scripts/init_schema.sql"
-    fi
-
-    if [ -f "/app/scripts/migration_add_notifications.sql" ]; then
-        echo "Running migration_add_notifications.sql..."
-        su - postgres -c "psql -d NexusQuantDB -f /app/scripts/migration_add_notifications.sql"
-    fi
-
-    if [ -f "/app/scripts/migration_add_ohlc.sql" ]; then
-        echo "Running migration_add_ohlc.sql..."
-        su - postgres -c "psql -d NexusQuantDB -f /app/scripts/migration_add_ohlc.sql"
+    # Run versioned schema migrations
+    if [ -f "/app/scripts/migrate.py" ]; then
+        echo "Running schema migrations via migrate.py..."
+        python3 /app/scripts/migrate.py || true
     fi
     
     # Stop PG

@@ -21,22 +21,14 @@ pydantic-settings>=2.2.0
 # Financial Data
 yfinance>=0.2.36
 
-# Scientific Computing
+# Scientific Computing & Analytics
 scipy>=1.12.0
 numpy>=1.26.0
 pandas>=2.2.0
 openpyxl>=3.1.2
-scikit-learn>=1.4.0
-matplotlib>=3.8.0
-seaborn>=0.13.0
 
 # Timezone support
 pytz>=2024.1
-
-# Testing
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
-pytest-mock>=3.12.0
 
 # Groww Integration
 growwapi>=0.1.0

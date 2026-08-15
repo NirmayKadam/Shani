@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AlphaStreams quantitative analytics and real-time options Greeks terminal for Indian equity derivatives (NSE/BSE).">
     <title>Shani — Options Ingestion & Greeks Terminal</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css?v=2.6.4">
+    <link rel="stylesheet" href="/style.css?v=2.7.0">
 </head>
 <body class="light-theme" style="opacity: 0; transition: opacity 0.3s ease;">
     <!-- Background Particle Canvas -->
@@ -301,16 +302,16 @@
                     </div>
                     <div><span class="tech-pill pill-neutral">NORMAL</span></div>
                 </div>
-                <div style="margin-top: 12px; border-top: 1px dashed #e5e7eb; padding-top: 10px;">
+                <div style="margin-top: 12px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
                     <div class="tech-metric-lbl" style="margin-bottom: 8px;">Pivot Levels (Floor)</div>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; font-size: 12px;" class="font-mono">
-                        <div style="background: #fef2f2; color: #dc2626; padding: 4px; border-radius: 4px; text-align: center;">R3: <span id="tech-r3">--</span></div>
-                        <div style="background: #fef2f2; color: #dc2626; padding: 4px; border-radius: 4px; text-align: center;">R2: <span id="tech-r2">--</span></div>
-                        <div style="background: #fef2f2; color: #dc2626; padding: 4px; border-radius: 4px; text-align: center;">R1: <span id="tech-r1">--</span></div>
-                        <div style="background: #f3f4f6; color: #1f2937; padding: 4px; border-radius: 4px; text-align: center; grid-column: span 3; font-weight: bold;">Pivot (P): <span id="tech-pivot">--</span></div>
-                        <div style="background: #ecfdf5; color: #059669; padding: 4px; border-radius: 4px; text-align: center;">S1: <span id="tech-s1">--</span></div>
-                        <div style="background: #ecfdf5; color: #059669; padding: 4px; border-radius: 4px; text-align: center;">S2: <span id="tech-s2">--</span></div>
-                        <div style="background: #ecfdf5; color: #059669; padding: 4px; border-radius: 4px; text-align: center;">S3: <span id="tech-s3">--</span></div>
+                        <div class="pivot-pill-r">R3: <span id="tech-r3">--</span></div>
+                        <div class="pivot-pill-r">R2: <span id="tech-r2">--</span></div>
+                        <div class="pivot-pill-r">R1: <span id="tech-r1">--</span></div>
+                        <div class="pivot-pill-p">Pivot (P): <span id="tech-pivot">--</span></div>
+                        <div class="pivot-pill-s">S1: <span id="tech-s1">--</span></div>
+                        <div class="pivot-pill-s">S2: <span id="tech-s2">--</span></div>
+                        <div class="pivot-pill-s">S3: <span id="tech-s3">--</span></div>
                     </div>
                 </div>
             </div>
@@ -1261,13 +1262,8 @@
         </div>
     </div>
 
-    <!-- Excel Export Library (SheetJS with Style Support) -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-
-    <!-- Main Application Script -->
+    <!-- Main Application Script (with dynamic lazy-loading for heavy modules) -->
     <script src="/app.js?v=2.7.0"></script>
-
-
 
 </body>
 </html>

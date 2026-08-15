@@ -39,7 +39,11 @@ def test_create_alert_rule_endpoint(mock_manage_service):
         "cooldown_seconds": 300,
     }
 
-    resp = client.post("/v1/notifications/alerts", json=payload)
+    resp = client.post(
+        "/v1/notifications/alerts",
+        json=payload,
+        headers={"Authorization": "Bearer test-jwt-token"}
+    )
     app.dependency_overrides.clear()
 
     assert resp.status_code == 201
@@ -47,6 +51,20 @@ def test_create_alert_rule_endpoint(mock_manage_service):
     assert data["symbol"] == "NIFTY"
     assert data["condition_type"] == "ABOVE_PRICE"
     assert data["threshold"] == 24500.0
+
+
+def test_create_alert_rule_unauthenticated_fails(mock_manage_service):
+    app.dependency_overrides[get_manage_alerts_service] = lambda: mock_manage_service
+    client = TestClient(app)
+    payload = {
+        "symbol": "NIFTY",
+        "condition_type": "ABOVE_PRICE",
+        "threshold": 24500.0,
+        "channels": ["WEBSOCKET"],
+    }
+    resp = client.post("/v1/notifications/alerts", json=payload)
+    app.dependency_overrides.clear()
+    assert resp.status_code == 401
 
 
 def test_list_alert_rules_endpoint(mock_manage_service):

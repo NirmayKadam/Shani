@@ -75,3 +75,24 @@ async def test_connection_manager_subscriber_recursion_fix():
 
         assert "TCS" not in manager._Connections
         assert manager._GlobalSubscriberTask is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_websocket_endpoint_handler():
+    from fastapi import WebSocketDisconnect
+    from domains.analytics.api.events_router_api import websocket_endpoint
+
+    mock_ws = AsyncMock()
+    mock_ws.receive_text.side_effect = [
+        '{"action": "ping"}',
+        WebSocketDisconnect(code=1000)
+    ]
+
+    with patch("domains.analytics.api.events_router_api.ConnectionManager._ensure_background_tasks_locked", return_value=None):
+        await websocket_endpoint(mock_ws, "NIFTY")
+        assert mock_ws.accept.called
+        assert mock_ws.send_json.called
+        # Check pong response was sent
+        sent_calls = [call[0][0] for call in mock_ws.send_json.call_args_list]
+        assert {"type": "pong"} in sent_calls

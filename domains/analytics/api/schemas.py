@@ -147,16 +147,16 @@ class OptionChainRow(BaseModel):
 class PricerTickerDataResponse(ResponseMetadata):
     symbol: str
     stock_price: float
-    implied_volatility: float
-    historical_volatility: float
-    bid_price: float
-    ask_price: float
-    open_interest: int
-    volume: int
-    strike_price: float
-    expiry_days: int
-    risk_free_rate: float
-    dividend_yield: float
+    implied_volatility: Optional[float] = 0.0
+    historical_volatility: Optional[float] = 0.0
+    bid_price: Optional[float] = None
+    ask_price: Optional[float] = None
+    open_interest: int = 0
+    volume: int = 0
+    strike_price: float = 0.0
+    expiry_days: int = 0
+    risk_free_rate: float = 6.5
+    dividend_yield: float = 0.0
     expiry_dates: list[str] = Field(default_factory=list)
     option_chains: dict[str, list[OptionChainRow]] = Field(default_factory=dict)
 

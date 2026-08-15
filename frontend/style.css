@@ -30,6 +30,14 @@
     /* Sentiment / Indicators */
     --color-up: #10b981;
     --color-down: #ef4444;
+
+    /* Pivot levels (theme aware) */
+    --pivot-res-bg: rgba(239, 68, 68, 0.15);
+    --pivot-res-text: #f87171;
+    --pivot-sup-bg: rgba(16, 185, 129, 0.15);
+    --pivot-sup-text: #34d399;
+    --pivot-center-bg: rgba(99, 102, 241, 0.15);
+    --pivot-center-text: #a5b4fc;
 }
 
 body.light-theme {
@@ -45,21 +53,56 @@ body.light-theme {
     --accent-teal: #0d9488;
     --accent-indigo: #4f46e5;
     --accent-indigo-dark: #312e81;
+
+    /* Pivot levels (light mode) */
+    --pivot-res-bg: #fef2f2;
+    --pivot-res-text: #dc2626;
+    --pivot-sup-bg: #ecfdf5;
+    --pivot-sup-text: #059669;
+    --pivot-center-bg: #f3f4f6;
+    --pivot-center-text: #1f2937;
     
     /* Table specific variables */
     --table-header-bg: #f8fafc;
-    --table-border: #cbd5e1;
-    --table-itm-call-bg: #e0f7f6;
-    --table-itm-put-bg: #fff2e6;
+    --table-border: #e2e8f0;
+    --table-itm-call-bg: #ecfeff;
+    --table-itm-put-bg: #fff7ed;
     --table-otm-bg: #ffffff;
-    --table-hover-row-bg: #f8fafc;
-    --table-strike-bg: #f1f5f9;
-    --table-strike-hover-bg: #cbd5e1;
-    --table-strike-text: #1e1b4b;
-    --bar-opacity: 0.38;
+    --table-hover-row-bg: #f1f5f9;
+    --table-strike-bg: #e0e7ff;
+    --table-strike-hover-bg: #c7d2fe;
+    --table-strike-text: #4338ca;
+    --bar-opacity: 0.22;
     --bg-modal: #ffffff;
     --border-modal: #cbd5e1;
-    
+
+/* --- Theme-Aware Pivot Level Grid Components --- */
+.pivot-pill-r {
+    background: var(--pivot-res-bg);
+    color: var(--pivot-res-text);
+    padding: 4px;
+    border-radius: 4px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+}
+.pivot-pill-p {
+    background: var(--pivot-center-bg);
+    color: var(--pivot-center-text);
+    padding: 4px;
+    border-radius: 4px;
+    text-align: center;
+    grid-column: span 3;
+    font-weight: bold;
+    border: 1px solid var(--border-color);
+}
+.pivot-pill-s {
+    background: var(--pivot-sup-bg);
+    color: var(--pivot-sup-text);
+    padding: 4px;
+    border-radius: 4px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+}    
     /* Sentiment / Indicators */
     --color-up: #059669;
     --color-down: #dc2626;

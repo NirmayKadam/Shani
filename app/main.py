@@ -19,7 +19,7 @@ Database Tables:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -104,6 +104,7 @@ app.add_middleware(
 )
 
 
+app.include_router(events_router)
 app.include_router(events_router, prefix="/v1")
 app.include_router(derivatives_router, prefix="/v1")
 app.include_router(symbols_router, prefix="/v1")
@@ -170,9 +171,17 @@ async def health(response: Response):
 
 
 @app.get("/config")
-def get_config():
-    from app.config.settings import get_settings
+def get_config(request: Request):
+    from urllib.parse import urlparse
     settings = get_settings()
+    origin = request.headers.get("origin") or request.headers.get("referer") or ""
+    if origin and settings.AppEnv == "production":
+        parsed = urlparse(origin)
+        origin_clean = f"{parsed.scheme}://{parsed.netloc}"
+        allowed = settings.get_allowed_origins_list()
+        if origin_clean not in allowed and "localhost" not in origin_clean and "127.0.0.1" not in origin_clean:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-origin access forbidden")
+
     return {
         "supabaseUrl": settings.SupabaseUrl,
         "supabaseKey": settings.SupabaseKey

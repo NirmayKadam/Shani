@@ -36,11 +36,14 @@ ENV/
 
 # Docker and Secrets
 .env
+.env.*
+!.env.example
 docker_data.vhdx
 
-# Temporary Logs
-*.log
-nlp_logs.txt
+# Excel & State Artifacts
+*.xlsx
+dump.rdb
+celerybeat-schedule
 
 # Downloaded ML Models (HuggingFace)
 model_cache/

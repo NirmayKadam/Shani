@@ -253,7 +253,7 @@ class ConnectionManager:
             last_options_poll: dict[str, float] = {}
 
             # Dynamic imports to prevent circular references
-            from domains.ingestion.tasks.ingestion_tasks import poll_prices, poll_options
+            from domains.ingestion.tasks.ingestion_tasks import poll_prices
             from domains.ingestion.tasks.market_tasks import fetch_and_publish_options
 
             loop = asyncio.get_running_loop()
@@ -279,13 +279,12 @@ class ConnectionManager:
                             logger.error("Failed to dispatch price poll for %s: %s", symbol, exc)
                         last_price_poll[symbol] = now
 
-                    # 2. Options Polling
+                    # 2. Options Polling (single consolidated task)
                     last_opts = last_options_poll.get(symbol, 0.0)
                     if now - last_opts >= options_interval:
                         try:
-                            poll_options.delay(symbol)
                             fetch_and_publish_options.delay(symbol)
-                            logger.info("Dispatched live options poll tasks for %s", symbol)
+                            logger.info("Dispatched live options poll task for %s", symbol)
                         except Exception as exc:
                             logger.error("Failed to dispatch options poll for %s: %s", symbol, exc)
                         last_options_poll[symbol] = now
@@ -297,11 +296,16 @@ class ConnectionManager:
             logger.error("Dynamic polling loop error: %s", exc, exc_info=True)
 
 
+_MAX_CLIENTS_PER_SYMBOL = 100
 _Manager = ConnectionManager()
 
 
 @router.websocket("/ws/{symbol}")
-async def websocket_endpoint(websocket: WebSocket, symbol: str):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    symbol: str,
+    token: str | None = None
+):
     """
     Real-time WebSocket endpoint for a symbol.
 
@@ -320,12 +324,25 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
         return
 
     symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+
+    # Check connection limits per symbol to prevent socket exhaustion
+    current_symbol_clients = len(_Manager._Connections.get(symbol_clean, {}))
+    if current_symbol_clients >= _MAX_CLIENTS_PER_SYMBOL:
+        await websocket.close(code=4029, reason="Too many concurrent connections for this symbol")
+        return
+
     await _Manager.connect(symbol_clean, websocket)
 
     try:
         # Keep connection alive — listen for client messages (ping/pong)
         while True:
-            data = await websocket.receive_text()
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+            except asyncio.TimeoutError:
+                # Send server-side ping heartbeat or disconnect if dead
+                await websocket.send_json({"type": "ping"})
+                continue
+
             await _Manager.mark_client_alive(symbol_clean, websocket)
             # Client can send {"action": "ping"} to keep alive
             if data:

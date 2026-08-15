@@ -20,8 +20,12 @@ BEGIN
     END IF;
 END $$;
 
--- Retention Policy (7 days)
-SELECT add_retention_policy('tickdata', INTERVAL '7 days', if_not_exists => true);
+-- Composite indexes for high-speed ticker lookups and option analytics
+CREATE INDEX IF NOT EXISTS idx_tickdata_symbol_time ON TickData (Symbol, Timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_tickdata_option_lookup ON TickData (Symbol, ExpiryDate, StrikePrice, InstrumentType, Timestamp DESC);
+
+-- Retention Policy (90 days for research and multi-day export support)
+SELECT add_retention_policy('tickdata', INTERVAL '90 days', if_not_exists => true);
 
 -- Detected events
 CREATE TABLE IF NOT EXISTS DetectedEvents (

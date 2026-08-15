@@ -106,6 +106,7 @@ class SymbolValidator:
         return False
 
     @staticmethod
+    @lru_cache(maxsize=2000)
     def get_clean_symbol(symbol: str) -> str:
         """
         Returns the Indian market formatted version of the symbol (e.g., adding .NS).

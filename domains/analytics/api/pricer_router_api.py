@@ -34,12 +34,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pricer", tags=["pricer"])
 
 
+from functools import lru_cache
+from app.config.settings import get_settings
+
+
 def _generated_at() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-
-
+@lru_cache(maxsize=128)
+def _get_historical_volatility(symbol: str) -> float:
+    """Compute rolling 30-day annualized historical volatility from historical prices."""
+    try:
+        import yfinance as yf
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1mo")
+        if hist is not None and len(hist) > 5:
+            log_returns = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
+            hv = float(log_returns.std() * np.sqrt(252) * 100.0)
+            return round(hv, 2) if not np.isnan(hv) else 0.0
+    except Exception:
+        pass
+    return 0.0
 
 
 @router.get("/ticker/{symbol}", response_model=PricerTickerDataResponse)
@@ -57,10 +73,9 @@ async def get_ticker_parameters(symbol: str):
             detail=f"Symbol '{symbol_upper}' is invalid or not supported."
         )
 
-    import asyncio
-    symbol_clean = await asyncio.get_running_loop().run_in_executor(
-        None, SymbolValidator.get_clean_symbol, symbol_upper
-    )
+    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+    settings = get_settings()
+    rf_rate = settings.DefaultRiskFreeRateInr if ("NS" in symbol_upper or symbol_clean in {"NIFTY", "BANKNIFTY", "FINNIFTY"}) else settings.DefaultRiskFreeRateUsd
     
     raw_cached = None
     price_cached = None
@@ -131,7 +146,7 @@ async def get_ticker_parameters(symbol: str):
             if redis:
                 try:
                     raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
-                    await redis.set(raw_key, json.dumps(data, default=str), ex=600)
+                    await redis.set(raw_key, json.dumps(data, default=str), ex=60)
                     
                     price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
                     p_data = {
@@ -139,7 +154,7 @@ async def get_ticker_parameters(symbol: str):
                         "last_price": spot_price,
                         "last_updated": datetime.now(timezone.utc).isoformat()
                     }
-                    await redis.set(price_key, json.dumps(p_data, default=str), ex=600)
+                    await redis.set(price_key, json.dumps(p_data, default=str), ex=60)
                 except Exception as cache_exc:
                     logger.warning("[%s] Failed caching dynamically fetched options to Redis: %s", symbol_clean, cache_exc)
             
@@ -157,7 +172,7 @@ async def get_ticker_parameters(symbol: str):
             if redis:
                 try:
                     raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
-                    await redis.set(raw_key, json.dumps(data, default=str), ex=600)
+                    await redis.set(raw_key, json.dumps(data, default=str), ex=60)
                     
                     price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
                     p_data = {
@@ -165,10 +180,10 @@ async def get_ticker_parameters(symbol: str):
                         "last_price": spot_price,
                         "last_updated": datetime.now(timezone.utc).isoformat()
                     }
-                    await redis.set(price_key, json.dumps(p_data, default=str), ex=600)
+                    await redis.set(price_key, json.dumps(p_data, default=str), ex=60)
                 except Exception as cache_exc:
-                    logger.warning("[%s] Failed caching empty options to Redis: %s", symbol_clean, cache_exc)
-            
+                    logger.warning("[%s] Failed caching price data to Redis: %s", symbol_clean, cache_exc)
+
             raw_cached = json.dumps(data, default=str)
         else:
             raw_cached = None
@@ -189,14 +204,14 @@ async def get_ticker_parameters(symbol: str):
                     symbol=symbol_clean,
                     stock_price=spot,
                     implied_volatility=0.0,
-                    historical_volatility=0.0,
-                    bid_price=0.0,
-                    ask_price=0.0,
+                    historical_volatility=_get_historical_volatility(symbol_clean),
+                    bid_price=None,
+                    ask_price=None,
                     open_interest=0,
                     volume=0,
                     strike_price=0.0,
                     expiry_days=0,
-                    risk_free_rate=6.5 if "NS" in symbol_upper or symbol_clean in {"NIFTY"} else 5.25,
+                    risk_free_rate=rf_rate,
                     dividend_yield=0.0,
                     expiry_dates=[],
                     option_chains={},
@@ -232,13 +247,30 @@ async def get_ticker_parameters(symbol: str):
                         expiry_days = 30
 
                     ltp = float(nearest_strike_opt.get("last_price", 0.0))
-                    bid = round(ltp * 0.98, 2)
-                    ask = round(ltp * 1.02, 2)
+                    raw_bid = nearest_strike_opt.get("bid")
+                    raw_ask = nearest_strike_opt.get("ask")
+                    bid = float(raw_bid) if raw_bid is not None and float(raw_bid) > 0 else None
+                    ask = float(raw_ask) if raw_ask is not None and float(raw_ask) > 0 else None
+                    
                     iv = float(nearest_strike_opt.get("iv", 0.0) or 0.0)
                     if iv > 0.0 and iv < 1.0:
                         iv *= 100.0
-                    elif iv <= 0:
-                        iv = 25.0
+                    elif iv <= 0.0 and ltp > 0 and spot > 0:
+                        # Attempt BSM IV solution
+                        try:
+                            from domains.analytics.domain.black_scholes import BSMCalculations
+                            solved_iv = BSMCalculations.implied_volatility(
+                                price=ltp,
+                                S=spot,
+                                K=float(nearest_strike_opt.get("strike", spot)),
+                                T=max(expiry_days, 1) / 365.0,
+                                r=rf_rate / 100.0,
+                                option_type="call"
+                            )
+                            if solved_iv and solved_iv > 0:
+                                iv = round(solved_iv * 100.0, 2)
+                        except Exception:
+                            iv = 0.0
 
                     # Parse option chains for ALL expiries from Redis
                     option_chains = {}
@@ -259,8 +291,8 @@ async def get_ticker_parameters(symbol: str):
                             iv_val = float(opt.get("iv", 0.0) or 0.0)
                             if iv_val > 0.0 and iv_val < 1.0:
                                 iv_val *= 100.0
-                            elif iv_val <= 0:
-                                iv_val = iv
+                            elif iv_val <= 0.0:
+                                iv_val = 0.0
                                 
                             ltp_val = float(opt.get("last_price", 0.0) or 0.0)
                             
@@ -295,15 +327,15 @@ async def get_ticker_parameters(symbol: str):
                         symbol=symbol_clean,
                         stock_price=spot,
                         implied_volatility=iv,
-                        historical_volatility=0.0,
+                        historical_volatility=_get_historical_volatility(symbol_clean),
                         bid_price=bid,
                         ask_price=ask,
-                        open_interest=int(nearest_strike_opt.get("oi", 1000)),
-                        volume=int(nearest_strike_opt.get("volume", 200)),
+                        open_interest=int(nearest_strike_opt.get("oi", 0) or 0),
+                        volume=int(nearest_strike_opt.get("volume", 0) or 0),
                         strike_price=float(nearest_strike_opt.get("strike", spot)),
                         expiry_days=expiry_days,
-                        risk_free_rate=6.5 if "NS" in symbol_upper or symbol_clean in {"NIFTY"} else 5.25,
-                        dividend_yield=0.5,
+                        risk_free_rate=rf_rate,
+                        dividend_yield=0.0,
                         expiry_dates=expiries,
                         option_chains=option_chains,
                         generated_at=_generated_at(),

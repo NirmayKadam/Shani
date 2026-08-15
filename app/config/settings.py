@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     # Application
     AppEnv: str          = Field("development", validation_alias="APP_ENV")
     LogLevel: str        = Field("INFO", validation_alias="LOG_LEVEL")
-    AllowedOrigins: str  = Field("*", validation_alias="ALLOWED_ORIGINS")
+    AllowedOrigins: str  = Field("http://localhost:8000,http://127.0.0.1:8000", validation_alias="ALLOWED_ORIGINS")
+    InternalApiKey: str  = Field("", validation_alias="INTERNAL_API_KEY")
 
     # Redis
     RedisUrl: str        = Field("redis://redis:6379/0", validation_alias="REDIS_URL")
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     SupabaseKey: str = Field("", validation_alias="supabaseKey")
     SupabaseConnectionString: str = Field("", validation_alias="supabaseConnectionString")
 
-    # Ingestion
+    # Ingestion & Polling
     DefaultSymbols: str       = Field(
         "",
         validation_alias="WATCHLIST_SYMBOLS"
@@ -46,14 +47,18 @@ class Settings(BaseSettings):
     PricePollIntervalSeconds: int = Field(5, validation_alias="PRICE_POLL_INTERVAL_SECONDS")
     OptionsPollIntervalSeconds: int = Field(15, validation_alias="OPTIONS_POLL_INTERVAL_SECONDS")
 
+    # Macroeconomic Defaults
+    DefaultRiskFreeRateInr: float = Field(6.5, validation_alias="DEFAULT_RISK_FREE_RATE_INR")
+    DefaultRiskFreeRateUsd: float = Field(5.25, validation_alias="DEFAULT_RISK_FREE_RATE_USD")
+
     def get_default_symbols_as_list(self) -> list[str]:
         """Parse DefaultSymbols into a clean list."""
         return [s.strip().upper() for s in self.DefaultSymbols.split(",") if s.strip()]
 
     def get_allowed_origins_list(self) -> list[str]:
         """Parse AllowedOrigins into a clean list."""
-        if not self.AllowedOrigins:
-            return ["*"]
+        if not self.AllowedOrigins or self.AllowedOrigins.strip() == "*":
+            return ["http://localhost:8000", "http://127.0.0.1:8000"]
         return [o.strip() for o in self.AllowedOrigins.split(",") if o.strip()]
 
 

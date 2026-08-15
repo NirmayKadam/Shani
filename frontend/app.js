@@ -411,6 +411,17 @@ async function fetchSuggestions(query) {
     }
 }
 
+// Security Utility
+function escapeHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function renderSuggestions(suggestions) {
     const container = elements.searchSuggestions;
     if (!container) return;
@@ -428,10 +439,10 @@ function renderSuggestions(suggestions) {
         div.className = "suggestion-item";
         div.innerHTML = `
             <div class="suggestion-left">
-                <span class="suggestion-symbol">${item.symbol}</span>
-                <span class="suggestion-name">${item.name}</span>
+                <span class="suggestion-symbol">${escapeHtml(item.symbol)}</span>
+                <span class="suggestion-name">${escapeHtml(item.name)}</span>
             </div>
-            <span class="suggestion-type">${item.type}</span>
+            <span class="suggestion-type">${escapeHtml(item.type)}</span>
         `;
         
         div.addEventListener("click", () => {
@@ -1002,8 +1013,8 @@ function recalculateAndRender() {
     elements.atmPutTheta.textContent = formatNumber(atmMetrics.thetaPut, 4);
     elements.atmPutRho.textContent = formatNumber(atmMetrics.rhoPut, 4);
 
-    // 4. Render Option Chain table body
-    elements.tableBody.innerHTML = "";
+    // 4. Render Option Chain table body with batched DocumentFragment
+    const fragment = document.createDocumentFragment();
     
     // Slice options table (Full chain vs. 20 strikes ATM +/-)
     let rowsToRender = chainRows;
@@ -1036,6 +1047,7 @@ function recalculateAndRender() {
         const putBS = calculateBSM(activeSpot, strike, activeDays, activeRate, putIv, activeYield);
 
         const tr = document.createElement("tr");
+        tr.setAttribute("data-strike", strike);
         if (isATM) tr.className = "atm-strike-row";
 
         // Call ITM if strike < activeSpot, Put ITM if strike > activeSpot
@@ -1210,8 +1222,10 @@ function recalculateAndRender() {
         }
 
         tr.innerHTML = rowHtml;
-        elements.tableBody.appendChild(tr);
+        fragment.appendChild(tr);
     });
+
+    elements.tableBody.replaceChildren(fragment);
 
     // Scroll to the ATM Strike row inside table for easy visual inspection
     if (appState.selectedStrike === "ALL" && isFirstLoad) {
@@ -1354,15 +1368,39 @@ window.openStrikeModal = function(strikePrice) {
     elements.greeksModal.classList.add("show");
 };
 
+let _xlsxLoadingPromise = null;
+
+function ensureXlsxLoaded() {
+    if (typeof XLSX !== "undefined") return Promise.resolve();
+    if (_xlsxLoadingPromise) return _xlsxLoadingPromise;
+
+    _xlsxLoadingPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js";
+        script.onload = () => resolve();
+        script.onerror = (e) => {
+            _xlsxLoadingPromise = null;
+            reject(new Error("Failed to load Excel export library from CDN"));
+        };
+        document.head.appendChild(script);
+    });
+    return _xlsxLoadingPromise;
+}
+
 /**
  * Format Option Chain visible elements and export to a clean local XLSX file
  */
-function downloadCSV() {
+async function downloadCSV() {
     const chainRows = appState.optionChains[appState.selectedExpiry] || [];
-    if (chainRows.length === 0) return;
+    if (chainRows.length === 0) {
+        alert("No option chain data available to export.");
+        return;
+    }
 
-    if (typeof XLSX === 'undefined') {
-        alert("Excel export library not loaded yet. Please try again in a moment.");
+    try {
+        await ensureXlsxLoaded();
+    } catch (err) {
+        alert("Failed to load Excel library. Please check your network connection.");
         return;
     }
 
@@ -2374,21 +2412,21 @@ function initCanvasBackground() {
         }
     }
 
-    // Create particle array
+    // Create particle array (optimized count)
     const particles = [];
-    const particleCount = Math.min(100, Math.floor(width / 15));
+    const particleCount = Math.min(35, Math.max(15, Math.floor(width / 40)));
     for (let i = 0; i < particleCount; i++) {
         particles.push(new Particle());
     }
 
     // Draw connecting lines if particles are close
     function connect() {
-        let maxDistance = 100;
+        let maxDistance = 90;
         const isLight = document.body.classList.contains("light-theme");
         const lineOpacityMultiplier = isLight ? 0.18 : 0.08;
         
         for (let a = 0; a < particles.length; a++) {
-            for (let b = a; b < particles.length; b++) {
+            for (let b = a + 1; b < particles.length; b++) {
                 let distSq = (particles[a].x - particles[b].x) ** 2 + 
                              (particles[a].y - particles[b].y) ** 2;
                 if (distSq < maxDistance ** 2) {
@@ -2404,18 +2442,36 @@ function initCanvasBackground() {
         }
     }
 
-    // Animation loop
-    function animate() {
-        ctx.clearRect(0, 0, width, height);
-        particles.forEach(p => {
-            p.update();
-            p.draw();
-        });
-        connect();
-        requestAnimationFrame(animate);
+    // Animation loop throttled to ~30fps and paused when hidden
+    let lastFrameTime = 0;
+    let animId = null;
+
+    function animate(timestamp) {
+        if (document.hidden) {
+            animId = null;
+            return;
+        }
+
+        if (timestamp - lastFrameTime >= 33) {
+            lastFrameTime = timestamp;
+            ctx.clearRect(0, 0, width, height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            connect();
+        }
+        animId = requestAnimationFrame(animate);
     }
 
-    animate();
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && !animId) {
+            lastFrameTime = performance.now();
+            animId = requestAnimationFrame(animate);
+        }
+    });
+
+    animId = requestAnimationFrame(animate);
 }
 
 // App Entry Point
@@ -2589,7 +2645,7 @@ function showAlertToast(message) {
 
     const toast = document.createElement("div");
     toast.style.cssText = "position: fixed; bottom: 20px; right: 20px; background: #1e1b4b; border: 1px solid #6366f1; color: white; padding: 14px 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 9999; font-size: 13px; font-weight: 500;";
-    toast.innerHTML = `<strong style="color: #818cf8;">🔔 Market Alert</strong><br>${message}`;
+    toast.innerHTML = `<strong style="color: #818cf8;">🔔 Market Alert</strong><br>${escapeHtml(message)}`;
     document.body.appendChild(toast);
 
     setTimeout(() => {

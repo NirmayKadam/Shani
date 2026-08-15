@@ -83,9 +83,10 @@ class RedisKeys:
 # ── TTLs (seconds) ────────────────────────────────────────────
 
 class TTL:
-    MARKET_PRICE     = 86400    # 24h — refreshed every poll cycle
-    MARKET_OPTIONS   = 600      # 10 min during market hours
-    MARKET_OPTIONS_PRICED = 86400 # 24h
+    MARKET_PRICE          = 60       # 60s — refreshed continuously every poll cycle
+    MARKET_OPTIONS        = 120      # 2 min option chain freshness
+    MARKET_OPTIONS_PRICED = 120      # 2 min priced chain freshness
+    HISTORICAL_OHLC       = 3600     # 1 hour for historical OHLC bars
 
 
 # ── Index Symbols (use option-chain-indices endpoint) ─────────
