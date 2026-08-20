@@ -433,6 +433,8 @@ The PDE strategy generates positive alpha in \textit{all three} volatility regim
 
 The Retail Baseline oscillates between marginal gains and losses across regimes, achieving its best result during normal VIX ($+6.01\%$, Sharpe $= 0.91$) but generating near-zero or negative returns in low and high volatility environments. This regime sensitivity reflects the fundamental limitation of momentum indicators: they are optimized for trending markets and provide unreliable signals during range-bound (low VIX) or highly volatile (high VIX) conditions.
 
+
+
 \subsection{Walk-Forward Out-of-Sample Validation}
 To verify that the observed alpha is not an artifact of in-sample overfitting, we conduct a rolling walk-forward validation across four consecutive out-of-sample folds, each spanning approximately 45 trading days. Table~\ref{tab:walk_forward} presents the out-of-sample results for each fold.
 
@@ -517,19 +519,21 @@ The Hybrid strategy (Challenger~B) underperforms the Pure PDE strategy ($+7.85\%
 
 This section presents four key visualizations that complement the tabular results above.
 
-\begin{figure}[htbp]
+\begin{figure*}[!t]
 \centering
-\includegraphics[width=\columnwidth]{fig1_equity_curves}
-\caption{Cumulative equity curves for all three strategies over the 180-day backtest period. The Pure PDE strategy (Challenger~A) demonstrates consistent upward trajectory with controlled drawdowns, while the Retail Baseline exhibits negative drift. Initial capital: INR~1,00,000.}
-\label{fig:equity_curves}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\columnwidth]{fig2_drawdown_profiles}
-\caption{Peak-to-trough drawdown evolution. The PDE strategy's maximum drawdown ($11.61\%$) is substantially lower than the Retail Baseline's ($19.75\%$), confirming superior downside risk management despite a higher trade count.}
-\label{fig:drawdown_profiles}
-\end{figure}
+\begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{fig1_equity_curves}
+    \caption{Cumulative equity curves for all three strategies over the 180-day backtest period. The Pure PDE strategy (Challenger~A) demonstrates consistent upward trajectory with controlled drawdowns, while the Retail Baseline exhibits negative drift. Initial capital: INR~1,00,000.}
+    \label{fig:equity_curves}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{fig2_drawdown_profiles}
+    \caption{Peak-to-trough drawdown evolution. The PDE strategy's maximum drawdown ($11.61\%$) is substantially lower than the Retail Baseline's ($19.75\%$), confirming superior downside risk management despite a higher trade count.}
+    \label{fig:drawdown_profiles}
+\end{minipage}
+\end{figure*}
 
 \begin{figure*}[!t]
 \centering
@@ -577,7 +581,7 @@ Future research directions include: (a)~extending the PDE framework to American-
 % ============================================================================
 %   BIBLIOGRAPHY
 % ============================================================================
-\balance
+\IEEEtriggeratref{8}
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{12}
 
