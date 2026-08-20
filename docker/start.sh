@@ -48,4 +48,4 @@ if [ -f "/var/lib/postgresql/data/postgresql.conf" ]; then
 fi
 
 echo "Starting supervisord..."
-exec supervisord -c /app/supervisord.conf
+exec supervisord -c /supervisord.conf

@@ -48,8 +48,8 @@ RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
 # Copy application source & configs
 COPY . .
-COPY supervisord.conf /supervisord.conf
-COPY start.sh /start.sh
+COPY docker/supervisord.conf /supervisord.conf
+COPY docker/start.sh /start.sh
 RUN chmod +x /start.sh
 
 # Expose ports

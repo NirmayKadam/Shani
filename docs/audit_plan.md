@@ -179,7 +179,7 @@ Comprehensive audit of the AlphaStreams/Shani project — frontend → backend �
 - **Fix**: Pre-compress static assets or verify GZip applies to static file serving.
 
 ### 5.8 Uvicorn runs with single worker
-- **File**: [supervisord.conf L29](file:///d:/Nirmay%20pc/ENGINEERING/projects/MarketSentimentAnalysis2/supervisord.conf#L29)
+- **File**: [supervisord.conf L29](file:///d:/Nirmay%20pc/ENGINEERING/projects/MarketSentimentAnalysis2/docker/supervisord.conf#L29)
 - **Problem**: `uvicorn app.main:app --host 0.0.0.0 --port 8000` runs 1 worker.
 - **Fix**: Add `--workers 2` or use Gunicorn with Uvicorn workers for production.
 
@@ -244,12 +244,12 @@ Comprehensive audit of the AlphaStreams/Shani project — frontend → backend �
 - **Fix**: Add `deploy.resources.limits` for memory and CPU.
 
 ### 7.6 Redis runs without password
-- **File**: [supervisord.conf L7](file:///d:/Nirmay%20pc/ENGINEERING/projects/MarketSentimentAnalysis2/supervisord.conf#L7)
+- **File**: [supervisord.conf L7](file:///d:/Nirmay%20pc/ENGINEERING/projects/MarketSentimentAnalysis2/docker/supervisord.conf#L7)
 - **Problem**: `redis-server` starts with no authentication. Combined with port 6379 being exposed, anyone can connect.
 - **Fix**: Add `--requirepass` flag or use a redis.conf with authentication.
 
 ### 7.7 Postgres pg_hba.conf allows all connections with md5
-- **File**: [start.sh L19-20](file:///d:/Nirmay%20pc/ENGINEERING/projects/MarketSentimentAnalysis2/start.sh#L19-L20)
+- **File**: [start.sh L19-20](file:///d:/Nirmay%20pc/ENGINEERING/projects/MarketSentimentAnalysis2/docker/start.sh#L19-L20)
 - **Problem**: `host all all 0.0.0.0/0 md5` allows connections from any IP. Combined with port 5433 exposed, DB is accessible externally.
 - **Fix**: Restrict to `127.0.0.1/32` for in-container access only.
 

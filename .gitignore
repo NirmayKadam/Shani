@@ -67,6 +67,10 @@ alphastreams_interview_mastery.md
 foodie_haven_interview_mastery.md
 
 .agents
+
+# Gemini agent artifacts
+skills-lock.json
+
 # Research cache & raw daily Bhavcopy downloads
 research/data/raw/bhavcopy_cache/
 
