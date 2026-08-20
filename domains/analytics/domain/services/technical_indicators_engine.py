@@ -42,14 +42,15 @@ class TechnicalIndicatorsEngine:
         if len(prices) < slow_period + signal_period:
             return {"macd": None, "signal": None, "histogram": None}
 
-        prices_arr = np.array(prices)
+        prices_arr = np.array(prices, dtype=float)
 
-        def _ema(data, window):
-            weights = np.exp(np.linspace(-1.0, 0.0, window))
-            weights /= weights.sum()
-            a = np.convolve(data, weights, mode="full")[: len(data)]
-            a[:window] = a[window]
-            return a
+        def _ema(data: np.ndarray, window: int) -> np.ndarray:
+            alpha = 2.0 / (window + 1)
+            ema = np.empty_like(data, dtype=float)
+            ema[0] = data[0]
+            for i in range(1, len(data)):
+                ema[i] = alpha * data[i] + (1.0 - alpha) * ema[i - 1]
+            return ema
 
         fast_ema = _ema(prices_arr, fast_period)
         slow_ema = _ema(prices_arr, slow_period)
@@ -62,6 +63,35 @@ class TechnicalIndicatorsEngine:
             "signal": float(round(signal_line[-1], 4)),
             "histogram": float(round(histogram[-1], 4)),
         }
+
+    @staticmethod
+    def calculate_atr(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        period: int = 14,
+    ) -> Optional[float]:
+        """Calculate Average True Range using standard Wilder / EMA smoothing."""
+        if len(closes) < period + 1 or len(highs) < period + 1 or len(lows) < period + 1:
+            return None
+
+        trs: List[float] = []
+        for i in range(1, len(closes)):
+            tr = max(
+                highs[i] - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i] - closes[i - 1]),
+            )
+            trs.append(tr)
+
+        if len(trs) < period:
+            return None
+
+        atr = float(np.mean(trs[:period]))
+        for i in range(period, len(trs)):
+            atr = (atr * (period - 1) + trs[i]) / period
+
+        return float(round(atr, 4))
 
     @staticmethod
     def calculate_bollinger_bands(
@@ -91,18 +121,24 @@ class TechnicalIndicatorsEngine:
                 "rsi": None,
                 "macd": {"macd": None, "signal": None, "histogram": None},
                 "bollinger": {"middle": None, "upper": None, "lower": None},
+                "atr": None,
                 "candle_count": 0,
             }
 
         closes = [getattr(c, "close", c) if hasattr(c, "close") else float(c) for c in candles]
+        highs = [getattr(c, "high", c) if hasattr(c, "high") else float(c) for c in candles]
+        lows = [getattr(c, "low", c) if hasattr(c, "low") else float(c) for c in candles]
+
         rsi = cls.calculate_rsi(closes)
         macd = cls.calculate_macd(closes)
         bb = cls.calculate_bollinger_bands(closes)
+        atr = cls.calculate_atr(highs, lows, closes) if (highs and lows and closes) else None
 
         return {
             "rsi": rsi,
             "macd": macd,
             "bollinger": bb,
+            "atr": atr,
             "candle_count": len(candles),
             "latest_close": closes[-1] if closes else None,
         }

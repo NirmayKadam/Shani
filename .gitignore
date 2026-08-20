@@ -67,4 +67,6 @@ alphastreams_interview_mastery.md
 foodie_haven_interview_mastery.md
 
 .agents
-*.rdb
+# Research cache & raw daily Bhavcopy downloads
+research/data/raw/bhavcopy_cache/
+

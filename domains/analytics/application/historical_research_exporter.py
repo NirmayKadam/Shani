@@ -13,9 +13,15 @@ import logging
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional
 
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    _HAS_OPENPYXL = True
+except ImportError:
+    openpyxl = None
+    Font = PatternFill = Alignment = Border = Side = get_column_letter = None
+    _HAS_OPENPYXL = False
 
 from shared.utils.symbol_validator import SymbolValidator
 from domains.analytics.application.services.derivatives.black_scholes import BlackScholesMerton
@@ -24,31 +30,36 @@ from domains.analytics.application.technicals_calculator import compute_all_tech
 logger = logging.getLogger(__name__)
 
 # --- Color Constants Matching User Screenshots ---
-HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")       # Light Blue/Grey Header
-ATM_STRIKE_FILL = PatternFill(start_color="4A86E8", end_color="4A86E8", fill_type="solid")   # Bright Blue ATM
-REGULAR_STRIKE_FILL = PatternFill(start_color="C9DAF8", end_color="C9DAF8", fill_type="solid")# Light Blue Strike
-ITM_CALL_FILL = PatternFill(start_color="D9EAD3", end_color="D9EAD3", fill_type="solid")     # Soft Green ITM Call
-ITM_PUT_FILL = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")       # Soft Red ITM Put
+if _HAS_OPENPYXL:
+    HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")       # Light Blue/Grey Header
+    ATM_STRIKE_FILL = PatternFill(start_color="4A86E8", end_color="4A86E8", fill_type="solid")   # Bright Blue ATM
+    REGULAR_STRIKE_FILL = PatternFill(start_color="C9DAF8", end_color="C9DAF8", fill_type="solid")# Light Blue Strike
+    ITM_CALL_FILL = PatternFill(start_color="D9EAD3", end_color="D9EAD3", fill_type="solid")     # Soft Green ITM Call
+    ITM_PUT_FILL = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")       # Soft Red ITM Put
 
-SIGNAL_BULLISH_FILL = PatternFill(start_color="D9EAD3", end_color="D9EAD3", fill_type="solid")
-SIGNAL_BEARISH_FILL = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
-SUBHEADER_FILL = PatternFill(start_color="EFEFEF", end_color="EFEFEF", fill_type="solid")
+    SIGNAL_BULLISH_FILL = PatternFill(start_color="D9EAD3", end_color="D9EAD3", fill_type="solid")
+    SIGNAL_BEARISH_FILL = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
+    SUBHEADER_FILL = PatternFill(start_color="EFEFEF", end_color="EFEFEF", fill_type="solid")
 
-FONT_HEADER = Font(name="Calibri", size=11, bold=True, color="000000")
-FONT_ATM_STRIKE = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-FONT_REGULAR_STRIKE = Font(name="Calibri", size=11, bold=True, color="000000")
-FONT_REGULAR = Font(name="Calibri", size=11, bold=False, color="000000")
-FONT_BOLD = Font(name="Calibri", size=11, bold=True, color="000000")
+    FONT_HEADER = Font(name="Calibri", size=11, bold=True, color="000000")
+    FONT_ATM_STRIKE = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    FONT_REGULAR_STRIKE = Font(name="Calibri", size=11, bold=True, color="000000")
+    FONT_REGULAR = Font(name="Calibri", size=11, bold=False, color="000000")
+    FONT_BOLD = Font(name="Calibri", size=11, bold=True, color="000000")
+    FONT_BULLISH = Font(name="Calibri", size=11, bold=True, color="274E13")
+    FONT_BEARISH = Font(name="Calibri", size=11, bold=True, color="990000")
 
-FONT_BULLISH = Font(name="Calibri", size=11, bold=True, color="274E13")
-FONT_BEARISH = Font(name="Calibri", size=11, bold=True, color="990000")
-
-THIN_BORDER = Border(
-    left=Side(style="thin", color="D3D3D3"),
-    right=Side(style="thin", color="D3D3D3"),
-    top=Side(style="thin", color="D3D3D3"),
-    bottom=Side(style="thin", color="D3D3D3"),
-)
+    THIN_BORDER = Border(
+        left=Side(style="thin", color="D3D3D3"),
+        right=Side(style="thin", color="D3D3D3"),
+        top=Side(style="thin", color="D3D3D3"),
+        bottom=Side(style="thin", color="D3D3D3"),
+    )
+else:
+    HEADER_FILL = ATM_STRIKE_FILL = REGULAR_STRIKE_FILL = ITM_CALL_FILL = ITM_PUT_FILL = None
+    SIGNAL_BULLISH_FILL = SIGNAL_BEARISH_FILL = SUBHEADER_FILL = None
+    FONT_HEADER = FONT_ATM_STRIKE = FONT_REGULAR_STRIKE = FONT_REGULAR = None
+    FONT_BOLD = FONT_BULLISH = FONT_BEARISH = THIN_BORDER = None
 
 
 def fetch_historical_daily_prices(symbol_clean: str, start_date: date, end_date: date) -> Dict[date, Dict[str, Any]]:

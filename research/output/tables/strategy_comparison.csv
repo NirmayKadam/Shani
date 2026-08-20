@@ -1,0 +1,4 @@
+Strategy,Total Return (%),Sharpe Ratio,Sortino Ratio,Max Drawdown (%),Profit Factor,Win Rate (%),Total Trades,Avg Win (INR),Avg Loss (INR),Friction Paid (INR),Final Capital (INR)
+Retail_Baseline_RSI_MACD,-5.58,-0.3975,-0.491,19.75,0.8901,50.0,38,2379.72,2673.51,6084.66,94417.87
+Challenger_A_Pure_PDE,49.57,2.0665,5.086,11.61,2.0473,29.85,67,4845.2,1007.08,7413.45,149571.51
+Challenger_B_Hybrid_QuantMental,7.85,0.3179,0.6753,12.21,1.3003,22.58,31,4853.62,1088.72,3424.06,107845.93

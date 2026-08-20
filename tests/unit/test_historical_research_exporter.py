@@ -3,9 +3,10 @@ File Overview: Unit tests for On-Demand Multi-Day Historical Research Excel Expo
 """
 
 from datetime import date
-import openpyxl
 import io
 import pytest
+
+openpyxl = pytest.importorskip("openpyxl")
 
 from domains.analytics.application.historical_research_exporter import (
     generate_strike_grid,

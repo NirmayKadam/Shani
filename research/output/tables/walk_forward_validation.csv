@@ -1,0 +1,13 @@
+Window,Test_Dates,Strategy,Out_Of_Sample_Return_Pct,Sharpe_Ratio,Sortino_Ratio,Trade_Count
+Fold_1,2024-01-01 to 2024-02-13,Retail_Baseline_RSI_MACD,-0.6,-0.7722,-0.9352,5
+Fold_1,2024-01-01 to 2024-02-13,Challenger_A_Pure_PDE,9.96,2.1912,5.1044,11
+Fold_1,2024-01-01 to 2024-02-13,Challenger_B_Hybrid_QuantMental,5.85,1.3217,2.9806,10
+Fold_2,2024-02-14 to 2024-03-28,Retail_Baseline_RSI_MACD,-5.22,-1.8287,-2.1559,7
+Fold_2,2024-02-14 to 2024-03-28,Challenger_A_Pure_PDE,10.33,2.3953,5.1976,11
+Fold_2,2024-02-14 to 2024-03-28,Challenger_B_Hybrid_QuantMental,-2.6,-1.8499,-2.4705,7
+Fold_3,2024-04-01 to 2024-05-15,Retail_Baseline_RSI_MACD,1.02,0.2601,0.5778,5
+Fold_3,2024-04-01 to 2024-05-15,Challenger_A_Pure_PDE,17.78,3.8217,11.0822,13
+Fold_3,2024-04-01 to 2024-05-15,Challenger_B_Hybrid_QuantMental,5.92,1.7657,5.2291,6
+Fold_4,2024-05-16 to 2024-06-28,Retail_Baseline_RSI_MACD,-2.4,-0.2318,-0.2804,6
+Fold_4,2024-05-16 to 2024-06-28,Challenger_A_Pure_PDE,9.21,2.396,62.095,7
+Fold_4,2024-05-16 to 2024-06-28,Challenger_B_Hybrid_QuantMental,-0.28,-15.3653,-15.3653,2

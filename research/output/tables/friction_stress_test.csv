@@ -1,0 +1,13 @@
+Friction_Multiplier,Strategy,Total_Return_Pct,Sharpe_Ratio,Sortino_Ratio,Max_Drawdown_Pct,Total_Friction_Paid
+1.0x,Retail_Baseline_RSI_MACD,-5.58,-0.3975,-0.491,19.75,6084.66
+1.0x,Challenger_A_Pure_PDE,49.57,2.0665,5.086,11.61,7413.45
+1.0x,Challenger_B_Hybrid_QuantMental,7.85,0.3179,0.6753,12.21,3424.06
+1.5x,Retail_Baseline_RSI_MACD,-8.62,-0.5465,-0.6664,20.51,9126.98
+1.5x,Challenger_A_Pure_PDE,45.86,1.9091,4.5961,12.19,11120.26
+1.5x,Challenger_B_Hybrid_QuantMental,6.13,0.199,0.413,12.79,5136.14
+2.0x,Retail_Baseline_RSI_MACD,-11.67,-0.6918,-0.8356,21.3,12169.3
+2.0x,Challenger_A_Pure_PDE,42.16,1.7513,4.1245,12.79,14826.98
+2.0x,Challenger_B_Hybrid_QuantMental,4.42,0.0798,0.1617,13.38,6848.17
+3.0x,Retail_Baseline_RSI_MACD,-17.75,-0.9701,-1.1488,24.31,18253.97
+3.0x,Challenger_A_Pure_PDE,34.74,1.4346,3.2352,14.02,22240.43
+3.0x,Challenger_B_Hybrid_QuantMental,1.0,-0.1595,-0.3092,14.97,10272.24

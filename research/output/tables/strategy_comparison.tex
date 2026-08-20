@@ -1,0 +1,13 @@
+\begin{table}
+\caption{Empirical Performance Comparison of PDE Solvers vs Retail Indicators (NIFTY 50)}
+\label{tab:results}
+\begin{tabular}{lrrrrrrrrrrr}
+\toprule
+Strategy & Total Return (%) & Sharpe Ratio & Sortino Ratio & Max Drawdown (%) & Profit Factor & Win Rate (%) & Total Trades & Avg Win (INR) & Avg Loss (INR) & Friction Paid (INR) & Final Capital (INR) \\
+\midrule
+Retail_Baseline_RSI_MACD & -5.58 & -0.40 & -0.49 & 19.75 & 0.89 & 50.00 & 38 & 2379.72 & 2673.51 & 6084.66 & 94417.87 \\
+Challenger_A_Pure_PDE & 49.57 & 2.07 & 5.09 & 11.61 & 2.05 & 29.85 & 67 & 4845.20 & 1007.08 & 7413.45 & 149571.51 \\
+Challenger_B_Hybrid_QuantMental & 7.85 & 0.32 & 0.68 & 12.21 & 1.30 & 22.58 & 31 & 4853.62 & 1088.72 & 3424.06 & 107845.93 \\
+\bottomrule
+\end{tabular}
+\end{table}

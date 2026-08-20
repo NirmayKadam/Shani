@@ -1,0 +1,10 @@
+VIX_Regime,Strategy,Total_Return_Pct,Sharpe_Ratio,Sortino_Ratio,Win_Rate_Pct,Trade_Count
+Low VIX (< 12.6),Retail_Baseline_RSI_MACD,-0.97,-0.4141,-0.5507,50.0,12
+Low VIX (< 12.6),Challenger_A_Pure_PDE,6.2,1.1253,2.2868,33.33,21
+Low VIX (< 12.6),Challenger_B_Hybrid_QuantMental,-0.63,-1.3746,-2.095,16.67,6
+Normal VIX (12.6 - 14.5),Retail_Baseline_RSI_MACD,6.01,0.9107,1.4616,57.14,14
+Normal VIX (12.6 - 14.5),Challenger_A_Pure_PDE,21.44,3.2831,11.6055,28.57,21
+Normal VIX (12.6 - 14.5),Challenger_B_Hybrid_QuantMental,7.4,1.6337,4.5071,27.27,11
+High VIX (> 14.5),Retail_Baseline_RSI_MACD,0.92,0.1382,0.2106,50.0,12
+High VIX (> 14.5),Challenger_A_Pure_PDE,15.07,1.6284,3.6019,29.17,24
+High VIX (> 14.5),Challenger_B_Hybrid_QuantMental,-6.58,-1.2425,-2.1133,14.29,14
