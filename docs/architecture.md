@@ -87,8 +87,9 @@ MarketSentimentAnalysis2/
 ├── frontend/                          # Client web assets (HTML5, CSS3, Vanilla JS)
 ├── scripts/                           # Database migration & catalog tools
 ├── tests/                             # Unit, integration & e2e test suites (80+ tests)
-├── supervisord.conf                   # Multi-process container configuration
-├── start.sh                           # Container startup script
+├── docker/                            # Container configuration
+│   ├── supervisord.conf               # Multi-process container configuration
+│   └── start.sh                       # Container startup script
 └── docker-compose.yml                 # Orchestration manifest
 ```
 
