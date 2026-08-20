@@ -2607,15 +2607,15 @@ async function loadActiveAlertRules() {
         if (res.ok) {
             const rules = await res.json();
             if (rules.length === 0) {
-                listEl.innerHTML = '<div style="color: #94a3b8; font-size: 13px; font-style: italic;">No alert rules configured.</div>';
+                listEl.innerHTML = '<div class="active-alert-empty">No alert rules configured.</div>';
                 return;
             }
             listEl.innerHTML = rules.map(r => `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-bottom: 6px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
+                <div class="active-alert-item">
                     <div>
-                        <strong style="color: #6366f1;">${r.symbol}</strong>: ${r.condition_type} &gt; ${r.threshold} (Cooldown: ${r.cooldown_seconds}s)
+                        <strong style="color: var(--accent-indigo);">${escapeHtml(r.symbol)}</strong>: ${escapeHtml(r.condition_type)} &gt; ${escapeHtml(String(r.threshold))} (Cooldown: ${r.cooldown_seconds}s)
                     </div>
-                    <button onclick="deleteAlertRule('${r.id}')" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer;">Delete</button>
+                    <button onclick="deleteAlertRule('${escapeHtml(String(r.id))}')" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;">Delete</button>
                 </div>
             `).join("");
         }
