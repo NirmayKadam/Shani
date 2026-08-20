@@ -1,10 +1,12 @@
-# AlphaStreams V2 — Intellectual Property Rights (IPR) Draft
+# Shani V2 — Intellectual Property Rights (IPR) Draft
+
 ## Copyright Registration & IP Protection Package
 
-**Project Title:** AlphaStreams — Real-Time Quantitative Analytics & Option Pricing Engine  
-**Internal Project Name (Codebase):** AlphaStreams V2 / Shani  
+**Project Title:** Shani — Real-Time Quantitative Analytics & Option Pricing Engine  
+**Internal Project Name (Codebase):** Shani V2 / Shani  
 **Project Domain:** Quantitative Finance, Options Pricing, Algorithmic Trading Analytics  
-**Authors (Shani Quant Research Team):**  
+**Authors (Shani-Trading Team):**  
+
 1. Hirdhay Jadhwani  
 2. Siddharth Jogi  
 3. Sumanyu Joshi  
@@ -37,10 +39,10 @@
 
 ## 1. Executive Summary
 
-AlphaStreams V2 is an event-driven quantitative options analytics platform built for the Indian financial markets (NSE/BSE). The project comprises **three distinct, separately registrable copyrightable works**:
+Shani V2 is an event-driven quantitative options analytics platform built for the Indian financial markets (NSE/BSE). The project comprises **three distinct, separately registrable copyrightable works**:
 
 | # | Work | Copyright Class | Registration Status |
-|---|------|----------------|-------------------|
+| --- | ------ | ---------------- | ------------------- |
 | 1 | Platform source code (PDE pricing engine, backtesting framework, full-stack application) | **Computer Software** | To be filed |
 | 2 | Research paper: *"Alpha Generation in Indian Index Derivatives: An Empirical Comparison of Crank-Nicolson PDE Solvers versus Retail Technical Indicators"* | **Literary Work** | To be filed |
 | 3 | Original system architecture / block diagram(s) | **Artistic Work** | To be filed |
@@ -61,11 +63,11 @@ Copyright protects the **original expression** in each work — the specific sou
 
 ## 2. IP Type Map — Applicable Rights
 
-| IP Right | What It Protects | AlphaStreams Project Example | Action Required |
-|----------|-----------------|----------------------------|----------------|
+| IP Right | What It Protects | Shani Project Example | Action Required |
+| ---------- | ----------------- | ---------------------------- | ---------------- |
 | **Copyright** | Original expression | Source code text, research paper, original diagrams, frontend UI artwork | Prepare works + file applications per §4, §5, §6 |
 | **Patent** | Novel technical invention | Potentially: the specific combination of cubic-spline volatility surface calibration + $O(M)$ SuperLU pre-factorized CN-PDE + dynamic Indian statutory friction model as a unified system | Assess patentability **before** public disclosure (paper publication, arXiv preprint, conference presentation, public repo) |
-| **Trademark** | Brand identifier | "AlphaStreams", "Shani", project logo | Conduct TM search; evaluate registration separately |
+| **Trademark** | Brand identifier | "Shani", "Shani", project logo | Conduct TM search; evaluate registration separately |
 | **Trade Secret** | Confidential valuable information | Calibrated strategy parameters, proprietary epsilon buffer multipliers ($\kappa = 1.5$), optimal near-ATM strike window (150-point radius), 2-bar minimum hold logic, internal execution safeguard thresholds | Maintain confidentiality controls, restrict access |
 | **Design** | Visual product appearance | Glassmorphic dark-theme dashboard UI (possible, but low priority for software) | Evaluate if UI is sufficiently distinctive |
 
@@ -78,6 +80,7 @@ Copyright protects the **original expression** in each work — the specific sou
 The following elements represent **original expression** authored by the team:
 
 #### Source Code — Computer Software
+
 1. **Crank-Nicolson PDE Numerical Solver** (`domains/analytics/domain/services/pde_solver.py`) — Original Python implementation of the 1D Black-Scholes PDE solver with CFL stability guards, SuperLU pre-factorization via `scipy.sparse.linalg.splu`, and adaptive grid refinement.
 2. **BSM Analytical Calculator Domain Service** (`domains/analytics/domain/services/bsm_calculator.py`) — Original implementation of closed-form BSM pricing with continuous dividend yield and all five Greeks ($\Delta, \Gamma, \nu, \Theta, \rho$).
 3. **Cubic Spline Volatility Surface Calibrator** (`domains/analytics/domain/services/volatility_surface.py`) — Original code resolving the volatility circularity problem via natural cubic spline cross-sectional interpolation.
@@ -90,17 +93,19 @@ The following elements represent **original expression** authored by the team:
 10. **Data Collection & Experiment Orchestration** (`research/data/collect_historical.py`, `research/run_experiment.py`) — Original data pipeline, experiment runner, and statistical analysis framework.
 
 #### Research Paper — Literary Work
-11. **IEEE LaTeX Manuscript** (`research/paper/main.tex`) — Original written exposition including mathematical formulation, experimental design, empirical results, VIX regime analysis, walk-forward validation, and conclusions.
+
+ 1. **IEEE LaTeX Manuscript** (`research/paper/main.tex`) — Original written exposition including mathematical formulation, experimental design, empirical results, VIX regime analysis, walk-forward validation, and conclusions.
 
 #### Diagrams — Artistic Work
-12. **System Architecture Diagrams** — Any original block diagrams, Mermaid flow charts, or sequence diagrams depicting the AlphaStreams pipeline (data ingestion → volatility surface calibration → PDE solver → friction model → strategy signal output → notification dispatch).
+
+ 1. **System Architecture Diagrams** — Any original block diagrams, Mermaid flow charts, or sequence diagrams depicting the Shani pipeline (data ingestion → volatility surface calibration → PDE solver → friction model → strategy signal output → notification dispatch).
 
 ### 3.2 Non-Copyrightable Elements (Ideas, Algorithms, Methods)
 
 The following are **ideas, mathematical formulas, or well-known algorithms** and are NOT protectable by copyright:
 
 | Element | Classification | Reason |
-|---------|---------------|--------|
+| --------- | --------------- | -------- |
 | Black-Scholes-Merton equations ($d_1$, $d_2$, call/put formulas) | Published mathematical formula | Black & Scholes (1973), Merton (1973) |
 | Crank-Nicolson finite difference scheme | Published numerical method | Crank & Nicolson (1947); Duffy (2006) |
 | SuperLU sparse LU decomposition algorithm | Published numerical linear algebra | Li (2005); distributed via SciPy |
@@ -116,7 +121,7 @@ The following are **ideas, mathematical formulas, or well-known algorithms** and
 ### 4.1 Work Identification
 
 ```
-TITLE:              AlphaStreams — Real-Time Quantitative Analytics & Option Pricing Engine
+TITLE:              Shani — Real-Time Quantitative Analytics & Option Pricing Engine
 VERSION/DATE:       v2.0 / August 2026
 CLASS:              Computer Software / Computer Programme
 APPLICANT/OWNER:    [To be confirmed — see §7 Authorship vs Ownership]
@@ -134,6 +139,7 @@ Per current Copyright Office portal instructions:
 
 > [!WARNING]
 > **Pre-submission sanitization is mandatory.** Before generating the source code PDF:
+>
 > - **Remove all API keys, tokens, passwords, private keys, TOTP secrets** from every file.
 > - Remove the `.env` file contents entirely — do not include any configuration secrets.
 > - Remove Groww JWT tokens, Supabase keys, and database credentials.
@@ -145,7 +151,7 @@ Per current Copyright Office portal instructions:
 **First 10 pages** (core mathematical domain — highest originality):
 
 | Priority | File | Content | Rationale |
-|----------|------|---------|-----------|
+| ---------- | ------ | --------- | ----------- |
 | 1 | `domains/analytics/domain/services/pde_solver.py` | Crank-Nicolson PDE implementation with SuperLU factorization | Core novel implementation |
 | 2 | `domains/analytics/domain/services/bsm_calculator.py` | BSM analytical pricing + Greeks | Core mathematical engine |
 | 3 | `domains/analytics/domain/services/volatility_surface.py` | Cubic spline volatility surface calibration | Novel circularity resolution |
@@ -155,7 +161,7 @@ Per current Copyright Office portal instructions:
 **Last 10 pages** (infrastructure & platform — demonstrates system completeness):
 
 | Priority | File | Content | Rationale |
-|----------|------|---------|-----------|
+| ---------- | ------ | --------- | ----------- |
 | 1 | `domains/ingestion/infrastructure/outbound/nse_api_adapter.py` | NSE session management + cookie rotation | Original adapter logic |
 | 2 | `domains/notifications/domain/services/rule_matcher.py` | Alert condition evaluation engine | Original domain service |
 | 3 | `domains/analytics/infrastructure/options_subscriber.py` | Redis Stream consumer daemon | Original event pipeline |
@@ -165,15 +171,15 @@ Per current Copyright Office portal instructions:
 ### 4.3 Software Copyright Filing Pack
 
 | # | File | Purpose | Suggested Filename |
-|---|------|---------|-------------------|
-| 1 | Project identity cover page | Title, version, applicant, authors, project ID | `01_AlphaStreams_ProjectIdentity.pdf` |
-| 2 | Source code PDF | First 10 + last 10 pages (or full if <20pp) | `02_AlphaStreams_SourceCode.pdf` |
-| 3 | Object code (if requested) | Compiled/bytecode artifacts | `03_AlphaStreams_ObjectCode.pdf` |
-| 4 | Author contribution statement | Individual contribution breakdown + signatures | `04_AlphaStreams_AuthorContribution.pdf` |
-| 5 | Ownership NOC/Assignment | If author ≠ applicant/owner per institutional policy | `05_AlphaStreams_Ownership_NOC.pdf` |
-| 6 | Third-party register | Open-source/dataset/API licence audit | `06_AlphaStreams_ThirdParty_Register.pdf` |
-| 7 | Development record | Git history, milestones, commit timeline | `07_AlphaStreams_DevelopmentRecord.pdf` |
-| 8 | Dependency notices | `requirements.txt` + licence attributions | `08_AlphaStreams_DependencyNotices.pdf` |
+| --- | ------ | --------- | ------------------- |
+| 1 | Project identity cover page | Title, version, applicant, authors, project ID | `01_Shani_ProjectIdentity.pdf` |
+| 2 | Source code PDF | First 10 + last 10 pages (or full if <20pp) | `02_Shani_SourceCode.pdf` |
+| 3 | Object code (if requested) | Compiled/bytecode artifacts | `03_Shani_ObjectCode.pdf` |
+| 4 | Author contribution statement | Individual contribution breakdown + signatures | `04_Shani_AuthorContribution.pdf` |
+| 5 | Ownership NOC/Assignment | If author ≠ applicant/owner per institutional policy | `05_Shani_Ownership_NOC.pdf` |
+| 6 | Third-party register | Open-source/dataset/API licence audit | `06_Shani_ThirdParty_Register.pdf` |
+| 7 | Development record | Git history, milestones, commit timeline | `07_Shani_DevelopmentRecord.pdf` |
+| 8 | Dependency notices | `requirements.txt` + licence attributions | `08_Shani_DependencyNotices.pdf` |
 
 ---
 
@@ -197,7 +203,7 @@ TARGET VENUE:       IEEE Conference on Computational Intelligence for Financial
 ### 5.2 Publication Status
 
 | Question | Answer |
-|----------|--------|
+| ---------- | -------- |
 | Is the paper published? | **Assess at time of filing.** If submitted to arXiv/SSRN preprint server, this constitutes publication. If only circulated internally, mark as "Unpublished." |
 | Date of first publication | Record exact date of first public availability (arXiv upload date, conference proceedings date, or journal publication date) |
 | Country of first publication | India (if preprint uploaded from India) or as applicable |
@@ -205,11 +211,11 @@ TARGET VENUE:       IEEE Conference on Computational Intelligence for Financial
 ### 5.3 Paper Copyright Filing Pack
 
 | # | File | Purpose | Suggested Filename |
-|---|------|---------|-------------------|
-| 1 | Complete paper PDF | The literary work itself (compiled LaTeX → PDF) | `01_AlphaStreams_ResearchPaper.pdf` |
-| 2 | Author contribution statement | Per-author contribution + signatures | `02_AlphaStreams_Paper_AuthorContribution.pdf` |
-| 3 | Ownership NOC/Assignment | If required by institutional/conference policy | `03_AlphaStreams_Paper_Ownership_NOC.pdf` |
-| 4 | Third-party register | Citations, referenced datasets, figure sources | `04_AlphaStreams_Paper_ThirdParty.pdf` |
+| --- | ------ | --------- | ------------------- |
+| 1 | Complete paper PDF | The literary work itself (compiled LaTeX → PDF) | `01_Shani_ResearchPaper.pdf` |
+| 2 | Author contribution statement | Per-author contribution + signatures | `02_Shani_Paper_AuthorContribution.pdf` |
+| 3 | Ownership NOC/Assignment | If required by institutional/conference policy | `03_Shani_Paper_Ownership_NOC.pdf` |
+| 4 | Third-party register | Citations, referenced datasets, figure sources | `04_Shani_Paper_ThirdParty.pdf` |
 
 > [!WARNING]
 > **IEEE Copyright Transfer:** If the paper is accepted at an IEEE venue, IEEE typically requires a copyright transfer agreement. This may affect who holds copyright. Verify the IEEE publication agreement terms before filing a separate copyright registration to avoid conflicting ownership claims.
@@ -222,9 +228,9 @@ TARGET VENUE:       IEEE Conference on Computational Intelligence for Financial
 
 ```
 TITLE OF ARTISTIC WORK:     [Exact title of the original diagram, e.g.,
-                             "System Architecture Block Diagram of AlphaStreams
+                             "System Architecture Block Diagram of Shani
                              Quantitative Options Analytics Platform"]
-PROJECT TITLE:               AlphaStreams — Real-Time Quantitative Analytics &
+PROJECT TITLE:               Shani — Real-Time Quantitative Analytics &
                              Option Pricing Engine
 CLASS OF WORK:               Artistic Work
 TYPE:                        Original Block Diagram / System Architecture Diagram
@@ -237,7 +243,7 @@ SOFTWARE/PROJECT CONTEXT:    Event-driven quantitative options pricing platform
 
 ### 6.2 Diagram Content Guidance
 
-The diagram should depict the AlphaStreams data pipeline as an **original visual composition**:
+The diagram should depict the Shani data pipeline as an **original visual composition**:
 
 ```
 Market Data Input (NSE/Groww APIs)
@@ -257,7 +263,7 @@ Market Data Input (NSE/Groww APIs)
 ### 6.3 Diagram Preparation Checklist
 
 - [ ] Exact project title displayed on the diagram
-- [ ] Figure title (e.g., "Block Diagram of AlphaStreams Quantitative Options Analytics Platform")
+- [ ] Figure title (e.g., "Block Diagram of Shani Quantitative Options Analytics Platform")
 - [ ] Clear, original boxes/arrows/labels/annotations
 - [ ] Consistent typography and spacing
 - [ ] Student/institution ID if required by policy
@@ -269,12 +275,12 @@ Market Data Input (NSE/Groww APIs)
 ### 6.4 Diagram Filing Pack
 
 | # | File | Purpose | Suggested Filename |
-|---|------|---------|-------------------|
-| 1 | Final block diagram (PDF/JPG) | The artistic work itself | `01_AlphaStreams_BlockDiagram.pdf` |
-| 2 | High-res editable source | Internal evidence, master copy | `02_AlphaStreams_BlockDiagram_Source.svg` |
-| 3 | Originality/ownership declaration | Supporting evidence | `03_AlphaStreams_BlockDiagram_Declaration.pdf` |
-| 4 | Third-party material register | Rights audit for any imported icons/templates | `04_AlphaStreams_BlockDiagram_ThirdParty.pdf` |
-| 5 | NOC/Assignment | Where ownership policy requires | `05_AlphaStreams_BlockDiagram_NOC.pdf` |
+| --- | ------ | --------- | ------------------- |
+| 1 | Final block diagram (PDF/JPG) | The artistic work itself | `01_Shani_BlockDiagram.pdf` |
+| 2 | High-res editable source | Internal evidence, master copy | `02_Shani_BlockDiagram_Source.svg` |
+| 3 | Originality/ownership declaration | Supporting evidence | `03_Shani_BlockDiagram_Declaration.pdf` |
+| 4 | Third-party material register | Rights audit for any imported icons/templates | `04_Shani_BlockDiagram_ThirdParty.pdf` |
+| 5 | NOC/Assignment | Where ownership policy requires | `05_Shani_BlockDiagram_NOC.pdf` |
 
 ---
 
@@ -286,7 +292,7 @@ Market Data Input (NSE/Groww APIs)
 ### 7.1 Author Identification
 
 | Author | Likely Contribution Areas |
-|--------|--------------------------|
+| -------- | -------------------------- |
 | **Hirdhay Jadhwani** | [To be documented — e.g., PDE solver, backtesting engine] |
 | **Siddharth Jogi** | [To be documented — e.g., ingestion adapters, notification domain] |
 | **Sumanyu Joshi** | [To be documented — e.g., frontend dashboard, technical indicators] |
@@ -295,7 +301,7 @@ Market Data Input (NSE/Groww APIs)
 ### 7.2 Ownership Scenarios
 
 | Scenario | Ownership | Required Documentation |
-|----------|-----------|----------------------|
+| ---------- | ----------- | ---------------------- |
 | **Students own IP** (no institutional claim) | Authors are also owners; any author can be Applicant | Author contribution statement with signatures |
 | **Institution claims ownership** | Institution is Applicant/Owner; students are Authors | NOC from institution, assignment deed if applicable, institutional IPR policy copy |
 | **Faculty guide is co-author** | Add as Author if they made substantive creative contribution (supervising/advising alone is insufficient) | Verify whether actual code/text contribution exists |
@@ -304,7 +310,7 @@ Market Data Input (NSE/Groww APIs)
 ### 7.3 Author Contribution Statement Template
 
 ```
-PROJECT: AlphaStreams — Real-Time Quantitative Analytics & Option Pricing Engine
+PROJECT: Shani — Real-Time Quantitative Analytics & Option Pricing Engine
 
 We, the undersigned authors, declare our individual contributions to the
 copyrightable works of this project as follows:
@@ -331,7 +337,7 @@ libraries, datasets, or APIs used in this project.
 ### 8.1 Open-Source Libraries (Python Runtime Dependencies)
 
 | Component | Version | Source | Licence | Use | Modifications |
-|-----------|---------|--------|---------|-----|--------------|
+| ----------- | --------- | -------- | --------- | ----- | -------------- |
 | FastAPI | ≥0.110.0 | [pypi.org/project/fastapi](https://pypi.org/project/fastapi/) | MIT | Web framework, REST/WS gateway | None — used as-is |
 | Uvicorn | ≥0.29.0 | [pypi.org/project/uvicorn](https://pypi.org/project/uvicorn/) | BSD-3-Clause | ASGI server | None |
 | SciPy | ≥1.12.0 | [scipy.org](https://scipy.org/) | BSD-3-Clause | `scipy.sparse.linalg.splu` (SuperLU bindings), `scipy.interpolate.CubicSpline` | None — called via API |
@@ -355,7 +361,7 @@ libraries, datasets, or APIs used in this project.
 ### 8.2 Development & Research Dependencies
 
 | Component | Version | Licence | Use |
-|-----------|---------|---------|-----|
+| ----------- | --------- | --------- | ----- |
 | pytest | ≥8.0.0 | MIT | Testing framework |
 | pytest-asyncio | ≥0.23.0 | Apache-2.0 | Async test support |
 | pytest-mock | ≥3.12.0 | MIT | Test mocking |
@@ -366,7 +372,7 @@ libraries, datasets, or APIs used in this project.
 ### 8.3 Infrastructure & Runtime Components
 
 | Component | Source | Licence | Use |
-|-----------|--------|---------|-----|
+| ----------- | -------- | --------- | ----- |
 | PostgreSQL 15 | [postgresql.org](https://www.postgresql.org/) | PostgreSQL License (BSD-like) | Relational database |
 | TimescaleDB | [timescale.com](https://www.timescale.com/) | Timescale License (Apache-2.0 for Community) | Time-series hypertable extension |
 | Redis | [redis.io](https://redis.io/) | Redis Source Available License (RSAL) / BSD-3 (older) | In-memory cache, streams, pub/sub |
@@ -377,7 +383,7 @@ libraries, datasets, or APIs used in this project.
 ### 8.4 Frontend Third-Party Components
 
 | Component | Source | Licence | Use |
-|-----------|--------|---------|-----|
+| ----------- | -------- | --------- | ----- |
 | Supabase JS SDK | [supabase.com](https://supabase.com/) | Apache-2.0 | Client-side authentication, user profiles |
 | SheetJS (XLSX) | [sheetjs.com](https://sheetjs.com/) | Apache-2.0 (Community) | Excel export from browser |
 | Google Fonts | [fonts.google.com](https://fonts.google.com/) | SIL Open Font License | Typography |
@@ -385,7 +391,7 @@ libraries, datasets, or APIs used in this project.
 ### 8.5 Datasets
 
 | Dataset | Source | Terms/Licence | Use | Restrictions |
-|---------|--------|--------------|-----|-------------|
+| --------- | -------- | -------------- | ----- | ------------- |
 | NSE NIFTY 50 OHLCV (via yfinance) | Yahoo Finance / yfinance API | Yahoo Terms of Service | Historical price data for backtesting | Check Yahoo ToS for redistribution limits |
 | NSE F&O Bhavcopy Archives | National Stock Exchange of India | NSE Data Terms | Option chain cross-sectional records | Check NSE data redistribution policy |
 | NSE Live Option Chain API | nseindia.com | NSE website terms | Real-time option chain ingestion | Not for redistribution; session/cookie-based access |
@@ -407,7 +413,7 @@ libraries, datasets, or APIs used in this project.
 ### 9.1 Patentability Assessment
 
 | Component | Potentially Novel? | Assessment |
-|-----------|-------------------|------------|
+| ----------- | ------------------- | ------------ |
 | Cubic spline volatility surface + CN-PDE + dynamic statutory friction model as a unified computational system | **Possibly** | The individual mathematical techniques (cubic splines, Crank-Nicolson, SuperLU) are well-known. However, the **specific combination** applied as a unified system for Indian statutory friction-aware options mispricing detection may constitute a novel technical contribution. Requires formal patentability opinion from a qualified patent attorney. |
 | Dynamic epsilon threshold computation ($\epsilon_t = \text{RoundTrip} \times \kappa$) | Unlikely | Mathematical formula / business method — generally not patentable under Indian Patents Act §3(k) (computer programs per se) and §3(m) (mathematical methods). |
 | Hybrid "Quant-Mental" Filter combining PDE + RSI/MACD | Unlikely | Combination of known techniques without novel technical effect. |
@@ -416,12 +422,13 @@ libraries, datasets, or APIs used in this project.
 
 > [!CAUTION]
 > **Public disclosure destroys patent novelty.** Under the Indian Patents Act 1970, filing must occur **before** any public disclosure. The following actions all constitute public disclosure:
+>
 > - Uploading the research paper to arXiv or SSRN
 > - Publishing on GitHub as a public repository
 > - Conference presentation, poster session, or demo
 > - Project exhibition or public viva
 > - Hosting the application on a publicly accessible URL
-> 
+>
 > **If patentability is to be evaluated, it must be done BEFORE any of these events.**
 
 ### 9.3 Trade Secret Candidates
@@ -429,7 +436,7 @@ libraries, datasets, or APIs used in this project.
 The following elements have commercial value and should be maintained under confidentiality:
 
 | Element | Why It's Valuable | Protection Method |
-|---------|------------------|------------------|
+| --------- | ------------------ | ------------------ |
 | Calibrated buffer multiplier ($\kappa = 1.5$) | Determines trade entry sensitivity | Restrict access; do not publish in paper |
 | Near-ATM strike window (150-point radius) | Filters false PDE signals from illiquid wings | Restrict access; may publish in paper with caution |
 | 2-bar minimum hold before mean-reversion exit | Prevents ghost trades that bleed friction | Bug fix with strategic value; restrict pre-publication |
@@ -456,6 +463,7 @@ The following elements have commercial value and should be maintained under conf
 ### 10.2 Master Pre-Filing Checklist
 
 #### General (All Works)
+
 - [ ] Final project title is consistent across **all** documents and applications
 - [ ] Applicant/owner confirmed under institutional IPR policy
 - [ ] All four authors accurately identified with full legal names
@@ -469,6 +477,7 @@ The following elements have commercial value and should be maintained under conf
 - [ ] Copies of submission, receipt, fee proof, and Diary Number retained
 
 #### Software-Specific
+
 - [ ] Source code PDF follows current upload rules (first 10 + last 10 pages, or full if <20pp)
 - [ ] **No API keys, tokens, passwords, TOTP secrets, or credentials** in submitted code
 - [ ] No prohibited redacted/blacked-out portions
@@ -476,12 +485,14 @@ The following elements have commercial value and should be maintained under conf
 - [ ] Programming languages listed (Python 3.11+, JavaScript ES6+, HTML5, CSS3, SQL)
 
 #### Research Paper-Specific
+
 - [ ] Paper compiled from LaTeX to clean PDF
 - [ ] Publication status accurately recorded (published/unpublished)
 - [ ] IEEE copyright transfer implications assessed if applicable
 - [ ] All citations and bibliography entries are accurate
 
 #### Block Diagram-Specific
+
 - [ ] Diagram actually created by the team (not auto-generated by third-party tool)
 - [ ] Exact title matches copyright application
 - [ ] Saved in portal-accepted format (PDF or JPG)
@@ -490,6 +501,7 @@ The following elements have commercial value and should be maintained under conf
 - [ ] Trademark implications considered if diagram doubles as logo/brand asset
 
 #### Patent & Trade Secret Cross-Checks
+
 - [ ] Patent/IPR cell consulted if any patentable invention exists
 - [ ] Patent filing timeline evaluated **before** public disclosure
 - [ ] Trade secret parameters identified and access-controlled
@@ -500,28 +512,28 @@ The following elements have commercial value and should be maintained under conf
 ## 11. Recommended IPR Folder Structure
 
 ```
-AlphaStreams_IPR/
+Shani_IPR/
 ├── 01_Project_Identity/
-│   ├── AlphaStreams_ProjectIdentity.pdf
-│   └── AlphaStreams_AuthorContribution.pdf
+│   ├── Shani_ProjectIdentity.pdf
+│   └── Shani_AuthorContribution.pdf
 │
 ├── 02_Copyright_Software/
-│   ├── AlphaStreams_SourceCode.pdf               # First 10 + Last 10 pages (sanitized)
-│   ├── AlphaStreams_ObjectCode.pdf                # If portal requests
+│   ├── Shani_SourceCode.pdf               # First 10 + Last 10 pages (sanitized)
+│   ├── Shani_ObjectCode.pdf                # If portal requests
 │   ├── FormXIV_Software_Copy.pdf                 # Saved copy from portal
 │   ├── StatementOfParticulars_Software.pdf
 │   └── StatementOfFurtherParticulars_Software.pdf
 │
 ├── 03_Copyright_ResearchPaper/
-│   ├── AlphaStreams_ResearchPaper.pdf             # Compiled IEEE manuscript
+│   ├── Shani_ResearchPaper.pdf             # Compiled IEEE manuscript
 │   ├── FormXIV_Paper_Copy.pdf
 │   ├── StatementOfParticulars_Paper.pdf
 │   └── StatementOfFurtherParticulars_Paper.pdf
 │
 ├── 04_Copyright_BlockDiagram/
-│   ├── AlphaStreams_BlockDiagram.pdf              # Final diagram (PDF/JPG)
-│   ├── AlphaStreams_BlockDiagram_Source.svg        # Editable master
-│   ├── AlphaStreams_BlockDiagram_Declaration.pdf   # Originality statement
+│   ├── Shani_BlockDiagram.pdf              # Final diagram (PDF/JPG)
+│   ├── Shani_BlockDiagram_Source.svg        # Editable master
+│   ├── Shani_BlockDiagram_Declaration.pdf   # Originality statement
 │   ├── FormXIV_Diagram_Copy.pdf
 │   └── StatementOfParticulars_Diagram.pdf
 │
@@ -562,7 +574,7 @@ AlphaStreams_IPR/
 > Portal URLs, fee structures, and procedural rules are subject to change. Always verify against the official Copyright Office website before filing.
 
 | Resource | URL |
-|----------|-----|
+| ---------- | ----- |
 | Copyright Office — Online Filing/Login | [copyright.gov.in/UserRegistration/frmLoginPage.aspx](https://copyright.gov.in/UserRegistration/frmLoginPage.aspx) |
 | Copyright Office — Form XIV | [copyright.gov.in/Copyright_Rules_2013/formxiv.html](https://copyright.gov.in/Copyright_Rules_2013/formxiv.html) |
 | Copyright Office — General Instructions | [copyright.gov.in/Copyright_Rules_2013/general_instructions.html](https://copyright.gov.in/Copyright_Rules_2013/general_instructions.html) |
@@ -581,7 +593,7 @@ AlphaStreams_IPR/
 DECLARATION OF ORIGINALITY AND OWNERSHIP
 
 TITLE OF WORK:    [Exact title matching copyright application]
-PROJECT:          AlphaStreams — Real-Time Quantitative Analytics &
+PROJECT:          Shani — Real-Time Quantitative Analytics &
                   Option Pricing Engine
 
 Declaration: We, the undersigned author(s), declare that the work
@@ -616,7 +628,7 @@ Name: _______________  Signature: ___________  Date: ___________
 ```
 THIRD-PARTY MATERIAL REGISTER
 
-PROJECT: AlphaStreams V2
+PROJECT: Shani V2
 
 Element Used        | Source              | Licence        | Used As-Is/Modified | Action Taken
 --------------------|---------------------|----------------|--------------------|--------------
@@ -635,5 +647,5 @@ yfinance data       | Yahoo Finance       | Yahoo ToS      | As-is              
 
 ---
 
-*Prepared by the AlphaStreams / Shani Quant Research Team — August 2026*  
+*Prepared by the Shani / Shani Quant Research Team — August 2026*  
 *This document should be reviewed by qualified legal counsel before formal copyright application filing.*
