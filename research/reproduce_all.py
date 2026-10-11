@@ -101,7 +101,9 @@ def _sha256(path: str) -> str:
 
 def _git(*args: str) -> str:
     try:
-        return subprocess.check_output(["git", *args], cwd=BASE_DIR, text=True, stderr=subprocess.DEVNULL).strip()
+        # Run from the repository root so pathspecs like "research" resolve correctly
+        repo_root = os.path.abspath(os.path.join(BASE_DIR, ".."))
+        return subprocess.check_output(["git", *args], cwd=repo_root, text=True, stderr=subprocess.DEVNULL).strip()
     except Exception:
         return "unknown"
 
@@ -366,6 +368,7 @@ def write_numbers(p0: Dict, wf: pd.DataFrame, periods: pd.DataFrame, sig: pd.Dat
         "HeadlineTrades": f"{int(w.loc['S0', 'Trades'])}",
         "HeadlineSharpe": f"{w.loc['S0', 'Sharpe_Step_Legacy']:.2f}",
         "ClosedFormReturn": f"{w.loc['S1', 'Return_Pct']:.2f}",
+        "ClosedFormTrades": f"{int(w.loc['S1', 'Trades'])}",
         "ForwardReturn": f"{w.loc['S2', 'Return_Pct']:.2f}",
         "ForwardTrades": f"{int(w.loc['S2', 'Trades'])}",
         "LagReturn": f"{w.loc['S3', 'Return_Pct']:.2f}",
@@ -392,6 +395,13 @@ def write_numbers(p0: Dict, wf: pd.DataFrame, periods: pd.DataFrame, sig: pd.Dat
         "PureDReturn": f"{cell('D (Oct 2023-Jun 2024)', 'Pure Mispricing', 'Return_Pct'):.1f}",
         "PureDExMax": f"{cell('D (Oct 2023-Jun 2024)', 'Pure Mispricing', 'Return_Ex_Largest_Pct'):.1f}",
         "PureDLargest": f"{abs(cell('D (Oct 2023-Jun 2024)', 'Pure Mispricing', 'Largest_Trade_PnL')):,.0f}",
+        "HybridAPctl": f"{cell('A (2021)', 'Hybrid Filter', 'Percentile_vs_Random'):.0f}",
+        "RetailDReturn": f"{cell('D (Oct 2023-Jun 2024)', 'Retail Baseline', 'Return_Pct'):.1f}",
+        "RetailDExMax": f"{cell('D (Oct 2023-Jun 2024)', 'Retail Baseline', 'Return_Ex_Largest_Pct'):.1f}",
+        "RetailDPctl": f"{cell('D (Oct 2023-Jun 2024)', 'Retail Baseline', 'Percentile_vs_Random'):.0f}",
+        "RetailDRandomMean": f"{cell('D (Oct 2023-Jun 2024)', 'Retail Baseline', 'Random_Mean_Return_Pct'):.1f}",
+        "PureCRoPHi": f"{cell('C (Jan-Sep 2023)', 'Pure Mispricing', 'RoP_CI_Hi_Pct'):.1f}",
+        "CellsCIBelowZero": str(int((periods["RoP_CI_Hi_Pct"] < 0).sum())),
         "SigUnderHzeroMean": f"{allsig.loc['undervalued', 'Hedged_t0_t1_Mean']:.2f}",
         "SigRichHzeroMean": f"{allsig.loc['rich', 'Hedged_t0_t1_Mean']:.2f}",
         "SigAllHzeroMean": f"{allsig.loc['all', 'Hedged_t0_t1_Mean']:.2f}",
