@@ -33,7 +33,7 @@ logger = logging.getLogger("Phase0Diagnostics")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
-def run_phase0_diagnostics():
+def run_phase0_diagnostics(bhavcopy_dir: str = None):
     logger.info("=" * 75)
     logger.info("PHASE 0: DIAGNOSTIC & CORE SIGNAL VALIDATION SUITE (180 DAYS)")
     logger.info("=" * 75)
@@ -45,7 +45,7 @@ def run_phase0_diagnostics():
 
     ohlcv_path = os.path.join(data_dir, "nifty_daily_ohlcv.parquet")
     options_path = os.path.join(data_dir, "nifty_option_chains.parquet")
-    bhavcopy_cache_dir = os.path.join(data_dir, "bhavcopy_cache")
+    bhavcopy_cache_dir = bhavcopy_dir or os.path.join(data_dir, "bhavcopy_cache")
 
     if not os.path.exists(ohlcv_path) or not os.path.exists(options_path):
         raise FileNotFoundError("Missing required parquet datasets in research/data/raw/")
@@ -150,7 +150,9 @@ def run_phase0_diagnostics():
     # -------------------------------------------------------------------------
     logger.info("\n--- [0.2] Executing Price-Field Consistency Audit (Bhavcopies) ---")
 
-    bhav_files = sorted([f for f in os.listdir(bhavcopy_cache_dir) if f.endswith(".parquet")])
+    # Only the 180 sample sessions (the cache may hold the full 3.5-year history)
+    sample_files = {f"fo_{pd.Timestamp(d).strftime('%Y%m%d')}.parquet" for d in ohlcv_df["date"]}
+    bhav_files = sorted([f for f in os.listdir(bhavcopy_cache_dir) if f in sample_files])
     field_diffs = []
 
     for bf in bhav_files:
@@ -462,7 +464,7 @@ def run_phase0_diagnostics():
 - **Call |PDE - BS|**: Mean = {call_err_mean:.4f} INR, Median = {call_err_median:.4f} INR, Max = {call_err_max:.4f} INR
 - **Put |PDE - BS|**: Mean = {put_err_mean:.4f} INR, Median = {put_err_median:.4f} INR, Max = {put_err_max:.4f} INR
 - **Fraction with Error >= 1.65 INR**: Calls = {call_ge_half_frac:.2f}%, Puts = {put_ge_half_frac:.2f}%
-- **Correlation with Strategy Mispricing**: Pearson = {corr_pearson_call:.4f} (Calls), {corr_pearson_put:.4f} (Puts)
+- **Correlation with Strategy Mispricing**: Pearson = {corr_pearson_call:.4f} (Calls), {corr_pearson_put:.4f} (Puts); Spearman = {corr_spearman_call:.4f} (Calls), {corr_spearman_put:.4f} (Puts)
 
 ## 2. Price-Field Consistency (SETTLE_PR vs CLOSE)
 - **Mismatch Rate**: {pct_mismatch:.2f}% across all options, {active_mismatch:.2f}% for traded options
@@ -483,6 +485,24 @@ def run_phase0_diagnostics():
 """
     with open(os.path.join(output_dir, "phase0_diagnostic_report.md"), "w", encoding="utf-8") as f:
         f.write(summary_text)
+
+    summary = {
+        "grid_error_call_mean": call_err_mean, "grid_error_call_median": call_err_median,
+        "grid_error_call_max": call_err_max, "grid_error_ge_half_eps_share_pct": call_ge_half_frac,
+        "corr_pearson_call": corr_pearson_call, "corr_spearman_call": corr_spearman_call,
+        "corr_pearson_put": corr_pearson_put, "corr_spearman_put": corr_spearman_put,
+        "price_field_mismatch_all_pct": pct_mismatch, "price_field_mismatch_traded_pct": active_mismatch,
+        "pde_trades": len(trades_pde_original), "pde_return_pct": res_pde_original.total_return_pct,
+        "pde_sharpe_step": res_pde_original.sharpe_ratio, "pde_max_dd_step_pct": res_pde_original.max_drawdown_pct,
+        "bs_trades": len(trades_bs), "bs_return_pct": res_bs.total_return_pct, "bs_sharpe_step": res_bs.sharpe_ratio,
+        "parity_residual_mean": mean_pcp_residual, "parity_residual_median": median_pcp_residual,
+        "atm_call_mispricing_mean": mean_call_mispricing, "atm_put_mispricing_mean": mean_put_mispricing,
+        "pde_sharpe_mtm": sharpe_mtm, "pde_max_dd_mtm_pct": max_dd_mtm,
+        "pde_trades_puts": sum(t.option_type == "put" for t in trades_pde_original),
+    }
+    import json
+    with open(os.path.join(output_dir, "00_summary.json"), "w", encoding="utf-8") as f:
+        json.dump({k: float(v) for k, v in summary.items()}, f, indent=2)
 
     print(summary_text)
     logger.info(f"Diagnostic artifacts successfully saved to: {output_dir}")

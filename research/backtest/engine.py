@@ -6,7 +6,7 @@ and risk-adjusted portfolio analytics (Sharpe, Sortino, Drawdown, Profit Factor)
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable, Union
 import numpy as np
 import pandas as pd
 
@@ -32,6 +32,7 @@ class Trade:
     friction_paid: float    # Total statutory frictions & fees paid
     holding_bars: int       # Number of trading sessions held
     is_win: bool            # Net PnL > 0
+    expiry_date: Optional[date] = None  # Contract expiry; MTM marks only against this contract
 
 
 @dataclass
@@ -67,13 +68,17 @@ class BacktestEngine:
         lot_size: int = 50,
         risk_per_trade_pct: float = 0.05,
         friction_model: Optional[IndianOptionsFrictionModel] = None,
-        risk_free_rate: float = 0.065,
+        risk_free_rate: Union[float, Callable[[date], float]] = 0.065,
     ) -> None:
+        """
+        risk_free_rate: constant annual rate, or a callable date -> annual rate
+        (e.g. get_rbi_repo_rate) for a date-varying Sharpe/Sortino hurdle.
+        """
         self.initial_capital = float(initial_capital)
         self.lot_size = int(lot_size)
         self.risk_per_trade_pct = float(risk_per_trade_pct)
         self.friction_model = friction_model or IndianOptionsFrictionModel(default_lot_size=self.lot_size)
-        self.risk_free_rate = float(risk_free_rate)
+        self.risk_free_rate = risk_free_rate
 
     def calculate_portfolio_metrics(
         self,
@@ -98,14 +103,21 @@ class BacktestEngine:
                 daily_returns=pd.Series([0.0] * len(dates)),
             )
 
-        # Build options daily price lookup: (date, strike, option_type) -> mkt_price
+        # Build options daily price lookup: (date, expiry, strike, option_type) -> mkt_price.
+        # The expiry is part of the key so a position is never re-marked against the next
+        # contract when the panel rolls. Panels without an expiry column use expiry=None.
         options_lookup: Dict[Any, float] = {}
         if options_df is not None:
-            for _, r in options_df.iterrows():
-                d = r["date"]
-                stk = float(r["strike"])
-                options_lookup[(d, stk, "call")] = float(r["call_mkt_price"])
-                options_lookup[(d, stk, "put")] = float(r["put_mkt_price"])
+            has_expiry = "expiry_date" in options_df.columns
+            for r in options_df.itertuples(index=False):
+                d = r.date
+                exp = r.expiry_date if has_expiry else None
+                stk = float(r.strike)
+                # NaN marks a contract with no usable print that day; it is skipped (last mark carried)
+                if np.isfinite(r.call_mkt_price):
+                    options_lookup[(d, exp, stk, "call")] = float(r.call_mkt_price)
+                if np.isfinite(r.put_mkt_price):
+                    options_lookup[(d, exp, stk, "put")] = float(r.put_mkt_price)
 
         if options_lookup:
             # TRUE DAILY MARK-TO-MARKET (MTM) ACCOUNTING
@@ -118,28 +130,34 @@ class BacktestEngine:
                 trade_entry_map.setdefault(t.entry_date, []).append(t)
                 trade_exit_map.setdefault(t.exit_date, []).append(t)
 
+            # Each trade's own friction_paid is booked half at entry and half at exit, so the
+            # equity curve ends at initial_capital + sum(pnl_net) under any friction multiplier.
+            last_mark: Dict[int, float] = {}
             daily_records = []
             for d in dates:
                 # 1. Process exits on date d
                 if d in trade_exit_map:
                     for t in trade_exit_map[d]:
                         if t.trade_id in active_positions:
-                            exit_friction = self.friction_model.estimate(t.exit_price, t.quantity).total_round_trip * 0.5 * t.quantity
-                            cash += (t.exit_price * t.quantity) - exit_friction
+                            cash += (t.exit_price * t.quantity) - 0.5 * t.friction_paid
                             del active_positions[t.trade_id]
+                            last_mark.pop(t.trade_id, None)
 
                 # 2. Process entries on date d
                 if d in trade_entry_map:
                     for t in trade_entry_map[d]:
-                        entry_friction = self.friction_model.estimate(t.entry_price, t.quantity).total_round_trip * 0.5 * t.quantity
-                        cost = (t.entry_price * t.quantity) + entry_friction
-                        cash -= cost
+                        cash -= (t.entry_price * t.quantity) + 0.5 * t.friction_paid
                         active_positions[t.trade_id] = t
+                        last_mark[t.trade_id] = t.entry_price
 
-                # 3. Mark active positions to market on date d
+                # 3. Mark active positions to market on date d (same contract only;
+                #    carry the last mark forward if the contract has no print today)
                 mtm_portfolio_value = 0.0
                 for tid, t in active_positions.items():
-                    curr_price = options_lookup.get((d, t.strike, t.option_type), t.entry_price)
+                    curr_price = options_lookup.get((d, t.expiry_date, t.strike, t.option_type))
+                    if curr_price is None:
+                        curr_price = last_mark[tid]
+                    last_mark[tid] = curr_price
                     mtm_portfolio_value += curr_price * t.quantity
 
                 total_equity = cash + mtm_portfolio_value
@@ -180,7 +198,11 @@ class BacktestEngine:
 
         # Sharpe & Sortino Ratios (Annualized)
         daily_rets = equity_df["returns"].values
-        daily_rf = (1.0 + self.risk_free_rate) ** (1.0 / 252.0) - 1.0
+        if callable(self.risk_free_rate):
+            annual_rf = np.array([self.risk_free_rate(d) for d in equity_df["date"]])
+        else:
+            annual_rf = float(self.risk_free_rate)
+        daily_rf = (1.0 + annual_rf) ** (1.0 / 252.0) - 1.0
         excess_returns = daily_rets - daily_rf
 
         std_dev = float(np.std(daily_rets, ddof=1)) if len(daily_rets) > 1 else 0.0

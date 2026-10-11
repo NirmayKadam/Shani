@@ -75,6 +75,7 @@ skills-lock.json
 
 # Research cache & raw daily Bhavcopy downloads
 research/data/raw/bhavcopy_cache/
+/bhavcopy_cache/
 
 b5726f7.patch
 d80eaea.patch
