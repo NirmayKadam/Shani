@@ -1,0 +1,8 @@
+Step,Correction,Trades,Puts,Return_Pct,Win_Rate_Pct,RoP_Mean_Pct,RoP_CI_Lo_Pct,RoP_CI_Hi_Pct,Sharpe_Step_Legacy,Sharpe_MTM,Max_DD_MTM_Pct,Delta_Return_Pct
+S0,"Original: Crank-Nicolson PDE, spot with q=0, same-bar fill",67,67,49.57,29.85,18.1,3.52,33.78,2.0665,,,
+S1,+ closed-form Black-Scholes at the same surface IV (no PDE grid error),66,66,36.63,27.27,15.45,0.87,30.91,1.5869,,,-12.94
+S2,+ Black-76 with ATM-parity forward on CLOSE prices (no carry bias),15,15,5.01,33.33,12.77,-10.77,41.49,0.104,,,-31.62
+S3,+ next-bar fill,11,11,0.17,18.18,5.61,-14.63,29.9,-0.6275,,,-4.84
+S4,+ contract lock and pre-roll square-off,3,3,3.92,33.33,24.08,-3.11,77.44,-0.1631,-0.2378,0.13,3.75
+S5,"+ no stale (zero-volume) prices, daily MTM accounting",3,3,3.92,33.33,24.08,-3.11,77.44,-0.1631,-0.2378,0.13,0.0
+S6,"+ full-chain data (signal expiry >= 14 DTE, traded-only IV inputs)",29,29,-44.41,34.48,-6.72,-24.84,14.16,-1.3495,-1.2268,52.4,-48.33

@@ -1,0 +1,16 @@
+Strategy,Option_Type,Exit_Signal,Trades,Net_PnL_INR,RoP_Mean_Pct,Win_Rate_Pct,Mean_Holding_Bars
+Hybrid Filter,put,MEAN_REVERTED,18,-10944.74,-1.69,50.0,2.5
+Hybrid Filter,put,STOP_LOSS,30,-144468.18,-50.11,0.0,1.5
+Hybrid Filter,put,TAKE_PROFIT,13,142172.18,114.5,100.0,2.23
+Pure Mispricing,put,MEAN_REVERTED,48,-32191.19,-4.26,43.75,2.35
+Pure Mispricing,put,STOP_LOSS,65,-314214.13,-48.23,0.0,1.77
+Pure Mispricing,put,TAKE_PROFIT,19,212301.91,118.27,100.0,2.11
+Pure Mispricing,put,TIME_EXPIRY,1,16153.0,51.86,100.0,5.0
+Retail Baseline,call,PRE_EXPIRY_SQUAREOFF,1,128.52,0.73,100.0,1.0
+Retail Baseline,call,STOP_LOSS,46,-260746.42,-52.14,0.0,2.76
+Retail Baseline,call,TAKE_PROFIT,24,273395.16,93.33,100.0,3.21
+Retail Baseline,call,TIME_EXPIRY,17,28206.71,11.25,70.59,5.0
+Retail Baseline,put,PRE_EXPIRY_SQUAREOFF,1,-1284.97,-19.35,0.0,3.0
+Retail Baseline,put,STOP_LOSS,85,-473825.15,-48.83,0.0,2.24
+Retail Baseline,put,TAKE_PROFIT,30,268050.06,91.47,100.0,2.3
+Retail Baseline,put,TIME_EXPIRY,8,5026.91,2.15,62.5,5.0

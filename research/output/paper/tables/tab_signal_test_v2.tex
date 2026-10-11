@@ -1,0 +1,34 @@
+\begin{table*}[!t]
+\centering
+\scriptsize
+\caption{Delta-hedged next-bar P\&L of the put signal, full-chain data (signal expiry $\geq$ 14 DTE).}
+\label{tab:signal_v2}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llrllrr}
+\toprule
+Period & Group & N & $h_{t\to t+1}$ [CI] & $h_{t+1\to t+2}$ [CI] & Excess $h_{t+1\to t+2}$ & Cost \\
+\midrule
+A (2021) & undervalued & 134 & 4.68 [-3.89, 15.10] & -1.79 [-7.93, 5.39] & +0.29 & 3.50 \\
+ & rich & 160 & -10.39 [-15.27, -5.30] & 1.99 [-5.56, 11.91] & +4.07 & 3.27 \\
+ & all & 1375 & -3.06 [-5.78, -0.09] & -2.08 [-4.92, 0.95] &  & 3.28 \\
+\midrule
+B (2022) & undervalued & 113 & 1.66 [-4.44, 8.22] & 2.75 [-3.46, 9.24] & +5.68 & 3.93 \\
+ & rich & 145 & -13.32 [-18.36, -8.22] & -4.74 [-9.02, -0.31] & -1.81 & 3.75 \\
+ & all & 1464 & -2.85 [-5.81, 0.38] & -2.93 [-5.97, 0.32] &  & 3.89 \\
+\midrule
+C (Jan-Sep 2023) & undervalued & 42 & -0.15 [-5.82, 5.61] & -3.82 [-9.37, 1.95] & -0.79 & 2.51 \\
+ & rich & 70 & -8.72 [-12.84, -4.17] & -5.97 [-9.59, -2.08] & -2.94 & 2.43 \\
+ & all & 1102 & -3.13 [-5.22, -0.92] & -3.03 [-5.16, -0.87] &  & 2.66 \\
+\midrule
+D (Oct 2023-Jun 2024) & undervalued & 63 & 15.96 [-6.46, 48.78] & -0.22 [-9.96, 9.89] & +1.59 & 3.61 \\
+ & rich & 52 & -3.92 [-11.70, 5.03] & -5.17 [-12.08, 1.42] & -3.36 & 3.05 \\
+ & all & 1054 & -1.17 [-5.16, 2.88] & -1.81 [-5.63, 2.16] &  & 3.24 \\
+\midrule
+All (2021-2024) & undervalued & 352 & 5.16 [-0.80, 12.73] & -0.28 [-4.02, 3.62] & +2.20 & 3.54 \\
+ & rich & 427 & -10.33 [-13.18, -7.44] & -2.47 [-5.94, 1.68] & +0.02 & 3.27 \\
+ & all & 4995 & -2.62 [-4.17, -1.02] & -2.48 [-4.03, -0.88] &  & 3.31 \\
+\bottomrule
+\end{tabular}}
+\par\vspace{2pt}
+\parbox{\linewidth}{\footnotesize $h$ is the delta-hedged change in the put price per unit (INR): $\Delta P - \Delta_F\,\Delta F$ with the Black-76 forward delta at the surface IV and $F = S e^{rT}$ from the index close. Undervalued: put mispricing $< -\epsilon_t$ (the entry signal); rich: $> +\epsilon_t$. CIs are bootstrap 95\% intervals clustered by date. Excess is the group mean minus the all-puts mean. Cost is the mean round-trip cost per unit.}
+\end{table*}

@@ -1,0 +1,22 @@
+\begin{table*}[!t]
+\centering
+\scriptsize
+\caption{Correction waterfall on the original 180-session sample (Oct 2023 -- Jun 2024), Pure Mispricing strategy.}
+\label{tab:waterfall}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llrrrlrr}
+\toprule
+Step & Correction (cumulative) & Trades & Return \% & $\Delta$ & Mean RoP \% [95\% CI] & Sharpe (step) & Sharpe (MTM) \\
+\midrule
+S0 & Original: Crank-Nicolson PDE, spot with q=0, same-bar fill & 67 & +49.57 & -- & 18.1 [3.5, 33.8] & 2.07 & -- \\
+S1 & closed-form Black-Scholes at the same surface IV (no PDE grid error) & 66 & +36.63 & -12.94 & 15.4 [0.9, 30.9] & 1.59 & -- \\
+S2 & Black-76 with ATM-parity forward on CLOSE prices (no carry bias) & 15 & +5.01 & -31.62 & 12.8 [-10.8, 41.5] & 0.10 & -- \\
+S3 & next-bar fill & 11 & +0.17 & -4.84 & 5.6 [-14.6, 29.9] & -0.63 & -- \\
+S4 & contract lock and pre-roll square-off & 3 & +3.92 & +3.75 & 24.1 [-3.1, 77.4] & -0.16 & -0.24 \\
+S5 & no stale (zero-volume) prices, daily MTM accounting & 3 & +3.92 & +0.00 & 24.1 [-3.1, 77.4] & -0.16 & -0.24 \\
+S6 & full-chain data (signal expiry $\geq$ 14 DTE, traded-only IV inputs) & 29 & -44.41 & -48.33 & -6.7 [-24.8, 14.2] & -1.35 & -1.23 \\
+\bottomrule
+\end{tabular}}
+\par\vspace{2pt}
+\parbox{\linewidth}{\footnotesize Each row adds one correction to all rows above it. Return is net P\&L on INR 1 lakh. RoP is net return on premium per trade with a bootstrap 95\% CI. Sharpe (step) is the original exit-only equity curve with a flat 6.5\% hurdle; Sharpe (MTM) uses daily contract-consistent marks and the RBI repo rate, and is shown only once positions are marked on their own contract.}
+\end{table*}

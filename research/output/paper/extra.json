@@ -1,0 +1,20 @@
+{
+  "random_draws": 500,
+  "legacy_call_mispricing_max": 0.0009,
+  "legacy_rolls": 182,
+  "roll_jump_mean_pct": 51.579886624441464,
+  "roll_jump_median_pct": 33.910294992785516,
+  "nonroll_mean_pct": -2.634942132823325,
+  "price_field_share_pct": 0.1851851851851852,
+  "largest_signal_date": "3 June 2024",
+  "largest_entry_date": "4 June 2024",
+  "largest_strike": "23200",
+  "largest_dte": "16",
+  "largest_entry_price": "1,425.00",
+  "largest_settle": "1,425.00",
+  "largest_contracts": "280",
+  "largest_itm": "1,316",
+  "largest_index_move_pct": "-5.9",
+  "largest_exit_price": "740.15",
+  "largest_exit_date": "5 June 2024"
+}

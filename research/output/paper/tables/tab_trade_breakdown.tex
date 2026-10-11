@@ -1,0 +1,30 @@
+\begin{table}[!t]
+\centering
+\scriptsize
+\caption{Trades pooled over the four independent period runs, by option type and exit reason.}
+\label{tab:breakdown}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllrrrrr}
+\toprule
+Strategy & Type & Exit & N & Net P\&L (INR) & Mean RoP \% & Win \% & Bars \\
+\midrule
+Pure & put & mean reverted & 48 & -32,191 & -4.3 & 44 & 2.4 \\
+Pure & put & stop loss & 65 & -314,214 & -48.2 & 0 & 1.8 \\
+Pure & put & take profit & 19 & 212,302 & +118.3 & 100 & 2.1 \\
+Pure & put & time expiry & 1 & 16,153 & +51.9 & 100 & 5.0 \\
+\midrule
+Hybrid & put & mean reverted & 18 & -10,945 & -1.7 & 50 & 2.5 \\
+Hybrid & put & stop loss & 30 & -144,468 & -50.1 & 0 & 1.5 \\
+Hybrid & put & take profit & 13 & 142,172 & +114.5 & 100 & 2.2 \\
+\midrule
+Retail & call & pre expiry squareoff & 1 & 129 & +0.7 & 100 & 1.0 \\
+Retail & call & stop loss & 46 & -260,746 & -52.1 & 0 & 2.8 \\
+Retail & call & take profit & 24 & 273,395 & +93.3 & 100 & 3.2 \\
+Retail & call & time expiry & 17 & 28,207 & +11.2 & 71 & 5.0 \\
+Retail & put & pre expiry squareoff & 1 & -1,285 & -19.4 & 0 & 3.0 \\
+Retail & put & stop loss & 85 & -473,825 & -48.8 & 0 & 2.2 \\
+Retail & put & take profit & 30 & 268,050 & +91.5 & 100 & 2.3 \\
+Retail & put & time expiry & 8 & 5,027 & +2.1 & 62 & 5.0 \\
+\bottomrule
+\end{tabular}}
+\end{table}

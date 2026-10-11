@@ -4,7 +4,7 @@
 - **Call |PDE - BS|**: Mean = 1.7030 INR, Median = 1.3073 INR, Max = 10.8328 INR
 - **Put |PDE - BS|**: Mean = 1.7030 INR, Median = 1.3073 INR, Max = 10.8328 INR
 - **Fraction with Error >= 1.65 INR**: Calls = 42.88%, Puts = 42.88%
-- **Correlation with Strategy Mispricing**: Pearson = -0.1354 (Calls), -0.1200 (Puts)
+- **Correlation with Strategy Mispricing**: Pearson = -0.1354 (Calls), -0.1200 (Puts); Spearman = -0.9997 (Calls), -0.0839 (Puts)
 
 ## 2. Price-Field Consistency (SETTLE_PR vs CLOSE)
 - **Mismatch Rate**: 55.49% across all options, 18.93% for traded options

@@ -1,0 +1,30 @@
+\begin{table*}[!t]
+\centering
+\scriptsize
+\caption{Corrected results, full-chain data, independent backtests from INR 1 lakh in each period.}
+\label{tab:periods}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llrrrlrrrrrlr}
+\toprule
+Period & Strategy & N & Ret \% & Ret ex-max \% & Mean RoP \% [CI] & Med RoP \% & Win \% & PF & Sharpe & MDD \% & Random puts \% [5, 95] & Pctl \\
+\midrule
+A (2021) & Pure & 40 & -43.0 & -64.5 & -5.2 [-27.2, 21.5] & -37.7 & 28 & 0.65 & -0.85 & 56 & -27.7 [-82, +31] & 34 \\
+A (2021) & Hybrid & 23 & +25.7 & +4.3 & 13.2 [-14.3, 44.6] & -14.2 & 43 & 1.47 & 0.78 & 17 & -16.7 [-60, +29] & 93 \\
+A (2021) & Retail & 54 & -96.3 & -75.5 & -11.9 [-27.9, 5.6] & -41.1 & 30 & 0.55 & -0.57 & 97 & -39.5 [-95, +22] & 2 \\
+\midrule
+B (2022) & Pure & 40 & +5.7 & -34.4 & -2.2 [-21.9, 20.4] & -34.1 & 38 & 1.05 & 0.27 & 33 & +3.7 [-63, +74] & 51 \\
+B (2022) & Hybrid & 16 & -15.3 & -55.4 & -4.2 [-37.4, 39.5] & -35.0 & 38 & 0.77 & -0.19 & 38 & +1.4 [-52, +59] & 33 \\
+B (2022) & Retail & 64 & -17.6 & -41.6 & -1.8 [-17.3, 14.6] & -37.4 & 38 & 0.93 & 0.07 & 46 & -2.2 [-71, +65] & 36 \\
+\midrule
+C (Jan-Sep 2023) & Pure & 24 & -36.2 & -32.3 & -22.8 [-33.3, -10.4] & -35.9 & 21 & 0.11 & -3.71 & 41 & -16.1 [-42, +11] & 12 \\
+C (Jan-Sep 2023) & Hybrid & 10 & -13.1 & -9.9 & -22.6 [-43.3, 5.4] & -42.2 & 20 & 0.25 & -2.17 & 19 & -7.0 [-24, +12] & 27 \\
+C (Jan-Sep 2023) & Retail & 44 & -49.3 & -60.2 & -13.4 [-29.3, 4.2] & -41.4 & 30 & 0.58 & -1.17 & 61 & -29.2 [-56, -3] & 13 \\
+\midrule
+D (Oct 2023-Jun 2024) & Pure & 29 & -44.4 & -9.3 & -6.7 [-24.8, 14.2] & -26.6 & 34 & 0.51 & -1.23 & 52 & -37.3 [-73, +9] & 45 \\
+D (Oct 2023-Jun 2024) & Hybrid & 12 & -10.6 & -21.9 & -4.7 [-38.3, 37.5] & -30.6 & 33 & 0.63 & -1.01 & 22 & -16.3 [-51, +22] & 61 \\
+D (Oct 2023-Jun 2024) & Retail & 50 & +2.1 & -17.9 & -0.5 [-18.8, 18.4] & -38.3 & 38 & 1.01 & 0.24 & 63 & -63.9 [-93, -27] & 99 \\
+\bottomrule
+\end{tabular}}
+\par\vspace{2pt}
+\parbox{\linewidth}{\footnotesize Ret ex-max removes the single trade with the largest absolute P\&L. RoP is net return on premium per trade (bootstrap 95\% CI). PF is profit factor. Random puts: puts-only random entries on the signal expiry with the same fills, exits and costs, entry rate calibrated to the strategy's trade count; mean and 5th--95th percentiles over the draws. Pctl is the strategy's return percentile within that distribution.}
+\end{table*}

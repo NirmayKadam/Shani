@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-10-11T19:35:00",
+  "finished_at": "2026-10-11T19:36:34",
+  "command": "python.exe research\\reproduce_all.py --random-draws 500",
+  "git_commit": "58d248e83cd869b3c4e167034899faa59af7f917",
+  "git_dirty_code": false,
+  "python": "3.11.0",
+  "packages": {
+    "numpy": "1.26.4",
+    "pandas": "2.2.3",
+    "scipy": "1.17.1",
+    "matplotlib": "3.10.8",
+    "pyarrow": "17.0.0"
+  },
+  "config": {
+    "initial_capital_inr": 100000,
+    "units_per_trade": 50,
+    "holding_period_bars": 5,
+    "stop_loss_pct": 35,
+    "take_profit_pct": 60,
+    "epsilon_buffer_multiplier": 1.5,
+    "mean_reversion_exit": "|mispricing| < epsilon/2 after >= 2 bars",
+    "near_atm_max_distance_pts": 150,
+    "strike_choice": "first qualifying strike in ascending order (unchanged from the original rules)",
+    "fill": "next-bar close (signal at close t, fill at close t+1), contract must have traded",
+    "max_notional_share_of_equity": 0.95,
+    "signal_expiry_min_dte_v2": 14,
+    "panel_dte_range_v2": [
+      2,
+      45
+    ],
+    "full_chain_filter": "0 <= DTE <= 60, |K/S - 1| <= 12%",
+    "iv_inputs_v2": "traded contracts only (zero-volume CLOSE is stale)",
+    "costs": "STT by date (0.05% before 2023-04-01, then 0.0625%), exchange 0.05%, stamp 0.003%, SEBI, GST 18%, INR 20/order, half-spread 0.5% of premium",
+    "sharpe_hurdle": "RBI repo-rate step function (idle cash earns nothing)",
+    "periods": {
+      "A (2021)": [
+        "2021-01-01",
+        "2021-12-31"
+      ],
+      "B (2022)": [
+        "2022-01-01",
+        "2022-12-31"
+      ],
+      "C (Jan-Sep 2023)": [
+        "2023-01-01",
+        "2023-09-30"
+      ],
+      "D (Oct 2023-Jun 2024)": [
+        "2023-10-01",
+        "2024-06-28"
+      ]
+    },
+    "period_runs": "independent backtests from fresh capital per period",
+    "bootstrap_resamples": 10000,
+    "bootstrap_ci": "95% percentile",
+    "random_baseline": "puts-only, uniform near-ATM strike of the signal expiry, same fills/exits/costs, entry probability calibrated to the strategy's trade count",
+    "random_baseline_seed": 12345,
+    "hybrid_rsi_bands": "call RSI < 65, put RSI > 35",
+    "retail_rules": "call: (RSI > 50 or RSI <= 45) and MACD hist > 0; put: (RSI < 50 or RSI >= 55) and MACD hist < 0",
+    "vix_bands": "< 12.6, 12.6-14.5, > 14.5 (Period D quantiles)"
+  },
+  "waterfall_bridge_check": {
+    "legacy_class_trades": 15,
+    "legacy_class_return_pct": 5.01,
+    "robust_legacy_mode_trades": 15,
+    "robust_legacy_mode_return_pct": 5.01
+  },
+  "price_field_check": {
+    "overlap_rows": 1620,
+    "call_price_differs_share": 0.0006172839506172839,
+    "put_price_differs_share": 0.001851851851851852
+  },
+  "bhavcopy_dir": "bhavcopy_cache",
+  "bhavcopy_files": 860,
+  "inputs_sha256": {
+    "nifty_3_5y_daily_ohlcv.csv": "7c7a71bab2dd4e5d2f8b200a0e12f9bf4d2da7a823aaac972efe62d3f0797163",
+    "nifty_3_5y_daily_ohlcv.parquet": "c0bc48b794b8200d6281af38e2517174c4b1816c22b692f6e57366cfbbb57069",
+    "nifty_3_5y_full_chain.parquet": "db4c75c0cee4d5007c0b92fbec167263f075c281597082d1e78908b58929bf78",
+    "nifty_3_5y_option_chains.csv": "da651cf27530dc6091ee70a8747a34c47e7d1a3e4bd157d17069624b3d37ea06",
+    "nifty_3_5y_option_chains.parquet": "8e0180a2298ad0518bb16524094748ee58542fd8bd6f898975ff52ac4759e7ec",
+    "nifty_3_5y_option_chains_v2.csv": "43942143f43fca1c49852377d0f87435ede3033e274941fae72a8a662da17d21",
+    "nifty_3_5y_option_chains_v2.parquet": "1107846679d5db036c504f62936edc699a9c97da9364d3caaa3a2e527a98d5fb",
+    "nifty_daily_ohlcv.csv": "a60554d18bcb661f923539bdc0354c9f68bff4bdfc0f38acf96a53a6fd0bad12",
+    "nifty_daily_ohlcv.parquet": "904e7c5c7b3476e5bdabf651bbdb421f073c5974820a98c4ac17a132d77c8543",
+    "nifty_option_chains.csv": "ccbe701ae8254cdb38eda074d42f6819d9d670c225314e064bbf7929691ce638",
+    "nifty_option_chains.parquet": "35e9eca754ea38a1eff4e349b1fc5793bfcbb2769c195ba345943bd5147421b2"
+  }
+}
