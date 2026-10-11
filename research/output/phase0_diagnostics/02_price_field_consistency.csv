@@ -1,0 +1,3 @@
+category,total_records,mismatch_pct,mean_diff_inr,median_diff_inr,std_diff_inr,max_abs_diff_inr
+All Options,269414,55.48746538784176,524.3765429784644,0.0,3496.992607467193,24044.45
+Traded Options (Contracts > 0),147904,18.925113587191692,943.3902473901991,0.0,4379.456284077801,24044.45

@@ -1,0 +1,14 @@
+moneyness_bucket,dte_bucket,call_pde_bs_err,call_pde_bs_err,call_pde_bs_err,put_pde_bs_err,put_pde_bs_err,put_pde_bs_err
+,,mean,max,count,mean,max,count
+ITM Call / OTM Put (<0.97),<=7 dte,,,0,,,0
+ITM Call / OTM Put (<0.97),8-15 dte,,,0,,,0
+ITM Call / OTM Put (<0.97),16-30 dte,,,0,,,0
+ITM Call / OTM Put (<0.97),>30 dte,,,0,,,0
+ATM (0.97-1.03),<=7 dte,1.8899314286055144,10.832812703298202,418,1.8899314286305455,10.832812703340949,418
+ATM (0.97-1.03),8-15 dte,1.6529253859334705,9.228051292260488,1562,1.6529253860353408,9.228051292320387,1562
+ATM (0.97-1.03),16-30 dte,,,0,,,0
+ATM (0.97-1.03),>30 dte,,,0,,,0
+OTM Call / ITM Put (>1.03),<=7 dte,,,0,,,0
+OTM Call / ITM Put (>1.03),8-15 dte,,,0,,,0
+OTM Call / ITM Put (>1.03),16-30 dte,,,0,,,0
+OTM Call / ITM Put (>1.03),>30 dte,,,0,,,0

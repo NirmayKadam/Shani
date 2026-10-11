@@ -65,6 +65,8 @@ interview_preparation_guide.md
 study.md
 alphastreams_interview_mastery.md
 foodie_haven_interview_mastery.md
+interview_mastery.md
+core_prep.md
 
 .agents
 
@@ -74,3 +76,6 @@ skills-lock.json
 # Research cache & raw daily Bhavcopy downloads
 research/data/raw/bhavcopy_cache/
 
+b5726f7.patch
+d80eaea.patch
+interview_mastery_template.md

@@ -1,0 +1,3 @@
+Accounting_Method,Sharpe_Ratio,Sortino_Ratio,Max_Drawdown_Pct,Final_Equity
+Exit-Only Step Function (Original),2.0665,5.086,11.61,149571.51
+True Daily Mark-to-Market (MTM),1.8464,3.5518,15.07,149234.26

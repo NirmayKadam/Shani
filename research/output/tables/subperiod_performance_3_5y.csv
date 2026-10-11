@@ -1,0 +1,19 @@
+Sub_Period,Strategy,Return_Pct,Sharpe,Sortino,Max_DD_Pct,Win_Rate_Pct,Trades,Final_Capital
+Period A (2021 OOS),Pure Mispricing,-26.44,-2.0596,-2.4856,27.02,9.09,22,73555.51
+Period A (2021 OOS),Hybrid Filter,-6.06,-0.9115,-1.2633,10.48,8.33,12,93937.4
+Period A (2021 OOS),Retail Baseline,8.74,0.2205,0.3361,22.3,34.62,52,108738.61
+Period B (2022 OOS),Pure Mispricing,5.04,-0.0095,-0.014,10.32,39.13,23,105036.24
+Period B (2022 OOS),Hybrid Filter,-5.52,-1.343,-1.6819,7.98,11.11,9,94477.43
+Period B (2022 OOS),Retail Baseline,-35.6,-0.7369,-1.0285,41.86,23.91,46,64397.56
+Period C (Jan-Sep 2023 OOS),Pure Mispricing,-11.28,-2.2934,-2.6387,12.41,25.0,8,88723.94
+Period C (Jan-Sep 2023 OOS),Hybrid Filter,-5.01,-2.7186,-2.8578,6.17,33.33,3,94994.43
+Period C (Jan-Sep 2023 OOS),Retail Baseline,3.92,0.0026,0.0039,22.95,40.0,40,103923.58
+Combined OOS (A+B+C),Pure Mispricing,-32.68,-1.0934,-1.4422,33.73,24.53,53,67315.69
+Combined OOS (A+B+C),Hybrid Filter,-16.59,-1.248,-1.6287,17.71,12.5,24,83409.26
+Combined OOS (A+B+C),Retail Baseline,-22.94,-0.238,-0.3459,58.56,32.61,138,77059.75
+Period D (Oct 2023-Jun 2024 Dev),Pure Mispricing,0.17,-0.6143,-0.8793,6.39,18.18,11,100167.36
+Period D (Oct 2023-Jun 2024 Dev),Hybrid Filter,-1.43,-1.1664,-1.6976,5.34,20.0,5,98571.02
+Period D (Oct 2023-Jun 2024 Dev),Retail Baseline,-4.58,-0.2348,-0.3309,25.53,22.86,35,95419.04
+Full Sample (3.5 Years),Pure Mispricing,-32.52,-0.9678,-1.2895,34.82,23.44,64,67483.05
+Full Sample (3.5 Years),Hybrid Filter,-18.02,-1.2032,-1.5941,17.94,13.79,29,81980.28
+Full Sample (3.5 Years),Retail Baseline,-27.52,-0.1789,-0.2587,58.56,30.64,173,72478.79

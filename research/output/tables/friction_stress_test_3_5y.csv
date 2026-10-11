@@ -1,0 +1,9 @@
+Multiplier,Protocol,Return_Pct,Sharpe,Max_DD_Pct,Trades
+1.0x,Epsilon Fixed (Threshold Constant),-32.52,-0.9678,34.82,64
+1.0x,Epsilon Scaled (Threshold Scales with Friction),-32.52,-0.9678,34.82,64
+1.5x,Epsilon Fixed (Threshold Constant),-37.01,-0.9678,34.82,64
+1.5x,Epsilon Scaled (Threshold Scales with Friction),-15.26,-0.8875,25.71,32
+2.0x,Epsilon Fixed (Threshold Constant),-41.49,-0.9678,34.82,64
+2.0x,Epsilon Scaled (Threshold Scales with Friction),-25.52,-1.7273,23.65,18
+3.0x,Epsilon Fixed (Threshold Constant),-50.47,-0.9678,34.82,64
+3.0x,Epsilon Scaled (Threshold Scales with Friction),-3.69,-2.2062,5.87,7

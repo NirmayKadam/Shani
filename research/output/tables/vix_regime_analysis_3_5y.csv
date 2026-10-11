@@ -1,0 +1,7 @@
+VIX_Regime,Strategy,Return_Pct,Sharpe,Sortino,Win_Rate_Pct,Trades
+Low VIX (< 12.6),Pure Mispricing,-10.17,-1.3142,-2.0366,11.11,9
+Low VIX (< 12.6),Retail Baseline,38.91,0.5832,0.9335,42.86,42
+Normal VIX (12.6 - 14.5),Pure Mispricing,10.95,0.8093,1.3765,45.45,11
+Normal VIX (12.6 - 14.5),Retail Baseline,-9.8,0.0957,0.1286,28.57,35
+High VIX (> 14.5),Pure Mispricing,-33.3,-1.1224,-1.5001,20.45,44
+High VIX (> 14.5),Retail Baseline,-56.63,-0.2672,-0.3681,26.04,96

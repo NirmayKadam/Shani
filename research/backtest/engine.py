@@ -80,9 +80,11 @@ class BacktestEngine:
         strategy_name: str,
         trades: List[Trade],
         dates: List[date],
+        options_df: Optional[pd.DataFrame] = None,
     ) -> BacktestResult:
         """
         Calculates all portfolio-level and risk-adjusted metrics.
+        If options_df is provided, computes true daily Mark-to-Market (MTM) valuation.
         """
         if not trades:
             empty_curve = pd.DataFrame({"date": dates, "equity": [self.initial_capital] * len(dates)})
@@ -96,20 +98,70 @@ class BacktestEngine:
                 daily_returns=pd.Series([0.0] * len(dates)),
             )
 
-        # Build equity curve day-by-day
-        daily_pnl: Dict[date, float] = {d: 0.0 for d in dates}
-        for t in trades:
-            if t.exit_date in daily_pnl:
-                daily_pnl[t.exit_date] += t.pnl_net
+        # Build options daily price lookup: (date, strike, option_type) -> mkt_price
+        options_lookup: Dict[Any, float] = {}
+        if options_df is not None:
+            for _, r in options_df.iterrows():
+                d = r["date"]
+                stk = float(r["strike"])
+                options_lookup[(d, stk, "call")] = float(r["call_mkt_price"])
+                options_lookup[(d, stk, "put")] = float(r["put_mkt_price"])
 
-        equity = self.initial_capital
-        equity_records = []
-        for d in dates:
-            equity += daily_pnl[d]
-            equity_records.append({"date": d, "equity": equity, "daily_pnl": daily_pnl[d]})
+        if options_lookup:
+            # TRUE DAILY MARK-TO-MARKET (MTM) ACCOUNTING
+            cash = self.initial_capital
+            active_positions: Dict[int, Trade] = {}
+            trade_entry_map: Dict[date, List[Trade]] = {}
+            trade_exit_map: Dict[date, List[Trade]] = {}
 
-        equity_df = pd.DataFrame(equity_records)
-        equity_df["returns"] = equity_df["equity"].pct_change().fillna(0.0)
+            for t in trades:
+                trade_entry_map.setdefault(t.entry_date, []).append(t)
+                trade_exit_map.setdefault(t.exit_date, []).append(t)
+
+            daily_records = []
+            for d in dates:
+                # 1. Process exits on date d
+                if d in trade_exit_map:
+                    for t in trade_exit_map[d]:
+                        if t.trade_id in active_positions:
+                            exit_friction = self.friction_model.estimate(t.exit_price, t.quantity).total_round_trip * 0.5 * t.quantity
+                            cash += (t.exit_price * t.quantity) - exit_friction
+                            del active_positions[t.trade_id]
+
+                # 2. Process entries on date d
+                if d in trade_entry_map:
+                    for t in trade_entry_map[d]:
+                        entry_friction = self.friction_model.estimate(t.entry_price, t.quantity).total_round_trip * 0.5 * t.quantity
+                        cost = (t.entry_price * t.quantity) + entry_friction
+                        cash -= cost
+                        active_positions[t.trade_id] = t
+
+                # 3. Mark active positions to market on date d
+                mtm_portfolio_value = 0.0
+                for tid, t in active_positions.items():
+                    curr_price = options_lookup.get((d, t.strike, t.option_type), t.entry_price)
+                    mtm_portfolio_value += curr_price * t.quantity
+
+                total_equity = cash + mtm_portfolio_value
+                daily_records.append({"date": d, "cash": cash, "mtm_positions": mtm_portfolio_value, "equity": total_equity})
+
+            equity_df = pd.DataFrame(daily_records)
+            equity_df["returns"] = equity_df["equity"].pct_change().fillna(0.0)
+        else:
+            # Day-by-day cash exit fallback
+            daily_pnl: Dict[date, float] = {d: 0.0 for d in dates}
+            for t in trades:
+                if t.exit_date in daily_pnl:
+                    daily_pnl[t.exit_date] += t.pnl_net
+
+            equity = self.initial_capital
+            equity_records = []
+            for d in dates:
+                equity += daily_pnl[d]
+                equity_records.append({"date": d, "equity": equity, "daily_pnl": daily_pnl[d]})
+
+            equity_df = pd.DataFrame(equity_records)
+            equity_df["returns"] = equity_df["equity"].pct_change().fillna(0.0)
 
         # Basic Stats
         total_pnl = sum(t.pnl_net for t in trades)

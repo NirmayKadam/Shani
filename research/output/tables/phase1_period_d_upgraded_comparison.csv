@@ -1,0 +1,6 @@
+Strategy,Return_Pct,Sharpe,Sortino,Max_DD_Pct,Win_Rate_Pct,Trades,Final_Capital
+"Retail Baseline (RSI+MACD, MTM)",-5.58,-0.0275,-0.0412,19.57,50.0,38,94417.87
+"Random Entry Baseline (1,000 Draws Mean)",-18.86,-1.62,0.0,0.0,0.0,41,81142.26
+Challenger A PDE (Original Step),49.57,2.0665,5.086,11.61,29.85,67,149571.51
+Challenger A PDE (True Daily MTM),49.57,1.8464,3.5518,15.07,29.85,67,149571.51
+Challenger A PDE (Lag 1 + True MTM),11.33,0.4505,0.7865,11.31,24.39,41,111329.93
