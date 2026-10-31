@@ -287,7 +287,7 @@ def table_periods(period_df: pd.DataFrame) -> None:
         ["Period", "Strategy", "N", "Ret \\%", "Ret ex-max \\%", "Mean RoP \\% [CI]", "Med RoP \\%", "Win \\%", "PF",
          "Sharpe", "MDD \\%", "Random puts \\% [5, 95]", "Pctl"],
         rows, "llrrrlrrrrrlr",
-        "Corrected results, full-chain data, independent backtests from INR 1 lakh in each period.",
+        "Results by period, full NIFTY option chain, independent backtests from INR 1 lakh in each period.",
         "tab:periods",
         "Ret ex-max removes the single trade with the largest absolute P\\&L. RoP is net return on premium per trade "
         "(bootstrap 95\\% CI). PF is profit factor. Random puts: puts-only random entries on the signal expiry with the "
@@ -359,6 +359,10 @@ def write_numbers(p0: Dict, wf: pd.DataFrame, periods: pd.DataFrame, sig: pd.Dat
     def cell(period: str, strat: str, col: str) -> float:
         return float(periods[(periods["Period"] == period) & (periods["Strategy"] == strat)][col].iloc[0])
 
+    def pooled_rop(strategy: str) -> float:
+        c = periods[(periods["Strategy"] == strategy) & (periods["Trades"] > 0)]
+        return float((c["RoP_Mean_Pct"] * c["Trades"]).sum() / c["Trades"].sum())
+
     allsig = sig[sig["Period"] == "All (2021-2024)"].set_index("Group")
     w = wf.set_index("Step")
     n_positive = int((periods["Return_Pct"] > 0).sum())
@@ -417,6 +421,12 @@ def write_numbers(p0: Dict, wf: pd.DataFrame, periods: pd.DataFrame, sig: pd.Dat
         "SigN": f"{int(allsig.loc['all', 'N']):,}",
         "SigNUnder": f"{int(allsig.loc['undervalued', 'N'])}",
         "PureTradesTotal": str(int(periods[periods["Strategy"] == "Pure Mispricing"]["Trades"].sum())),
+        "RetailTradesTotal": str(int(periods[periods["Strategy"] == "Retail Baseline"]["Trades"].sum())),
+        # Pooled mean net return on premium per strategy = trade-weighted mean of the period cells
+        **{f"{k}RoPMean": f"{pooled_rop(s):.1f}" for k, s in
+           [("Pure", "Pure Mispricing"), ("Hybrid", "Hybrid Filter"), ("Retail", "Retail Baseline")]},
+        **{f"{k}PositivePeriods": str(int((periods[periods['Strategy'] == s]['Return_Pct'] > 0).sum())) for k, s in
+           [("Pure", "Pure Mispricing"), ("Hybrid", "Hybrid Filter"), ("Retail", "Retail Baseline")]},
         "PurePutsTotal": str(int(periods[periods["Strategy"] == "Pure Mispricing"]["Puts"].sum())),
         "HybridTradesTotal": str(int(periods[periods["Strategy"] == "Hybrid Filter"]["Trades"].sum())),
         "HybridPutsTotal": str(int(periods[periods["Strategy"] == "Hybrid Filter"]["Puts"].sum())),
