@@ -24,6 +24,36 @@ from domains.ingestion.ports.interface.outbound.i_dedup_store_port import IDedup
 logger = logging.getLogger(__name__)
 
 
+def build_option_chain_snapshot(symbol: str, dtos: list) -> dict:
+    """MARKET_OPTIONS read-model snapshot (chains grouped by expiry) built from RawTickDTOs."""
+    chains: dict[str, list[dict]] = {}
+    for dto in dtos:
+        if not dto.expiry:
+            continue
+        chains.setdefault(dto.expiry, []).append({
+            "strike": dto.strike,
+            "type": dto.option_type,
+            "last_price": dto.ltp,
+            "oi": dto.oi,
+            "volume": dto.volume,
+            "iv": dto.iv,
+            "bid": dto.bid,
+            "bid_qty": dto.bid_qty,
+            "ask": dto.ask,
+            "ask_qty": dto.ask_qty,
+            "expiry": dto.expiry,
+        })
+
+    return {
+        "symbol": symbol.upper(),
+        "spot_price": dtos[0].underlying_price if dtos else 0.0,
+        "expiry_dates": sorted(chains),
+        "chains": chains,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {"total_strikes": len({d.strike for d in dtos})},
+    }
+
+
 class IngestionService:
     """Orchestrates price and options ingestion.
 
@@ -80,38 +110,7 @@ class IngestionService:
             logger.warning("[%s] No option chain data", symbol)
             return
 
-        # Reconstruct OptionChainSummaryDTO dict format from RawTickDTO list
-        spot_price = dtos[0].underlying_price
-        chains = {}
-        expiry_dates = set()
-        
-        for dto in dtos:
-            if not dto.expiry: continue
-            expiry_dates.add(dto.expiry)
-            if dto.expiry not in chains:
-                chains[dto.expiry] = []
-            chains[dto.expiry].append({
-                "strike": dto.strike,
-                "type": dto.option_type,
-                "last_price": dto.ltp,
-                "oi": dto.oi,
-                "volume": dto.volume,
-                "iv": dto.iv,
-                "bid": dto.bid,
-                "bid_qty": dto.bid_qty,
-                "ask": dto.ask,
-                "ask_qty": dto.ask_qty,
-                "expiry": dto.expiry
-            })
-
-        data = {
-            "symbol": symbol.upper(),
-            "spot_price": spot_price,
-            "expiry_dates": sorted(list(expiry_dates)),
-            "chains": chains,
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "summary": {"total_strikes": len(set(d.strike for d in dtos))}
-        }
+        data = build_option_chain_snapshot(symbol, dtos)
 
         cache_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol.upper())
         await self._redis.set(cache_key, json.dumps(data, default=str), ex=TTL.MARKET_OPTIONS)

@@ -1,26 +1,45 @@
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 import pytest
 
+from domains.notifications.domain.value_objects import DeliveryChannel
 from domains.notifications.infrastructure.subscribers.notification_subscriber import NotificationStreamSubscriber
 
 
+def _priced_event(**fields):
+    return {b"data": json.dumps({"symbol": "NIFTY", **fields}).encode("utf-8")}
+
+
 @pytest.mark.asyncio
-async def test_notification_subscriber_process_event():
-    mock_redis = AsyncMock()
+async def test_notification_subscriber_evaluates_once_per_priced_chain():
     mock_repo = AsyncMock()
     mock_repo.get_active_rules_by_symbol.return_value = []
+    subscriber = NotificationStreamSubscriber(redis_client=AsyncMock(), repository=mock_repo)
+    subscriber.evaluator = AsyncMock()
 
-    subscriber = NotificationStreamSubscriber(redis_client=mock_redis, repository=mock_repo)
+    chain = [{"strike": 24000.0 + 50 * i, "live_call": 100.0, "call_iv": 0.15} for i in range(40)]
+    await subscriber.process_event(_priced_event(spot_price=24200.0, atm_iv_pct=15.2, chain=chain))
 
-    raw_payload = {
-        b"data": json.dumps({
-            "symbol": "NIFTY",
-            "spot_price": 24200.0,
-            "implied_volatility": 15.2,
-        }).encode("utf-8")
-    }
+    # One evaluation for the whole chain, against the symbol-level snapshot (no per-strike loop).
+    subscriber.evaluator.evaluate_tick_event.assert_awaited_once_with(
+        "NIFTY", {"spot_price": 24200.0, "atm_iv_pct": 15.2}
+    )
 
-    await subscriber.process_event(raw_payload)
-    assert mock_repo.get_active_rules_by_symbol.called
-    assert mock_repo.get_active_rules_by_symbol.call_args[0][0] == "NIFTY"
+
+@pytest.mark.asyncio
+async def test_notification_subscriber_ignores_events_without_symbol():
+    subscriber = NotificationStreamSubscriber(redis_client=AsyncMock(), repository=AsyncMock())
+    subscriber.evaluator = AsyncMock()
+
+    await subscriber.process_event({b"data": json.dumps({"spot_price": 1.0}).encode("utf-8")})
+
+    subscriber.evaluator.evaluate_tick_event.assert_not_awaited()
+
+
+def test_websocket_channel_is_wired_to_redis():
+    redis = AsyncMock()
+    subscriber = NotificationStreamSubscriber(redis_client=redis, repository=AsyncMock())
+    ws_channel = subscriber.channels[DeliveryChannel.WEBSOCKET]
+    # Previously EventBus() was built without a Redis client and raised TypeError on dispatch.
+    assert ws_channel._event_bus is not None
+    assert ws_channel._event_bus._Redis is redis

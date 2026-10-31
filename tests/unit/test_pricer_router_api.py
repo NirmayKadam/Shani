@@ -93,7 +93,7 @@ class TestPricerTickerEndpoint:
         data = response.json()
         assert data["symbol"] == "TCS.NS"
         assert data["stock_price"] == 3500.0
-        assert data["source"] == "redis_cache"
+        assert data["source"] == "live_market_fetch"
         assert "2026-06-25" in data["option_chains"]
 
     @patch("domains.analytics.api.pricer_router_api.get_redis_client")

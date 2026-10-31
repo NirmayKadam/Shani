@@ -19,8 +19,8 @@ from fastapi import APIRouter, HTTPException
 
 from shared.utils.symbol_validator import SymbolValidator
 from shared.infrastructure.redis_client import get_redis_client
-from shared.constants import RedisKeys
-from domains.analytics.application.dto.read_models_dto import OptionChainSummaryDTO, compute_pcr
+from shared.constants import RedisKeys, TTL
+from domains.analytics.application.dto.read_models_dto import compute_pcr
 from domains.analytics.api.schemas import DerivativesResponse, PricedStrike, TechnicalsResponse
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ async def get_derivatives(symbol: str):
     raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
     raw_cached = await redis.get(raw_key)
 
-    pcr = 0.0
+    pcr = None
     ce_volume = 0
     pe_volume = 0
     ce_oi = 0
@@ -84,11 +84,10 @@ async def get_derivatives(symbol: str):
 
     if raw_cached:
         try:
-            option_chain_dto = OptionChainSummaryDTO(**json.loads(raw_cached))
-            option_chain = option_chain_dto.model_dump()
+            option_chain = json.loads(raw_cached)
             pcr_data = compute_pcr(option_chain)
-            
-            pcr = float(pcr_data.get("pcr", 0.0))
+
+            pcr = pcr_data.get("pcr")
             ce_volume = int(pcr_data.get("ce_volume", 0))
             pe_volume = int(pcr_data.get("pe_volume", 0))
             ce_oi = int(pcr_data.get("ce_oi", 0))
@@ -113,29 +112,25 @@ async def get_derivatives(symbol: str):
             priced_chain_raw = priced_payload.get("chain", [])
             priced_last_updated = priced_payload.get("last_updated", "")
             
+            optional_fields = ("fair_call", "fair_put", "call_iv", "put_iv",
+                               "bs_fair_call", "bs_fair_put", "live_call", "live_put")
             for item in priced_chain_raw:
                 fair_priced_chain.append(PricedStrike(
                     strike=float(item.get("strike", 0.0)),
-                    fair_call=float(item.get("fair_call", 0.0)),
-                    fair_put=float(item.get("fair_put", 0.0)),
-                    call_iv=float(item.get("call_iv", 0.0)),
-                    put_iv=float(item.get("put_iv", 0.0)),
-                    bs_fair_call=float(item["bs_fair_call"]) if item.get("bs_fair_call") is not None else None,
-                    bs_fair_put=float(item["bs_fair_put"]) if item.get("bs_fair_put") is not None else None,
-                    live_call=float(item["live_call"]) if item.get("live_call") is not None else None,
-                    live_put=float(item["live_put"]) if item.get("live_put") is not None else None
+                    **{f: float(item[f]) if item.get(f) is not None else None for f in optional_fields},
                 ))
         except Exception as exc:
             logger.warning("[%s] Failed parsing priced option chain snapshot: %s", symbol_clean, exc)
 
-    # Determine freshness and age
+    # Freshness: the cache keys expire after 60-120 s, so with no data there is nothing fresh to
+    # report (stale) and no timestamp to show. Otherwise compare against the priced-chain TTL.
     stale = True
     effective_last_updated = priced_last_updated or last_updated
     if effective_last_updated:
         try:
             dt = datetime.fromisoformat(effective_last_updated.replace("Z", "+00:00"))
             age_seconds = (datetime.now(timezone.utc) - dt).total_seconds()
-            stale = age_seconds > 600  # 10 minutes
+            stale = age_seconds > TTL.MARKET_OPTIONS_PRICED
         except Exception:
             pass
 
@@ -150,7 +145,7 @@ async def get_derivatives(symbol: str):
         expiry_dates=expiry_dates,
         fair_priced_chain=fair_priced_chain,
         available=available and len(fair_priced_chain) > 0,
-        last_updated=effective_last_updated or _generated_at(),
+        last_updated=effective_last_updated,
         generated_at=_generated_at(),
         source="redis_read_model",
         stale=stale,
@@ -169,26 +164,26 @@ async def get_technicals(symbol: str, spot: Optional[float] = None):
     symbol_upper = symbol.strip().upper()
     symbol_clean = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol_upper)
 
-    if spot is None or spot <= 0:
+    # Prefer the cached chain's spot (the snapshot field is spot_price); ?spot is the fallback.
+    spot_price = spot if spot is not None and spot > 0 else None
+    try:
+        redis = await get_redis_client()
+        raw_cached = await redis.get(RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean))
+        if raw_cached:
+            cached_spot = float(json.loads(raw_cached).get("spot_price") or 0.0)
+            if cached_spot > 0:
+                spot_price = cached_spot
+    except Exception as exc:
+        logger.warning("Redis fetch error in technicals for %s: %s", symbol_clean, exc)
+
+    if spot_price is None:
         raise HTTPException(
             status_code=422,
             detail=f"Spot price is required for technicals calculation of '{symbol_upper}'. Pass ?spot=<price> or ensure Redis has cached data."
         )
-    spot_price = spot
 
-    try:
-        redis = await get_redis_client()
-        raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
-        raw_cached = await redis.get(raw_key)
-
-        if raw_cached:
-            data = json.loads(raw_cached)
-            spot_price = float(data.get("underlying_price") or data.get("underlying_value") or spot_price)
-    except Exception as exc:
-        logger.warning("Redis fetch error in technicals for %s: %s", symbol_clean, exc)
-
-    # Fetch real market daily OHLC price history via yfinance
-    price_history = []
+    # Fetch real market daily OHLC history via yfinance
+    closes, highs, lows = [], None, None
     try:
         from domains.ingestion.infrastructure.outbound.nse_api_adapter import _to_yfinance_symbol
         import yfinance as yf
@@ -196,17 +191,20 @@ async def get_technicals(symbol: str, spot: Optional[float] = None):
         yf_symbol = _to_yfinance_symbol(symbol_clean)
 
         def _fetch_hist():
-            ticker = yf.Ticker(yf_symbol)
-            hist = ticker.history(period="3mo")
-            if not hist.empty and "Close" in hist:
-                return [float(x) for x in hist["Close"].dropna().tolist()]
-            return []
+            hist = yf.Ticker(yf_symbol).history(period="3mo")
+            if hist.empty or "Close" not in hist:
+                return [], None, None
+            hist = hist.dropna(subset=["Close"])
+            if {"High", "Low"} <= set(hist.columns):
+                hist = hist.dropna(subset=["High", "Low"])
+                return hist["Close"].tolist(), hist["High"].tolist(), hist["Low"].tolist()
+            return hist["Close"].tolist(), None, None
 
-        price_history = await asyncio.to_thread(_fetch_hist)
+        closes, highs, lows = await asyncio.to_thread(_fetch_hist)
     except Exception as hist_exc:
         logger.warning("Failed fetching historical prices for %s technicals: %s", symbol_clean, hist_exc)
 
-    technicals_data = compute_all_technicals(spot_price, price_history=price_history)
+    technicals_data = compute_all_technicals(spot_price, price_history=closes, highs=highs, lows=lows)
     technicals_data["symbol"] = symbol_clean
     technicals_data["generated_at"] = _generated_at()
     technicals_data["source"] = "analytics_domain_engine"

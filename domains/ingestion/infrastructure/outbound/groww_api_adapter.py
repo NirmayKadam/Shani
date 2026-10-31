@@ -13,6 +13,7 @@ from domains.ingestion.ports.interface.outbound.i_market_price_source_port impor
 from domains.ingestion.ports.interface.outbound.i_option_chain_source_port import IOptionChainSourcePort
 from domains.ingestion.application.dto.raw_tick_dto import RawTickDTO
 from domains.ingestion.infrastructure.outbound.nse_api_adapter import NseApiAdapter
+from shared.utils.market_time import parse_expiry
 
 logger = logging.getLogger(__name__)
 
@@ -150,12 +151,15 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 except Exception as e:
                     logger.warning("TOTP generation failed: %s", e)
 
-            # Try SDK methods with available parameters
-            if totp_code:
+            # Try SDK methods with available parameters. The TOTP secret is never sent as an
+            # identifier; without an API key the TOTP flow cannot be used.
+            if totp_code and not self.api_key:
+                logger.warning("GROWW_TOTP_SECRET is set but GROWW_API_KEY is empty; skipping TOTP login.")
+            elif totp_code:
                 # Attempt 1: GrowwAPI SDK get_access_token with totp
                 try:
                     return GrowwAPI.get_access_token(
-                        api_key=self.api_key or self.totp_secret,
+                        api_key=self.api_key,
                         totp=totp_code,
                         pin=self.pin
                     )
@@ -219,7 +223,8 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                         
                         # Dividend yield: check Redis cache first, fallback to yfinance only on miss
                         dividend_yield = 0.0
-                        div_key = f"market:dividend_yield:{symbol.upper()}"
+                        # v2: values are decimals; v1 entries held yfinance's percent value.
+                        div_key = f"market:dividend_yield:v2:{symbol.upper()}"
                         try:
                             cached_div = await self._redis.get(div_key) if self._redis else None
                             if cached_div is not None:
@@ -238,7 +243,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                             "last_price": round(float(last_price), 2),
                             "open": round(float(open_p), 2),
                             "high": round(float(high_p), 2),
-                            "low": round(float(open_p), 2) if open_p < low_p else round(float(low_p), 2),
+                            "low": round(float(low_p), 2),
                             "volume": int(volume),
                             "previous_close": round(float(close_p), 2),
                             "change_percent": round(float(change_percent), 2),
@@ -301,7 +306,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             # Parse and format expiries to YYYY-MM-DD
             formatted_expiries = []
             for exp in expiries:
-                if exp.count("-") == 2 and all(part.isdigit() for part in exp.split("-")):
+                if parse_expiry(exp):  # strict YYYY-MM-DD; "28-11-2026" must not pass as ISO
                     formatted_expiries.append(exp)
                 else:
                     parsed = NseApiAdapter._parse_nse_date(exp)
@@ -352,10 +357,10 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                                     continue
                                 
                                 ltp = float(opt_data.get("ltp") or 0.0)
-                                if ltp <= 0:
-                                    continue
-
                                 oi = int(opt_data.get("open_interest") or 0)
+                                # Keep untraded strikes that still carry open interest (OI-based PCR).
+                                if ltp <= 0 and oi <= 0:
+                                    continue
                                 volume = int(opt_data.get("volume") or 0)
                                 
                                 greeks = opt_data.get("greeks", {})

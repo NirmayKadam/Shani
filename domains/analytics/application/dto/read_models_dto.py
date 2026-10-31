@@ -24,37 +24,34 @@ class OptionChainSummaryDTO(BaseModel):
 
 
 def compute_pcr(option_chain: dict) -> dict:
+    """Put-call ratio of the nearest live expiry.
+
+    `pcr` is the standard open-interest ratio (put OI / call OI); `volume_pcr` is the
+    traded-volume ratio. Either is None when the call side is zero, which means "no data",
+    not "extremely bullish".
+    """
+    from shared.utils.market_time import nearest_expiry
+
     chains = option_chain.get("chains") or {}
-    if not chains:
-        return {
-            "pcr": 0.0,
-            "ce_volume": 0,
-            "pe_volume": 0,
-            "ce_oi": 0,
-            "pe_oi": 0,
-        }
+    expiry = nearest_expiry(chains.keys()) or (min(chains) if chains else None)
 
-    total_ce_vol = 0
-    total_pe_vol = 0
-    total_ce_oi = 0
-    total_pe_oi = 0
+    totals = {"CE": {"oi": 0, "volume": 0}, "PE": {"oi": 0, "volume": 0}}
+    for tick in chains.get(expiry, []) if expiry else []:
+        side = totals.get(tick.get("type"))
+        if side is not None:
+            side["oi"] += int(tick.get("oi", 0) or 0)
+            side["volume"] += int(tick.get("volume", 0) or 0)
 
-    for _, ticks in chains.items():
-        for tick in ticks:
-            volume = int(tick.get("volume", 0))
-            oi = int(tick.get("oi", 0))
-            if tick.get("type") == "CE":
-                total_ce_vol += volume
-                total_ce_oi += oi
-            elif tick.get("type") == "PE":
-                total_pe_vol += volume
-                total_pe_oi += oi
+    def ratio(field: str):
+        calls = totals["CE"][field]
+        return round(totals["PE"][field] / calls, 4) if calls > 0 else None
 
-    pcr = round(total_pe_vol / total_ce_vol, 4) if total_ce_vol > 0 else 0.0
     return {
-        "pcr": pcr,
-        "ce_volume": total_ce_vol,
-        "pe_volume": total_pe_vol,
-        "ce_oi": total_ce_oi,
-        "pe_oi": total_pe_oi,
+        "pcr": ratio("oi"),
+        "volume_pcr": ratio("volume"),
+        "expiry": expiry,
+        "ce_volume": totals["CE"]["volume"],
+        "pe_volume": totals["PE"]["volume"],
+        "ce_oi": totals["CE"]["oi"],
+        "pe_oi": totals["PE"]["oi"],
     }

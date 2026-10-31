@@ -25,15 +25,25 @@ class IAlertRuleRepositoryPort(ABC):
         pass
 
     @abstractmethod
+    async def list_active_rules(self) -> List[AlertRule]:
+        """Fetch all active alert rules."""
+        pass
+
+    @abstractmethod
     async def delete_rule(self, rule_id: uuid.UUID) -> bool:
         """Delete alert rule by ID."""
         pass
 
     @abstractmethod
-    async def update_last_triggered(
-        self, rule_id: uuid.UUID, triggered_at: datetime
-    ) -> None:
-        """Update last_triggered_at timestamp for a rule."""
+    async def try_transition(
+        self, rule_id: uuid.UUID, condition_met: bool, now: datetime
+    ) -> bool:
+        """Atomically record a change in the rule's condition state.
+
+        Returns True only when the stored state changed. A change to True is refused while
+        the rule is still inside its cooldown window, so callers fire exactly when this
+        returns True for condition_met=True.
+        """
         pass
 
     @abstractmethod

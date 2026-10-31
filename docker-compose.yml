@@ -5,10 +5,9 @@ services:
       context: .
       dockerfile: Dockerfile
     image: nexusquant-app:dev
-    ports: 
+    # Postgres and Redis bind to 127.0.0.1 inside the container; only the API is published.
+    ports:
       - '8000:8000'
-      - '5433:5432'
-      - '6379:6379'
     env_file: .env
     restart: unless-stopped
     volumes: 

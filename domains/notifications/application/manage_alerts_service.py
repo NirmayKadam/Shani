@@ -33,8 +33,7 @@ class ManageAlertRulesService(IManageAlertRulesUseCasePort):
     async def list_active_rules(self, symbol: Optional[str] = None) -> List[AlertRule]:
         if symbol:
             return await self._repo.get_active_rules_by_symbol(symbol)
-        # Fetch for empty symbol yields empty list
-        return await self._repo.get_active_rules_by_symbol(symbol="")
+        return await self._repo.list_active_rules()
 
     async def delete_rule(self, rule_id: uuid.UUID) -> bool:
         logger.info(f"Deleting alert rule {rule_id}")

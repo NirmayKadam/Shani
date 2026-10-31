@@ -1,6 +1,9 @@
+import asyncio
 from typing import List, Optional
 import uuid
 from fastapi import APIRouter, HTTPException, Depends, status
+
+from shared.utils.symbol_validator import SymbolValidator
 
 from domains.notifications.api.schemas import (
     CreateAlertRuleRequest,
@@ -19,6 +22,11 @@ def get_manage_alerts_service() -> ManageAlertRulesService:
     return ManageAlertRulesService(repository=repo)
 
 
+async def _clean_symbol(symbol: str) -> str:
+    """Canonical market symbol (e.g. RELIANCE -> RELIANCE.NS), the same key priced events use."""
+    return (await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol.strip().upper())).upper()
+
+
 @router.post("/alerts", response_model=AlertRuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_alert_rule(
     req: CreateAlertRuleRequest,
@@ -27,12 +35,12 @@ async def create_alert_rule(
     """Create a new real-time market alert rule."""
     rule = AlertRule(
         id=uuid.uuid4(),
-        symbol=req.symbol.upper(),
+        symbol=await _clean_symbol(req.symbol),
         condition_type=req.condition_type,
         threshold=req.threshold,
         channels=req.channels,
         cooldown_seconds=req.cooldown_seconds,
-        webhook_url=req.webhook_url,
+        webhook_url=str(req.webhook_url) if req.webhook_url else None,
         email_destination=req.email_destination,
         is_active=True,
     )
@@ -45,8 +53,8 @@ async def list_alert_rules(
     symbol: Optional[str] = None,
     service: ManageAlertRulesService = Depends(get_manage_alerts_service),
 ):
-    """List active user alert rules optionally filtered by symbol."""
-    return await service.list_active_rules(symbol=symbol)
+    """List active alert rules, optionally filtered by symbol."""
+    return await service.list_active_rules(symbol=await _clean_symbol(symbol) if symbol else None)
 
 
 @router.get("/alerts/{rule_id}", response_model=AlertRuleResponse)

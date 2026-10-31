@@ -43,35 +43,48 @@ def _default_worker_count() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
-def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv: float, put_iv: float, dividend_yield: float, live_call: float, live_put: float) -> dict:
-    """Helper to solve single strike CE/PE pricing synchronously in a pool worker process."""
-    # Call Price (Crank-Nicolson PDE)
-    call_solver = CrankNicolsonPDE(S0, strike, T, r, call_iv, 'call')
-    call_price = call_solver.solve()
+def _valid_iv(iv) -> bool:
+    return iv is not None and iv > 0
 
-    # Put Price (Crank-Nicolson PDE)
-    put_solver = CrankNicolsonPDE(S0, strike, T, r, put_iv, 'put')
-    put_price = put_solver.solve()
 
-    # Call Price (Black-Scholes-Merton Analytical)
-    bs_call_solver = BlackScholesMerton(S0, strike, T, r, call_iv, 'call', q=dividend_yield)
-    bs_call_price = bs_call_solver.solve()
+def _price_leg(S0: float, strike: float, T: float, r: float, iv, dividend_yield: float, option_type: str):
+    """(PDE price, BSM price) for one leg, or (None, None) when the feed has no usable IV."""
+    if not _valid_iv(iv):
+        return None, None
+    pde_price = CrankNicolsonPDE(S0, strike, T, r, iv, option_type).solve()
+    bsm_price = BlackScholesMerton(S0, strike, T, r, iv, option_type, q=dividend_yield).solve()
+    return round(pde_price, 2), round(bsm_price, 2)
 
-    # Put Price (Black-Scholes-Merton Analytical)
-    bs_put_solver = BlackScholesMerton(S0, strike, T, r, put_iv, 'put', q=dividend_yield)
-    bs_put_price = bs_put_solver.solve()
+
+def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv, put_iv, dividend_yield: float, live_call: float, live_put: float) -> dict:
+    """Helper to solve single strike CE/PE pricing synchronously in a pool worker process.
+
+    A leg without a positive implied volatility is left unpriced (None) rather than priced
+    with an invented volatility.
+    """
+    fair_call, bs_fair_call = _price_leg(S0, strike, T, r, call_iv, dividend_yield, 'call')
+    fair_put, bs_fair_put = _price_leg(S0, strike, T, r, put_iv, dividend_yield, 'put')
 
     return {
         "strike": strike,
-        "fair_call": round(call_price, 2),
-        "fair_put": round(put_price, 2),
-        "call_iv": call_iv,
-        "put_iv": put_iv,
-        "bs_fair_call": round(bs_call_price, 2),
-        "bs_fair_put": round(bs_put_price, 2),
+        "fair_call": fair_call,
+        "fair_put": fair_put,
+        "call_iv": call_iv if _valid_iv(call_iv) else None,
+        "put_iv": put_iv if _valid_iv(put_iv) else None,
+        "bs_fair_call": bs_fair_call,
+        "bs_fair_put": bs_fair_put,
         "live_call": round(live_call, 2) if live_call is not None else 0.0,
         "live_put": round(live_put, 2) if live_put is not None else 0.0
     }
+
+
+def _atm_iv_pct(S0: float, priced_chain: list):
+    """At-the-money implied volatility in percent: the call IV of the strike nearest spot."""
+    candidates = [row for row in priced_chain if row.get("call_iv")]
+    if not candidates:
+        return None
+    atm = min(candidates, key=lambda row: abs(row["strike"] - S0))
+    return round(atm["call_iv"] * 100.0, 4)
 
 
 class OptionsPricingSubscriber:
@@ -135,7 +148,7 @@ class OptionsPricingSubscriber:
             if strike not in strikes_map:
                 strikes_map[strike] = {}
             strikes_map[strike][s["type"]] = {
-                "iv": s.get("iv", 0.20),
+                "iv": s.get("iv"),
                 "ltp": s.get("ltp", 0.0)
             }
 
@@ -143,8 +156,8 @@ class OptionsPricingSubscriber:
         executor = self._get_executor()
         tasks = []
         for strike, type_data in strikes_map.items():
-            call_iv = type_data.get("CE", {}).get("iv", 0.20)
-            put_iv = type_data.get("PE", {}).get("iv", 0.20)
+            call_iv = type_data.get("CE", {}).get("iv")
+            put_iv = type_data.get("PE", {}).get("iv")
             live_call = type_data.get("CE", {}).get("ltp", 0.0)
             live_put = type_data.get("PE", {}).get("ltp", 0.0)
 
@@ -157,18 +170,26 @@ class OptionsPricingSubscriber:
             )
 
         priced_chain = await asyncio.gather(*tasks)
+        last_updated = datetime.now(timezone.utc).isoformat()
 
         # Cache in Redis for high performance read-model API querying
         cache_key = RedisKeys.MARKET_OPTIONS_PRICED.format(symbol=symbol)
         cache_payload = {
             "symbol": symbol,
             "chain": priced_chain,
-            "last_updated": datetime.now(timezone.utc).isoformat()
+            "last_updated": last_updated
         }
         await self.redis.set(cache_key, json.dumps(cache_payload), ex=TTL.MARKET_OPTIONS_PRICED)
 
-        # Publish Durable Event (for read-model updates)
-        event_data = json.dumps({"symbol": symbol, "chain": priced_chain})
+        # Publish Durable Event: the priced chain plus the symbol-level snapshot alerts evaluate
+        event_data = json.dumps({
+            "symbol": symbol,
+            "spot_price": S0,
+            "atm_iv_pct": _atm_iv_pct(S0, priced_chain),
+            "expiry": data.get("expiry"),
+            "last_updated": last_updated,
+            "chain": priced_chain,
+        })
         await self.redis.xadd(self.publish_stream, {"data": event_data})
 
         # Publish Ephemeral Event (Live UX update)

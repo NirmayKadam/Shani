@@ -6,11 +6,13 @@ All Functions/Classes:
 - get_ticker_parameters: GET endpoint fetching real-time Redis or dynamic live options parameters for a symbol.
 - calculate_bsm: POST endpoint executing BSM pricer and returning intermediate / final option edge parameters.
 """
+import asyncio
 import math
-import hashlib
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+import re
+import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
@@ -18,8 +20,9 @@ from scipy.stats import norm
 from fastapi import APIRouter, HTTPException
 
 from shared.utils.symbol_validator import SymbolValidator
+from shared.utils.market_time import nearest_expiry, years_to_expiry, risk_free_rate_for
 from shared.infrastructure.redis_client import get_redis_client
-from shared.constants import RedisKeys
+from shared.constants import RedisKeys, TTL
 from domains.analytics.api.schemas import (
     PricerTickerDataResponse,
     BSMCalculateRequest,
@@ -27,331 +30,265 @@ from domains.analytics.api.schemas import (
     OptionChainRow,
     OptionChainSide,
 )
+from domains.analytics.domain.services.bsm_calculator import BsmCalculatorDomainService
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pricer", tags=["pricer"])
 
-
-from functools import lru_cache
-from app.config.settings import get_settings
+# Letters, digits and the punctuation real tickers use: RELIANCE.NS, ^NSEI, BRK-B, M&M
+_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.\-^&]+$")
+# A chain snapshot older than this is reported as stale
+_STALE_AFTER_SECONDS = 120
+_HV_TTL_SECONDS = 3600
+_HV_CACHE: dict[str, tuple[float, float]] = {}
 
 
 def _generated_at() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@lru_cache(maxsize=128)
-def _get_historical_volatility(symbol: str) -> float:
-    """Compute rolling 30-day annualized historical volatility from historical prices."""
+def _historical_volatility_sync(symbol_clean: str) -> Optional[float]:
+    """Annualised 30-day historical volatility in percent, or None if it cannot be computed."""
     try:
         import yfinance as yf
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1mo")
-        if hist is not None and len(hist) > 5:
-            log_returns = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
-            hv = float(log_returns.std() * np.sqrt(252) * 100.0)
-            return round(hv, 2) if not np.isnan(hv) else 0.0
-    except Exception:
-        pass
-    return 0.0
+        from domains.ingestion.infrastructure.outbound.nse_api_adapter import _to_yfinance_symbol
+
+        hist = yf.Ticker(_to_yfinance_symbol(symbol_clean)).history(period="1mo")
+        if hist is None or len(hist) <= 5:
+            return None
+        log_returns = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
+        hv = float(log_returns.std() * np.sqrt(252) * 100.0)
+        return None if np.isnan(hv) else round(hv, 2)
+    except Exception as exc:
+        logger.debug("[%s] Historical volatility unavailable: %s", symbol_clean, exc)
+        return None
+
+
+async def _get_historical_volatility(symbol_clean: str) -> float:
+    """TTL-cached historical volatility; failures are not cached, so a blip doesn't pin HV at 0."""
+    cached = _HV_CACHE.get(symbol_clean)
+    if cached and time.monotonic() - cached[1] < _HV_TTL_SECONDS:
+        return cached[0]
+    hv = await asyncio.to_thread(_historical_volatility_sync, symbol_clean)
+    if hv is None:
+        return 0.0
+    _HV_CACHE[symbol_clean] = (hv, time.monotonic())
+    return hv
+
+
+async def _live_fetch(symbol_clean: str, redis) -> Optional[tuple[dict, Optional[dict]]]:
+    """Fetch chain + quote from the market adapter and cache them. Returns (chain, price) or None."""
+    from domains.ingestion.infrastructure.outbound.adapter_factory import get_market_data_adapter
+    from domains.ingestion.application.services.ingestion_service import build_option_chain_snapshot
+
+    adapter = get_market_data_adapter()
+    dtos, price_data = [], None
+    try:
+        dtos = await adapter.fetch_option_chain(symbol_clean)
+        price_data = await adapter.fetch_price(symbol_clean)
+    except Exception as fetch_exc:
+        logger.error("[%s] Dynamic live fetch failed: %s", symbol_clean, fetch_exc)
+    finally:
+        await adapter.close()
+
+    if dtos:
+        chain = build_option_chain_snapshot(symbol_clean, dtos)
+    elif price_data:
+        chain = {
+            "symbol": symbol_clean, "spot_price": 0.0, "expiry_dates": [], "chains": {},
+            "fetched_at": _generated_at(), "summary": {"total_strikes": 0},
+        }
+    else:
+        return None
+
+    if chain["spot_price"] <= 0 and price_data:
+        chain["spot_price"] = float(price_data.get("last_price", 0.0))
+
+    if redis:
+        try:
+            await redis.set(RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean),
+                            json.dumps(chain, default=str), ex=TTL.MARKET_OPTIONS)
+            if price_data:
+                await redis.set(RedisKeys.MARKET_PRICE.format(symbol=symbol_clean),
+                                json.dumps(price_data, default=str), ex=TTL.MARKET_PRICE)
+        except Exception as cache_exc:
+            logger.warning("[%s] Failed caching live-fetched market data: %s", symbol_clean, cache_exc)
+    return chain, price_data
+
+
+def _atm_call(strikes_data: list, spot: float) -> Optional[dict]:
+    """Call row with the strike nearest spot (puts are excluded: the headline IV is a call IV)."""
+    calls = [o for o in strikes_data if str(o.get("type", "")).upper() in ("CE", "CALL")]
+    return min(calls, key=lambda o: abs(float(o["strike"]) - spot)) if calls else None
+
+
+def _iv_percent(iv) -> float:
+    """Adapters emit IV as a decimal (0.142); the pricer API reports percent (14.2)."""
+    iv = float(iv or 0.0)
+    return round(iv * 100.0, 4) if iv > 0 else 0.0
+
+
+def _chain_rows(chains: dict, expiries: list) -> dict[str, list[OptionChainRow]]:
+    empty_side = {"oi": 0, "chng_in_oi": 0, "volume": 0, "iv": 0.0, "ltp": 0.0, "chng": 0.0,
+                  "bid_qty": None, "bid": None, "ask": None, "ask_qty": None}
+    option_chains = {}
+    for exp_date in expiries:
+        rows_by_strike: dict[float, dict] = {}
+        for opt in chains.get(exp_date, []):
+            strike = float(opt["strike"])
+            row = rows_by_strike.setdefault(
+                strike, {"call": dict(empty_side), "put": dict(empty_side)}
+            )
+            side = "call" if str(opt.get("type", "")).upper() in ("CE", "CALL") else "put"
+            bid = float(opt.get("bid", 0.0) or 0.0)
+            ask = float(opt.get("ask", 0.0) or 0.0)
+            bid_qty = int(opt.get("bid_qty", 0) or 0)
+            ask_qty = int(opt.get("ask_qty", 0) or 0)
+            row[side] = {
+                "oi": int(opt.get("oi", 0) or 0),
+                "chng_in_oi": int(opt.get("chng_in_oi", 0) or 0),
+                "volume": int(opt.get("volume", 0) or 0),
+                "iv": _iv_percent(opt.get("iv")),
+                "ltp": float(opt.get("last_price", 0.0) or 0.0),
+                "chng": float(opt.get("change", 0.0) or 0.0),
+                "bid_qty": bid_qty or None,
+                "bid": bid or None,
+                "ask": ask or None,
+                "ask_qty": ask_qty or None,
+            }
+        option_chains[exp_date] = [
+            OptionChainRow(
+                strike_price=strike,
+                call=OptionChainSide(**rows_by_strike[strike]["call"]),
+                put=OptionChainSide(**rows_by_strike[strike]["put"]),
+            )
+            for strike in sorted(rows_by_strike)
+        ]
+    return option_chains
+
+
+def _is_stale(fetched_at: str) -> bool:
+    try:
+        fetched = datetime.fromisoformat(str(fetched_at).replace("Z", "+00:00"))
+        if fetched.tzinfo is None:
+            fetched = fetched.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - fetched).total_seconds() > _STALE_AFTER_SECONDS
+    except (TypeError, ValueError):
+        return True
 
 
 @router.get("/ticker/{symbol}", response_model=PricerTickerDataResponse)
 async def get_ticker_parameters(symbol: str):
     """
     Get live options pricing parameters for the BSM Pricer inputs.
-    Tries to read live options chain cache from Redis first.
+    Reads the option chain snapshot from Redis, falling back to a live market fetch.
     """
     symbol_upper = symbol.strip().upper()
-    # Basic format check: must be alphanumeric (allowing dot, hyphen, caret)
-    clean_format = symbol_upper.replace(".", "").replace("-", "").replace("^", "")
-    if not clean_format or not clean_format.isalnum():
+    if not _SYMBOL_PATTERN.match(symbol_upper):
         raise HTTPException(
             status_code=400,
             detail=f"Symbol '{symbol_upper}' is invalid or not supported."
         )
 
-    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
-    settings = get_settings()
-    rf_rate = settings.DefaultRiskFreeRateInr if ("NS" in symbol_upper or symbol_clean in {"NIFTY", "BANKNIFTY", "FINNIFTY"}) else settings.DefaultRiskFreeRateUsd
-    
-    raw_cached = None
-    price_cached = None
-    redis = None
+    symbol_clean = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol_upper)
+    rate = risk_free_rate_for(symbol_clean)
+
+    raw_cached = price_cached = redis = None
     try:
         redis = await get_redis_client()
-        # Attempt to load options cache
-        raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
-        raw_cached = await redis.get(raw_key)
-
-        # Attempt to load spot price cache
-        price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
-        price_cached = await redis.get(price_key)
+        raw_cached = await redis.get(RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean))
+        price_cached = await redis.get(RedisKeys.MARKET_PRICE.format(symbol=symbol_clean))
     except Exception as exc:
         logger.warning("[%s] Failed connecting to Redis, falling back to direct adapter fetch: %s", symbol_clean, exc)
 
-    if not raw_cached:
-        # Try live fetch
-        from domains.ingestion.infrastructure.outbound.adapter_factory import get_market_data_adapter
-        adapter = get_market_data_adapter()
+    source = "redis_cache"
+    chain_data = json.loads(raw_cached) if raw_cached else None
+    price_data = json.loads(price_cached) if price_cached else None
+    if chain_data is None:
+        fetched = await _live_fetch(symbol_clean, redis)
+        if fetched is None:
+            # Real market data unavailable across all sources (Groww, NSE, yfinance)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Live market data is currently unavailable for '{symbol_clean}' across all market sources."
+            )
+        chain_data, live_price = fetched
+        price_data = live_price or price_data
+        source = "live_market_fetch"
 
-        dtos = []
-        live_price_data = None
-        try:
-            dtos = await adapter.fetch_option_chain(symbol_clean)
-            live_price_data = await adapter.fetch_price(symbol_clean)
-        except Exception as fetch_exc:
-            logger.error("[%s] Dynamic live fetch failed: %s", symbol_clean, fetch_exc)
-        finally:
-            await adapter.close()
+    try:
+        spot = float(chain_data.get("spot_price", 0.0) or 0.0)
+        if spot <= 0 and price_data:
+            spot = float(price_data.get("last_price", 0.0) or 0.0)
+        dividend_yield = float((price_data or {}).get("dividend_yield", 0.0) or 0.0)
+        expiries = chain_data.get("expiry_dates", [])
+        chains = chain_data.get("chains", {})
+        stale = _is_stale(chain_data.get("fetched_at", ""))
+        hv = await _get_historical_volatility(symbol_clean)
 
-        if dtos:
-            spot_price = dtos[0].underlying_price
-            if spot_price <= 0 and live_price_data:
-                spot_price = float(live_price_data.get("last_price", 0.0))
-            
-            chains = {}
-            expiry_dates = set()
-            for dto in dtos:
-                if not dto.expiry:
-                    continue
-                expiry_dates.add(dto.expiry)
-                if dto.expiry not in chains:
-                    chains[dto.expiry] = []
-                chains[dto.expiry].append({
-                    "strike": dto.strike,
-                    "type": dto.option_type,
-                    "last_price": dto.ltp,
-                    "oi": dto.oi,
-                    "volume": dto.volume,
-                    "iv": dto.iv,
-                    "bid": dto.bid,
-                    "bid_qty": dto.bid_qty,
-                    "ask": dto.ask,
-                    "ask_qty": dto.ask_qty,
-                    "expiry": dto.expiry
-                })
-            
-            data = {
-                "symbol": symbol_clean,
-                "spot_price": spot_price,
-                "expiry_dates": sorted(list(expiry_dates)),
-                "chains": chains,
-                "fetched_at": datetime.now(timezone.utc).isoformat(),
-                "summary": {"total_strikes": len(set(d.strike for d in dtos))}
-            }
-            
-            if redis:
-                try:
-                    raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
-                    await redis.set(raw_key, json.dumps(data, default=str), ex=60)
-                    
-                    price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
-                    p_data = {
-                        "symbol": symbol_clean,
-                        "last_price": spot_price,
-                        "last_updated": datetime.now(timezone.utc).isoformat()
-                    }
-                    await redis.set(price_key, json.dumps(p_data, default=str), ex=60)
-                except Exception as cache_exc:
-                    logger.warning("[%s] Failed caching dynamically fetched options to Redis: %s", symbol_clean, cache_exc)
-            
-            raw_cached = json.dumps(data, default=str)
-        elif live_price_data:
-            spot_price = float(live_price_data.get("last_price", 0.0))
-            data = {
-                "symbol": symbol_clean,
-                "spot_price": spot_price,
-                "expiry_dates": [],
-                "chains": {},
-                "fetched_at": datetime.now(timezone.utc).isoformat(),
-                "summary": {"total_strikes": 0}
-            }
-            if redis:
-                try:
-                    raw_key = RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean)
-                    await redis.set(raw_key, json.dumps(data, default=str), ex=60)
-                    
-                    price_key = RedisKeys.MARKET_PRICE.format(symbol=symbol_clean)
-                    p_data = {
-                        "symbol": symbol_clean,
-                        "last_price": spot_price,
-                        "last_updated": datetime.now(timezone.utc).isoformat()
-                    }
-                    await redis.set(price_key, json.dumps(p_data, default=str), ex=60)
-                except Exception as cache_exc:
-                    logger.warning("[%s] Failed caching price data to Redis: %s", symbol_clean, cache_exc)
+        common = dict(
+            symbol=symbol_clean,
+            stock_price=spot,
+            data_as_of=str(chain_data.get("fetched_at", "") or ""),
+            historical_volatility=hv,
+            risk_free_rate=round(rate * 100.0, 4),
+            dividend_yield=round(dividend_yield * 100.0, 4),
+            generated_at=_generated_at(),
+            source=source,
+            stale=stale,
+            partial=False,
+            status="COMPLETED",
+        )
 
-            raw_cached = json.dumps(data, default=str)
-        else:
-            raw_cached = None
-
-    if raw_cached:
-        try:
-            chain_data = json.loads(raw_cached)
-            spot = float(chain_data.get("spot_price", 0.0))
-            if spot <= 0 and price_cached:
-                p_data = json.loads(price_cached)
-                spot = float(p_data.get("last_price", 0.0))
-
-            expiries = chain_data.get("expiry_dates", [])
-            chains = chain_data.get("chains", {})
-
-            if not expiries or not chains:
-                return PricerTickerDataResponse(
-                    symbol=symbol_clean,
-                    stock_price=spot,
-                    implied_volatility=0.0,
-                    historical_volatility=_get_historical_volatility(symbol_clean),
-                    bid_price=None,
-                    ask_price=None,
-                    open_interest=0,
-                    volume=0,
-                    strike_price=0.0,
-                    expiry_days=0,
-                    risk_free_rate=rf_rate,
-                    dividend_yield=0.0,
-                    expiry_dates=[],
-                    option_chains={},
-                    generated_at=_generated_at(),
-                    source="live_market_fetch" if spot > 0 else "market_data_unavailable",
-                    stale=False,
-                    partial=False,
-                    status="COMPLETED",
+        pricing_expiry = nearest_expiry(expiries) or (expiries[0] if expiries else None)
+        atm = _atm_call(chains.get(pricing_expiry, []), spot) if (spot > 0 and pricing_expiry) else None
+        if atm is None:
+            if spot <= 0:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Live market data is currently unavailable for '{symbol_clean}' across all market sources."
                 )
+            # Quote available but no option chain: return the spot-only parameters
+            return PricerTickerDataResponse(
+                **common, implied_volatility=0.0, bid_price=None, ask_price=None,
+                open_interest=0, volume=0, strike_price=0.0, expiry_days=0.0,
+                expiry_dates=[], option_chains={},
+            )
 
-            if spot > 0 and expiries and chains:
-                # Target nearest expiry
-                nearest_exp = expiries[0]
-                strikes_data = chains.get(nearest_exp, [])
+        T = years_to_expiry(pricing_expiry) or 30 / 365.0
+        strike = float(atm["strike"])
+        ltp = float(atm.get("last_price", 0.0) or 0.0)
+        bid = float(atm.get("bid") or 0.0) or None
+        ask = float(atm.get("ask") or 0.0) or None
 
-                # Find near-the-money call option
-                nearest_strike_opt = None
-                min_diff = float("inf")
-                for opt in strikes_data:
-                    diff = abs(opt["strike"] - spot)
-                    if diff < min_diff:
-                        min_diff = diff
-                        nearest_strike_opt = opt
+        iv = _iv_percent(atm.get("iv"))
+        if iv <= 0 and ltp > 0:
+            solved = BsmCalculatorDomainService.solve_implied_volatility(
+                market_price=ltp, spot=spot, strike=strike, expiry_years=T,
+                rate=rate, option_type="call", dividend_yield=dividend_yield,
+            )
+            iv = round(solved * 100.0, 2) if solved and solved > 0 else 0.0
 
-                if nearest_strike_opt:
-                    # Calculate implied/historical params
-                    # Expiry days estimation
-                    try:
-                        exp_dt = datetime.strptime(nearest_exp, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                        delta = (exp_dt - datetime.now(timezone.utc)).days
-                        expiry_days = max(delta, 1)
-                    except Exception:
-                        expiry_days = 30
-
-                    ltp = float(nearest_strike_opt.get("last_price", 0.0))
-                    raw_bid = nearest_strike_opt.get("bid")
-                    raw_ask = nearest_strike_opt.get("ask")
-                    bid = float(raw_bid) if raw_bid is not None and float(raw_bid) > 0 else None
-                    ask = float(raw_ask) if raw_ask is not None and float(raw_ask) > 0 else None
-                    
-                    iv = float(nearest_strike_opt.get("iv", 0.0) or 0.0)
-                    if iv > 0.0 and iv < 1.0:
-                        iv *= 100.0
-                    elif iv <= 0.0 and ltp > 0 and spot > 0:
-                        # Attempt BSM IV solution
-                        try:
-                            from domains.analytics.domain.black_scholes import BSMCalculations
-                            solved_iv = BSMCalculations.implied_volatility(
-                                price=ltp,
-                                S=spot,
-                                K=float(nearest_strike_opt.get("strike", spot)),
-                                T=max(expiry_days, 1) / 365.0,
-                                r=rf_rate / 100.0,
-                                option_type="call"
-                            )
-                            if solved_iv and solved_iv > 0:
-                                iv = round(solved_iv * 100.0, 2)
-                        except Exception:
-                            iv = 0.0
-
-                    # Parse option chains for ALL expiries from Redis
-                    option_chains = {}
-                    for exp_date in expiries:
-                        exp_strikes = chains.get(exp_date, [])
-                        rows_by_strike = {}
-                        for opt in exp_strikes:
-                            strike = float(opt["strike"])
-                            if strike not in rows_by_strike:
-                                rows_by_strike[strike] = {
-                                    "strike_price": strike,
-                                    "call": {"oi": 0, "chng_in_oi": 0, "volume": 0, "iv": 0.0, "ltp": 0.0, "chng": 0.0, "bid_qty": 0, "bid": 0.0, "ask": 0.0, "ask_qty": 0},
-                                    "put": {"oi": 0, "chng_in_oi": 0, "volume": 0, "iv": 0.0, "ltp": 0.0, "chng": 0.0, "bid_qty": 0, "bid": 0.0, "ask": 0.0, "ask_qty": 0}
-                                }
-                            opt_type = opt.get("type", "").upper()
-                            side = "call" if opt_type in ("CE", "CALL") else "put"
-                            
-                            iv_val = float(opt.get("iv", 0.0) or 0.0)
-                            if iv_val > 0.0 and iv_val < 1.0:
-                                iv_val *= 100.0
-                            elif iv_val <= 0.0:
-                                iv_val = 0.0
-                                
-                            ltp_val = float(opt.get("last_price", 0.0) or 0.0)
-                            
-                            b_val = float(opt.get("bid", 0.0) or 0.0)
-                            a_val = float(opt.get("ask", 0.0) or 0.0)
-                            b_qty = int(opt.get("bid_qty", 0) or 0)
-                            a_qty = int(opt.get("ask_qty", 0) or 0)
-                            
-                            rows_by_strike[strike][side] = {
-                                "oi": int(opt.get("oi", 0) or 0),
-                                "chng_in_oi": int(opt.get("chng_in_oi", 0) or 0),
-                                "volume": int(opt.get("volume", 0) or 0),
-                                "iv": iv_val,
-                                "ltp": ltp_val,
-                                "chng": float(opt.get("change", 0.0) or 0.0),
-                                "bid_qty": b_qty if b_qty > 0 else None,
-                                "bid": b_val if b_val > 0 else None,
-                                "ask": a_val if a_val > 0 else None,
-                                "ask_qty": a_qty if a_qty > 0 else None
-                            }
-                            
-                        sorted_rows = []
-                        for strike in sorted(rows_by_strike.keys()):
-                            sorted_rows.append(OptionChainRow(
-                                strike_price=strike,
-                                call=OptionChainSide(**rows_by_strike[strike]["call"]),
-                                put=OptionChainSide(**rows_by_strike[strike]["put"])
-                            ))
-                        option_chains[exp_date] = sorted_rows
-
-                    return PricerTickerDataResponse(
-                        symbol=symbol_clean,
-                        stock_price=spot,
-                        implied_volatility=iv,
-                        historical_volatility=_get_historical_volatility(symbol_clean),
-                        bid_price=bid,
-                        ask_price=ask,
-                        open_interest=int(nearest_strike_opt.get("oi", 0) or 0),
-                        volume=int(nearest_strike_opt.get("volume", 0) or 0),
-                        strike_price=float(nearest_strike_opt.get("strike", spot)),
-                        expiry_days=expiry_days,
-                        risk_free_rate=rf_rate,
-                        dividend_yield=0.0,
-                        expiry_dates=expiries,
-                        option_chains=option_chains,
-                        generated_at=_generated_at(),
-                        source="redis_cache",
-                        stale=False,
-                        partial=False,
-                        status="COMPLETED",
-                    )
-        except Exception as exc:
-            logger.warning("[%s] Failed fetching real-time pricer options params from Redis: %s", symbol_clean, exc)
-
-    # Real market data unavailable across all sources (Groww, yfinance, NSE)
-    raise HTTPException(
-        status_code=503,
-        detail=f"Live market data is currently unavailable for '{symbol_clean}' across all market sources."
-    )
+        return PricerTickerDataResponse(
+            **common,
+            implied_volatility=iv,
+            bid_price=bid,
+            ask_price=ask,
+            open_interest=int(atm.get("oi", 0) or 0),
+            volume=int(atm.get("volume", 0) or 0),
+            strike_price=strike,
+            expiry_days=round(T * 365.0, 2),
+            expiry_dates=expiries,
+            option_chains=_chain_rows(chains, expiries),
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        # A parsing bug is not "market data unavailable": log it and report an internal error.
+        logger.exception("[%s] Failed building pricer parameters", symbol_clean)
+        raise HTTPException(status_code=500, detail=f"Internal error building pricer parameters for '{symbol_clean}'.")
 
 
 @router.post("/calculate", response_model=BSMCalculateResponse)

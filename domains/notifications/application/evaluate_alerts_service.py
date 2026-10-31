@@ -1,10 +1,10 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Mapping, Optional
 from datetime import datetime, timezone
 import uuid
 
-from domains.notifications.domain.entities import AlertRule, NotificationEvent
-from domains.notifications.domain.value_objects import AlertStatus
+from domains.notifications.domain.entities import NotificationEvent
+from domains.notifications.domain.value_objects import AlertStatus, DeliveryChannel
 from domains.notifications.domain.services.rule_matcher import RuleMatcherDomainService
 from domains.notifications.ports.interface.inbound.i_evaluate_alerts import (
     IEvaluateAlertsUseCasePort,
@@ -20,15 +20,19 @@ logger = logging.getLogger(__name__)
 
 
 class EvaluateAlertsService(IEvaluateAlertsUseCasePort):
-    """Application service for evaluating stream tick events against active alert rules."""
+    """Application service for evaluating symbol-level market snapshots against active alert rules.
+
+    A rule fires once when its condition changes from not met to met (a crossing), and re-arms
+    when the condition stops holding. The repository's atomic transition also enforces cooldown.
+    """
 
     def __init__(
         self,
         repository: IAlertRuleRepositoryPort,
-        channels: Optional[List[INotificationChannelAdapterPort]] = None,
+        channels: Optional[Mapping[DeliveryChannel, INotificationChannelAdapterPort]] = None,
     ):
         self._repo = repository
-        self._channels = channels or []
+        self._channels = dict(channels or {})
 
     async def evaluate_tick_event(
         self, symbol: str, tick_payload: Dict[str, Any]
@@ -41,12 +45,12 @@ class EvaluateAlertsService(IEvaluateAlertsUseCasePort):
         triggered_events: List[NotificationEvent] = []
 
         for rule in active_rules:
-            # Check cooldown period
-            if rule.is_in_cooldown(now):
+            condition_met, actual_val, msg = RuleMatcherDomainService.match(rule, tick_payload)
+            if condition_met is None:
                 continue
 
-            is_matched, actual_val, msg = RuleMatcherDomainService.match(rule, tick_payload)
-            if not is_matched or actual_val is None or msg is None:
+            changed = await self._repo.try_transition(rule.id, condition_met, now)
+            if not (condition_met and changed):
                 continue
 
             event = NotificationEvent(
@@ -62,32 +66,26 @@ class EvaluateAlertsService(IEvaluateAlertsUseCasePort):
                 status=AlertStatus.PENDING,
             )
 
-            # Dispatch via channel adapters
-            dispatch_success = True
             error_details = []
-
-            for channel in self._channels:
+            for channel_type in rule.channels:
+                adapter = self._channels.get(channel_type)
+                if adapter is None:
+                    error_details.append(f"No adapter configured for {channel_type.value}")
+                    continue
                 try:
-                    ok = await channel.dispatch(event, rule)
-                    if not ok:
-                        dispatch_success = False
-                        error_details.append(f"Channel {channel.__class__.__name__} failed")
+                    if not await adapter.dispatch(event, rule):
+                        error_details.append(f"{channel_type.value} delivery failed")
                 except Exception as ex:
-                    dispatch_success = False
-                    error_details.append(str(ex))
+                    error_details.append(f"{channel_type.value}: {ex}")
 
-            if dispatch_success:
-                event.status = AlertStatus.DELIVERED
-            else:
+            if error_details:
                 event.status = AlertStatus.FAILED
                 event.error_message = "; ".join(error_details)
+            else:
+                event.status = AlertStatus.DELIVERED
 
-            # Update last_triggered timestamp on rule
-            await self._repo.update_last_triggered(rule.id, now)
-
-            # Log execution event to DB
             await self._repo.log_notification_event(event)
             triggered_events.append(event)
-            logger.info(f"Triggered notification alert {event.id} for rule {rule.id} on {symbol}")
+            logger.info("Triggered alert %s for rule %s on %s", event.id, rule.id, symbol)
 
         return triggered_events

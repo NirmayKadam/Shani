@@ -10,7 +10,9 @@ from domains.notifications.infrastructure.channels.websocket_channel import WebS
 from domains.notifications.infrastructure.channels.webhook_channel import WebhookNotificationChannelAdapter
 from domains.notifications.infrastructure.channels.email_channel import EmailNotificationChannelAdapter
 from domains.notifications.application.evaluate_alerts_service import EvaluateAlertsService
+from domains.notifications.domain.value_objects import DeliveryChannel
 from shared.constants import Streams
+from shared.infrastructure.event_bus import EventBus
 
 logger = logging.getLogger("notification_subscriber")
 
@@ -22,11 +24,11 @@ class NotificationStreamSubscriber:
         self.redis = redis_client
         self.consume_stream = Streams.OPTIONS_PRICED
         self.repo = repository or PostgresAlertRuleRepository()
-        self.channels = [
-            WebSocketNotificationChannelAdapter(),
-            WebhookNotificationChannelAdapter(),
-            EmailNotificationChannelAdapter(),
-        ]
+        self.channels = {
+            DeliveryChannel.WEBSOCKET: WebSocketNotificationChannelAdapter(EventBus(redis_client)),
+            DeliveryChannel.WEBHOOK: WebhookNotificationChannelAdapter(),
+            DeliveryChannel.EMAIL: EmailNotificationChannelAdapter(),
+        }
         self.evaluator = EvaluateAlertsService(repository=self.repo, channels=self.channels)
 
     async def start_consuming(self):
@@ -66,25 +68,13 @@ class NotificationStreamSubscriber:
         if not symbol:
             return
 
-        # Prepare normalized tick evaluation dictionary
-        tick_dict = {
-            "spot_price": parsed.get("spot_price") or parsed.get("last_price"),
-            "implied_volatility": parsed.get("implied_volatility") or parsed.get("iv"),
-            "delta": parsed.get("delta"),
+        # Rules are symbol-level: one evaluation per priced chain, against the underlying's
+        # spot price and the at-the-money IV (percent). Per-strike premiums are never used.
+        snapshot = {
+            "spot_price": parsed.get("spot_price"),
+            "atm_iv_pct": parsed.get("atm_iv_pct"),
         }
-
-        # Check if priced chain is attached
-        chain = parsed.get("chain", [])
-        if chain and isinstance(chain, list):
-            for item in chain:
-                strike_tick = {
-                    "last_price": item.get("live_call") or item.get("bs_fair_call"),
-                    "implied_volatility": item.get("call_iv"),
-                }
-                await self.evaluator.evaluate_tick_event(symbol, strike_tick)
-
-        # Evaluate top-level symbol tick
-        await self.evaluator.evaluate_tick_event(symbol, tick_dict)
+        await self.evaluator.evaluate_tick_event(symbol, snapshot)
 
 
 async def main():

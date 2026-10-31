@@ -24,6 +24,9 @@ class AlertRule:
     webhook_url: Optional[str] = None
     email_destination: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # Whether the condition held at the last evaluation; alerts fire on the False/None -> True crossing.
+    last_condition_met: Optional[bool] = None
+    user_id: Optional[uuid.UUID] = None
 
     def is_in_cooldown(self, current_time: datetime) -> bool:
         """Check if rule is active and outside cooldown period."""

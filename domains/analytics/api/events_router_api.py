@@ -41,6 +41,10 @@ _CLIENT_SEND_TIMEOUT_SECONDS = 5.0
 _CLIENT_MAX_DROPPED_MESSAGES = 25
 _CLIENT_STALE_SECONDS = 120.0
 _CLEANUP_INTERVAL_SECONDS = 15.0
+# Server-initiated closes use application codes (4000-4999) so clients can tell them from a
+# deliberate normal closure (1000) and reconnect.
+_CLOSE_IDLE_CLIENT = 4000
+_CLOSE_SLOW_CLIENT = 4002
 
 
 @dataclass
@@ -85,7 +89,9 @@ class ConnectionManager:
 
         logger.info("WS connected: %s (total: %d)", symbol, total)
 
-    async def disconnect(self, symbol: str, ws: WebSocket, close_ws: bool = True) -> None:
+    async def disconnect(
+        self, symbol: str, ws: WebSocket, close_ws: bool = True, code: int = 1000, reason: str = ""
+    ) -> None:
         connection: _ClientConnection | None = None
 
         async with self._Lock:
@@ -98,7 +104,7 @@ class ConnectionManager:
 
         if close_ws:
             try:
-                await ws.close()
+                await ws.close(code=code, reason=reason)
             except Exception:
                 pass
 
@@ -151,7 +157,7 @@ class ConnectionManager:
 
         for ws in stale:
             logger.warning("Disconnecting slow WS client for symbol=%s", symbol)
-            await self.disconnect(symbol, ws)
+            await self.disconnect(symbol, ws, code=_CLOSE_SLOW_CLIENT, reason="Client too slow")
 
     async def _ensure_background_tasks_locked(self) -> None:
         if self._GlobalSubscriberTask is None or self._GlobalSubscriberTask.done():
@@ -243,7 +249,7 @@ class ConnectionManager:
 
                 for symbol, ws in stale_clients:
                     logger.info("Disconnecting stale WS client for %s", symbol)
-                    await self.disconnect(symbol, ws)
+                    await self.disconnect(symbol, ws, code=_CLOSE_IDLE_CLIENT, reason="Idle timeout")
         except asyncio.CancelledError:
             pass
 

@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 """
 
 
+_EXCLUDED_SCRIPTS = {"supabase_schema.sql"}
+
+
 def _compute_checksum(filepath: str) -> str:
     with open(filepath, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
@@ -50,6 +53,8 @@ async def run_migrations() -> None:
         # 3. Discover SQL migration scripts in deterministic order
         # Ensure init_schema.sql runs first if not applied
         sql_files = sorted(glob.glob(str(scripts_dir / "*.sql")))
+        # supabase_schema.sql targets Supabase (auth.users), not this TimescaleDB instance.
+        sql_files = [f for f in sql_files if os.path.basename(f) not in _EXCLUDED_SCRIPTS]
 
         # Prioritize init_schema.sql first
         init_file = str(scripts_dir / "init_schema.sql")
