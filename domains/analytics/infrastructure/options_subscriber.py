@@ -1,12 +1,18 @@
 """
 File Overview: PDE Solver worker consuming options data from Redis Streams.
 Calculates fair prices using Crank-Nicolson finite difference method.
+Strikes are priced in a process pool: the solver loop holds the GIL, so threads
+give no speed-up, while separate processes price strikes in parallel.
 
 All Functions/Classes:
 - OptionsPricingSubscriber: Real-time derivatives pricing engine. Data: raw ticks -> priced chains.
 - start_consuming: Async listen loop. Data: Redis stream data -> process_event.
 - process_event: Core orchestrator. Data: raw payload -> Redis Streams/PubSub.
+- close: Shuts down the owned process pool.
 - main: Entry point coroutine. Data: Environment config -> Engine bootstrap.
+
+Environment:
+- PRICING_WORKERS: process pool size (default: CPU count - 1, minimum 1).
 
 Endpoints/APIs: None
 
@@ -16,7 +22,9 @@ Database Tables:
 import json
 import asyncio
 import logging
+import multiprocessing
 import os
+from concurrent.futures import Executor, ProcessPoolExecutor
 from datetime import datetime, timezone
 
 from redis.asyncio import Redis
@@ -27,8 +35,16 @@ from shared.constants import RedisKeys, TTL, Streams, Channels
 logger = logging.getLogger("options_pricing_subscriber")
 
 
+def _default_worker_count() -> int:
+    """Pool size from PRICING_WORKERS, else leave one core for the event loop and other services."""
+    configured = os.getenv("PRICING_WORKERS")
+    if configured:
+        return max(1, int(configured))
+    return max(1, (os.cpu_count() or 2) - 1)
+
+
 def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv: float, put_iv: float, dividend_yield: float, live_call: float, live_put: float) -> dict:
-    """Helper to solve single strike CE/PE pricing synchronously in worker thread."""
+    """Helper to solve single strike CE/PE pricing synchronously in a pool worker process."""
     # Call Price (Crank-Nicolson PDE)
     call_solver = CrankNicolsonPDE(S0, strike, T, r, call_iv, 'call')
     call_price = call_solver.solve()
@@ -59,11 +75,29 @@ def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv: fl
 
 
 class OptionsPricingSubscriber:
-    def __init__(self, redis_client: Redis):
+    def __init__(self, redis_client: Redis, executor: Executor | None = None):
         self.redis = redis_client
         self.consume_stream = Streams.OPTIONS_RAW_FETCHED
         self.publish_stream = Streams.OPTIONS_PRICED
         self.pubsub_channel = Channels.OPTIONS_UPDATED
+        # An injected executor is owned by the caller; otherwise a process pool is created on first use.
+        self._executor = executor
+        self._owns_executor = executor is None
+
+    def _get_executor(self) -> Executor:
+        if self._executor is None:
+            workers = _default_worker_count()
+            # spawn, not fork: the pool is created inside a running event loop with open Redis sockets.
+            self._executor = ProcessPoolExecutor(
+                max_workers=workers, mp_context=multiprocessing.get_context("spawn")
+            )
+            logger.info("Pricing process pool started with %d workers", workers)
+        return self._executor
+
+    def close(self) -> None:
+        if self._owns_executor and self._executor is not None:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            self._executor = None
 
     async def start_consuming(self):
         # WARNING: Using "$" means we only read NEW messages — any messages
@@ -105,6 +139,8 @@ class OptionsPricingSubscriber:
                 "ltp": s.get("ltp", 0.0)
             }
 
+        loop = asyncio.get_running_loop()
+        executor = self._get_executor()
         tasks = []
         for strike, type_data in strikes_map.items():
             call_iv = type_data.get("CE", {}).get("iv", 0.20)
@@ -113,7 +149,8 @@ class OptionsPricingSubscriber:
             live_put = type_data.get("PE", {}).get("ltp", 0.0)
 
             tasks.append(
-                asyncio.to_thread(
+                loop.run_in_executor(
+                    executor,
                     _solve_strike_sync,
                     S0, strike, T, r, call_iv, put_iv, dividend_yield, live_call, live_put
                 )
@@ -142,10 +179,11 @@ class OptionsPricingSubscriber:
 async def main():
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     redis_client = Redis.from_url(redis_url)
+    subscriber = OptionsPricingSubscriber(redis_client)
     try:
-        subscriber = OptionsPricingSubscriber(redis_client)
         await subscriber.start_consuming()
     finally:
+        subscriber.close()
         await redis_client.aclose()
 
 
