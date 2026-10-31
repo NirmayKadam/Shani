@@ -117,11 +117,13 @@ def mock_publisher():
 
 @pytest.fixture(autouse=True)
 def clear_validator_cache():
-    """Automatically clear SymbolValidator validate cache between tests."""
+    """Automatically clear both SymbolValidator caches between tests."""
     from shared.utils.symbol_validator import SymbolValidator
     SymbolValidator.validate.cache_clear()
+    SymbolValidator.get_clean_symbol.cache_clear()
     yield
     SymbolValidator.validate.cache_clear()
+    SymbolValidator.get_clean_symbol.cache_clear()
 
 
 @pytest.fixture

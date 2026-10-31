@@ -288,7 +288,7 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         session = await self._ensure_session()
         await self._soft_initialise(symbol)
 
-        clean_sym = SymbolValidator.get_clean_symbol(symbol.upper())
+        clean_sym = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol.upper())
         is_nse = clean_sym in INDEX_SYMBOLS or clean_sym.endswith(".NS") or clean_sym.endswith(".BO")
 
         if not is_nse:

@@ -63,6 +63,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: "no"
     command: ["python", "scripts/migrate.py"]
     env_file: .env
@@ -77,6 +78,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "uvloop"]
     ports:
@@ -96,6 +98,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
     command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "worker", "-Q", "celery,ingestion,analytics", "-l", "info", "-c", "4"]
     env_file: .env
@@ -113,8 +116,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
-    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "beat", "-l", "info"]
+    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule"]
     env_file: .env
     environment: *app-env
     depends_on:
@@ -133,6 +137,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
     command: ["python", "-m", "domains.analytics.infrastructure.options_subscriber"]
     env_file: .env
@@ -153,6 +158,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
     command: ["python", "-m", "domains.notifications.infrastructure.subscribers.notification_subscriber"]
     env_file: .env

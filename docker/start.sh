@@ -10,8 +10,9 @@ pg_start() { su - postgres -c "$PGBIN/pg_ctl -D $PGDATA -w start"; }
 pg_stop()  { su - postgres -c "$PGBIN/pg_ctl -D $PGDATA -m fast -w stop"; }
 
 # Ensure directories exist and have proper permissions
-mkdir -p /var/log/supervisor /var/run/postgresql "$PGDATA"
+mkdir -p /var/log/supervisor /var/run/postgresql "$PGDATA" /var/lib/redis
 chown -R postgres:postgres /var/run/postgresql "$PGDATA"
+chown -R redis:redis /var/lib/redis
 chmod 2775 /var/run/postgresql
 
 # Initialize Postgres if data directory is empty

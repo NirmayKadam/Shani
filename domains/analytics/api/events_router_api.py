@@ -26,10 +26,12 @@ import json
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import get_settings
+from shared.auth import AuthError, get_jwt_verifier
 from shared.constants import Channels
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,16 @@ class _ClientConnection:
     sender_task: asyncio.Task
     dropped_messages: int = 0
     last_activity_ts: float = 0.0
+    # Supabase user id once the client has sent a verified {"action": "auth"} message
+    user_id: Optional[str] = None
+
+
+def _alert_owner(message: dict) -> Optional[str]:
+    """Owner of an alert message (None for market data and for ownerless dev-mode alerts)."""
+    if message.get("type") != "alert":
+        return None
+    data = message.get("data")
+    return data.get("user_id") if isinstance(data, dict) else None
 
 
 class ConnectionManager:
@@ -116,6 +128,23 @@ class ConnectionManager:
 
         logger.info("WS disconnected: %s", symbol)
 
+    async def set_user(self, symbol: str, ws: WebSocket, user_id: Optional[str]) -> None:
+        async with self._Lock:
+            conn = self._Connections.get(symbol, {}).get(ws)
+            if conn is not None:
+                conn.user_id = user_id
+
+    def admission_error(self, symbol: str) -> Optional[str]:
+        """Reason to refuse a new connection, or None. Caps protect the market-data polling."""
+        settings = get_settings()
+        if len(self._Connections.get(symbol, {})) >= _MAX_CLIENTS_PER_SYMBOL:
+            return "Too many concurrent connections for this symbol"
+        if sum(len(c) for c in self._Connections.values()) >= settings.WsMaxConnections:
+            return "Server connection limit reached"
+        if symbol not in self._Connections and len(self._Connections) >= settings.WsMaxSymbols:
+            return "Too many distinct symbols are being streamed"
+        return None
+
     async def mark_client_alive(self, symbol: str, ws: WebSocket) -> None:
         now = asyncio.get_running_loop().time()
         async with self._Lock:
@@ -131,11 +160,15 @@ class ConnectionManager:
         slow consumers from affecting fast consumers.
         """
         stale: list[WebSocket] = []
+        owner = _alert_owner(message)
 
         async with self._Lock:
             connections = list(self._Connections.get(symbol, {}).values())
             now = asyncio.get_running_loop().time()
             for conn in connections:
+                # A user's alert goes only to that user's authenticated sockets.
+                if owner is not None and conn.user_id != owner:
+                    continue
                 try:
                     conn.queue.put_nowait(message)
                     conn.last_activity_ts = now
@@ -306,12 +339,21 @@ _MAX_CLIENTS_PER_SYMBOL = 100
 _Manager = ConnectionManager()
 
 
+async def _authenticate(token: str) -> Optional[str]:
+    """User id for a verified token, or None. Market data never requires authentication."""
+    verifier = get_jwt_verifier()
+    if not token or not verifier.configured:
+        return None
+    try:
+        claims = await asyncio.to_thread(verifier.verify, token)
+        return str(claims.get("sub")) if claims.get("sub") else None
+    except AuthError as exc:
+        logger.info("WS auth rejected: %s", exc)
+        return None
+
+
 @router.websocket("/ws/{symbol}")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    symbol: str,
-    token: str | None = None
-):
+async def websocket_endpoint(websocket: WebSocket, symbol: str):
     """
     Real-time WebSocket endpoint for a symbol.
 
@@ -319,22 +361,25 @@ async def websocket_endpoint(
         - {"type": "price", "data": {...}}
         - {"type": "options", "data": {...}}
         - {"type": "trigger", "data": {...}}
-        - {"type": "alert", "data": {...}}
+        - {"type": "alert", "data": {...}}   (only to the alert owner's authenticated sockets)
+
+    Clients authenticate by sending {"action": "auth", "token": "<Supabase access token>"}
+    (kept out of the URL so it is not written to access logs); the reply is {"type": "auth", "ok": bool}.
     """
     symbol_upper = symbol.upper()
 
-    # Validate symbol format and existence
+    # Validate symbol format and existence (may call yfinance: keep it off the event loop)
     from shared.utils.symbol_validator import SymbolValidator
-    if not SymbolValidator.validate(symbol_upper):
+    if not await asyncio.to_thread(SymbolValidator.validate, symbol_upper):
         await websocket.close(code=4001, reason=f"Symbol {symbol_upper} is invalid or not supported")
         return
 
-    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+    symbol_clean = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol_upper)
 
-    # Check connection limits per symbol to prevent socket exhaustion
-    current_symbol_clients = len(_Manager._Connections.get(symbol_clean, {}))
-    if current_symbol_clients >= _MAX_CLIENTS_PER_SYMBOL:
-        await websocket.close(code=4029, reason="Too many concurrent connections for this symbol")
+    # Connection caps protect the per-symbol market-data polling from abuse
+    refusal = _Manager.admission_error(symbol_clean)
+    if refusal:
+        await websocket.close(code=4029, reason=refusal)
         return
 
     await _Manager.connect(symbol_clean, websocket)
@@ -350,14 +395,20 @@ async def websocket_endpoint(
                 continue
 
             await _Manager.mark_client_alive(symbol_clean, websocket)
-            # Client can send {"action": "ping"} to keep alive
+            # Client can send {"action": "ping"} to keep alive, or {"action": "auth"} to identify
             if data:
                 try:
                     msg = json.loads(data)
-                    if msg.get("action") == "ping":
-                        await websocket.send_json({"type": "pong"})
                 except json.JSONDecodeError:
-                    pass
+                    continue
+                if not isinstance(msg, dict):
+                    continue
+                if msg.get("action") == "ping":
+                    await websocket.send_json({"type": "pong"})
+                elif msg.get("action") == "auth":
+                    user_id = await _authenticate(str(msg.get("token") or ""))
+                    await _Manager.set_user(symbol_clean, websocket, user_id)
+                    await websocket.send_json({"type": "auth", "ok": user_id is not None})
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected: %s", symbol_clean)

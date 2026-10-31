@@ -10,12 +10,62 @@ Endpoints/APIs:
 Database Tables:
 - None.
 """
+import functools
 import logging
+import threading
+import time
 
 import yfinance as yf
-from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+
+_CACHE_TTL_SECONDS = 24 * 3600
+_CACHE_MAX_ENTRIES = 2000
+
+
+class _NetworkUnavailable(Exception):
+    """yfinance could not be reached, so the answer is unknown and must not be cached."""
+
+
+def _yf_has_history(yf_symbol: str) -> bool:
+    try:
+        return not yf.Ticker(yf_symbol).history(period="1d").empty
+    except Exception as exc:
+        raise _NetworkUnavailable(str(exc))
+
+
+def _ttl_cached(fallback):
+    """Thread-safe TTL cache that stores only definite answers.
+
+    When the wrapped function raises _NetworkUnavailable the fallback(symbol) value is returned
+    without caching, so a transient yfinance error cannot pin a valid symbol as invalid.
+    """
+    def decorator(fn):
+        cache: dict[str, tuple[object, float]] = {}
+        lock = threading.Lock()
+
+        @functools.wraps(fn)
+        def wrapper(symbol: str):
+            now = time.monotonic()
+            with lock:
+                hit = cache.get(symbol)
+                if hit and now - hit[1] < _CACHE_TTL_SECONDS:
+                    return hit[0]
+            try:
+                value = fn(symbol)
+            except _NetworkUnavailable as exc:
+                logger.warning("Symbol lookup for %s inconclusive (not cached): %s", symbol, exc)
+                return fallback(symbol)
+            with lock:
+                if len(cache) >= _CACHE_MAX_ENTRIES:
+                    cache.pop(next(iter(cache)))
+                cache[symbol] = (value, now)
+            return value
+
+        wrapper.cache_clear = lambda: cache.clear()
+        return wrapper
+    return decorator
+
 
 class SymbolValidator:
     """
@@ -43,7 +93,7 @@ class SymbolValidator:
     }
 
     @staticmethod
-    @lru_cache(maxsize=1000)
+    @_ttl_cached(fallback=lambda symbol: False)
     def validate(symbol: str) -> bool:
         """
         Check if a symbol is valid and from the Indian market.
@@ -73,40 +123,17 @@ class SymbolValidator:
 
         # 1. Check if it's already an Indian market symbol
         if symbol_upper.endswith(".NS") or symbol_upper.endswith(".BO"):
-            try:
-                ticker = yf.Ticker(symbol_upper)
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    return True
-            except Exception:
-                pass
-            return False
+            return _yf_has_history(symbol_upper)
 
         # 2. Heuristic for Indian stocks: If no suffix, try .NS then .BO
         if symbol_upper.isalnum():
-            # Try NSE first (default)
-            try:
-                ticker = yf.Ticker(f"{symbol_upper}.NS")
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    return True
-            except Exception:
-                pass
-                
-            # Try BSE
-            try:
-                ticker = yf.Ticker(f"{symbol_upper}.BO")
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    return True
-            except Exception:
-                pass
-                
+            return _yf_has_history(f"{symbol_upper}.NS") or _yf_has_history(f"{symbol_upper}.BO")
+
         # 3. Reject everything else (foreign stocks, etc.)
         return False
 
     @staticmethod
-    @lru_cache(maxsize=2000)
+    @_ttl_cached(fallback=lambda symbol: (symbol or "").strip().upper())
     def get_clean_symbol(symbol: str) -> str:
         """
         Returns the Indian market formatted version of the symbol (e.g., adding .NS).
@@ -138,22 +165,9 @@ class SymbolValidator:
             
         # 1. Try to resolve bare symbol to Indian market (Slow fallback)
         if symbol_upper.isalnum():
-            # Try NSE
-            try:
-                ticker = yf.Ticker(f"{symbol_upper}.NS")
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    return f"{symbol_upper}.NS"
-            except Exception:
-                pass
-                
-            # Try BSE
-            try:
-                ticker = yf.Ticker(f"{symbol_upper}.BO")
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    return f"{symbol_upper}.BO"
-            except Exception:
-                pass
-            
+            if _yf_has_history(f"{symbol_upper}.NS"):
+                return f"{symbol_upper}.NS"
+            if _yf_has_history(f"{symbol_upper}.BO"):
+                return f"{symbol_upper}.BO"
+
         return symbol_upper

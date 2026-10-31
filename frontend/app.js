@@ -674,9 +674,15 @@ function setupWebSocket(symbol) {
     currentSocket = socket;
     activeSocketSymbol = symbol;
 
-    socket.onopen = () => {
+    socket.onopen = async () => {
         console.log(`WebSocket connected for symbol: ${symbol}`);
         wsReconnectAttempts = 0;
+        // Identify the user so their own alerts are delivered on this socket. The token goes in
+        // a message, not the URL, so it never lands in access logs.
+        const auth = await authHeaders();
+        if (auth.Authorization && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ action: "auth", token: auth.Authorization.slice("Bearer ".length) }));
+        }
         stopWebSocketHeartbeat();
         wsHeartbeatTimer = setInterval(() => {
             if (socket.readyState === WebSocket.OPEN) {

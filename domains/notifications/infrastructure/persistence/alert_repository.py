@@ -24,7 +24,7 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
     _COLUMNS = (
         "id, symbol, condition_type, threshold, channels, cooldown_seconds, "
         "last_triggered_at, is_active, webhook_url, email_destination, created_at, "
-        "last_condition_met, user_id"
+        "last_condition_met, user_id, webhook_secret"
     )
 
     def __init__(self, pool: Optional[asyncpg.Pool] = None):
@@ -42,8 +42,8 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
             INSERT INTO AlertRules (
                 id, symbol, condition_type, threshold, channels, cooldown_seconds,
                 last_triggered_at, is_active, webhook_url, email_destination, created_at,
-                user_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                user_id, webhook_secret
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (id) DO UPDATE SET
                 symbol = EXCLUDED.symbol,
                 condition_type = EXCLUDED.condition_type,
@@ -70,6 +70,7 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
                 rule.email_destination,
                 rule.created_at,
                 rule.user_id,
+                rule.webhook_secret,
             )
         return rule
 
@@ -98,16 +99,17 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
             rows = await conn.fetch(query, symbol.upper())
             return [self._map_row_to_alert_rule(r) for r in rows]
 
-    async def list_active_rules(self) -> List[AlertRule]:
+    async def list_active_rules(self, user_id: Optional[uuid.UUID] = None) -> List[AlertRule]:
         pool = await self._get_pool()
+        # With a user, only that user's rules; without one (anonymous local development), all.
         query = f"""
             SELECT {self._COLUMNS}
             FROM AlertRules
-            WHERE is_active = TRUE
+            WHERE is_active = TRUE AND ($1::uuid IS NULL OR user_id = $1::uuid)
             ORDER BY created_at DESC;
         """
         async with pool.acquire() as conn:
-            rows = await conn.fetch(query)
+            rows = await conn.fetch(query, user_id)
             return [self._map_row_to_alert_rule(r) for r in rows]
 
     async def delete_rule(self, rule_id: uuid.UUID) -> bool:
@@ -185,4 +187,5 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
             created_at=row["created_at"],
             last_condition_met=row["last_condition_met"],
             user_id=row["user_id"],
+            webhook_secret=row["webhook_secret"],
         )

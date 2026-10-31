@@ -47,6 +47,12 @@ class AlertRuleResponse(BaseModel):
     created_at: datetime
 
 
+class CreateAlertRuleResponse(AlertRuleResponse):
+    # Returned only in the create response, and only for WEBHOOK rules: verify deliveries with
+    # HMAC-SHA256(secret, raw body) == X-AlphaStreams-Signature. It cannot be retrieved later.
+    webhook_secret: Optional[str] = None
+
+
 class NotificationLogResponse(BaseModel):
     id: uuid.UUID
     rule_id: uuid.UUID

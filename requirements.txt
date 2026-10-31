@@ -18,8 +18,11 @@ asyncpg>=0.29.0
 # Configuration
 pydantic-settings>=2.2.0
 
-# Financial Data
-yfinance>=0.2.36
+# Auth: Supabase JWT verification (crypto extra for ES256/RS256 JWKS keys)
+PyJWT[crypto]>=2.8.0
+
+# Financial Data (1.x reports dividendYield in percent; see NseApiAdapter._dividend_yield_decimal)
+yfinance>=1.0,<2
 
 # Scientific Computing & Analytics
 scipy>=1.12.0

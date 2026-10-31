@@ -25,8 +25,8 @@ class IAlertRuleRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def list_active_rules(self) -> List[AlertRule]:
-        """Fetch all active alert rules."""
+    async def list_active_rules(self, user_id: Optional[uuid.UUID] = None) -> List[AlertRule]:
+        """Fetch active alert rules, limited to one owner when user_id is given."""
         pass
 
     @abstractmethod
