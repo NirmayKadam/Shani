@@ -36,8 +36,8 @@ To read the detailed system documentation, please refer to the following guides:
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/NirmayKadam/AlphaStreams---Quantitative-Analytics-Tool-for-Options.git
-cd AlphaStreams---Quantitative-Analytics-Tool-for-Options
+git clone https://github.com/NirmayKadam/Shani.git
+cd Shani
 cp .env.example .env
 ```
 

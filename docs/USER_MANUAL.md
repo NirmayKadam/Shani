@@ -11,6 +11,9 @@ Welcome to **AlphaStreams Option Chain Analytics**. This dashboard replicates th
 4. [Option Chain & Price Highlights](#4-option-chain--price-highlights)
 5. [Strike Greeks Analysis](#5-strike-greeks-analysis)
 6. [Data Export (.csv)](#6-data-export-csv)
+7. [Technical Indicators](#7-technical-indicators)
+8. [User Profile & Account Management](#8-user-profile--account-management)
+9. [Market Alerts](#9-market-alerts)
 
 ---
 
@@ -63,9 +66,9 @@ Click the **"Download (.csv)"** button to export Option Chain pricing. The gener
 
 ---
 
-## 7. Technical Indicators & Sentiment Analysis
-Switch to the **"Technicals"** tab in the top navigation header to view real-time technical analysis and market sentiment signals for the selected instrument:
-* **Composite Sentiment Gauge:** Displays overall Bullish, Bearish, or Neutral market sentiment based on weighted indicator signals.
+## 7. Technical Indicators
+Switch to the **"Technicals"** tab in the top navigation header to view technical indicators for the selected instrument, computed from 3 months of daily prices (refreshed hourly):
+* **Composite Score:** Combines 7 indicator signals into an overall bias (Strong Bullish, Bullish, Neutral, Bearish, Strong Bearish).
 * **Relative Strength Index (RSI):** 14-period momentum oscillator identifying Overbought (>70) and Oversold (<30) conditions.
 * **MACD (Moving Average Convergence Divergence):** Exposes MACD Line (12/26 EMA difference), Signal Line (9-period EMA of MACD), and Histogram momentum direction.
 * **Bollinger Bands:** 20-period SMA with ±2 standard deviation upper/lower bands to measure market volatility and band touch signals.
@@ -80,3 +83,12 @@ Click on the user profile badge located in the top-right corner of the header:
 * **Profile Modal:** View active account details, registered email address, and account creation date.
 * **Update Profile:** Edit your Full Name and save changes to sync metadata with Supabase Auth instantly without requiring a full page refresh.
 
+---
+
+## 9. Market Alerts
+Click **Alerts** in the header (you must be signed in) to create and manage alert rules:
+* **Conditions:** *Spot Price Crosses Above*, *Spot Price Crosses Below*, or *ATM Implied Volatility Rises To (%)*, the call IV of the strike nearest spot.
+* **When it fires:** only when the condition **becomes** true. It does not repeat while the price stays above the threshold; it re-arms once the condition turns false again.
+* **Cooldown:** the minimum time between two alerts from the same rule (10 s to 24 h, default 300 s).
+* **Delivery:** a toast in every dashboard tab where you are signed in. Rules are private: other users cannot see or delete them.
+* Rules are evaluated each time the option chain is re-priced (about every 15 s while the symbol is open).

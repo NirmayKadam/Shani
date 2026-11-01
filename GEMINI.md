@@ -20,7 +20,7 @@ The codebase is built as a **Modular Monolith** adhering to **Domain-Driven Desi
 domains/
 ├── ingestion/       # External market data providers (Groww, NSE, yfinance), session management, raw tick streams
 ├── analytics/       # Black-Scholes-Merton (BSM), Crank-Nicolson PDE, Greeks (Δ, Γ, ν, θ, ρ), Technical Indicators
-├── notifications/   # Real-time alert rules engine, condition matching (Price/IV/Delta), cooldown & dispatching
+├── notifications/   # Real-time alert rules engine, symbol-level conditions (spot price, ATM IV), fire-on-crossing, atomic cooldown & dispatching
 └── historical/      # TimescaleDB OHLC hypertable persistence & historical bar queries
 app/                 # FastAPI configuration, lifespan hooks, route bootstrapping, static file serving
 shared/              # Cross-cutting kernel (Redis connection pools, Event Bus contracts, constants, middleware, utils)

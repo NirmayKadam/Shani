@@ -1,4 +1,4 @@
-﻿# API Reference & Documentation
+# API Reference & Documentation
 
 FastAPI auto-generates interactive documentation which is served at:
 - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -10,23 +10,23 @@ FastAPI auto-generates interactive documentation which is served at:
 
 ### Derivatives & Analytics
 
-#### GET `/v1/derivatives/{symbol}` â€” Option Chain Analytics
+#### GET `/v1/derivatives/{symbol}` — Option Chain Analytics
 Returns the options chain evaluated by the Crank-Nicolson PDE solver, PCR, volume, and open interest summary.
 - **Example**: `GET /v1/derivatives/NIFTY`
 
-#### GET `/v1/derivatives/{symbol}/technicals` â€” Technical Indicators & Signals
-Returns precomputed technical indicator metrics (RSI, MACD, Bollinger Bands, ATR, Moving Averages, Pivot Points) and composite bull/bear sentiment signals computed using live historical market OHLC price history via `yfinance`.
+#### GET `/v1/derivatives/{symbol}/technicals` — Technical Indicators & Signals
+Returns technical indicators (RSI, MACD, Bollinger Bands, ATR, moving averages, pivot points) and a composite bullish/bearish score, computed from 3 months of daily OHLC history from `yfinance`. The history is cached in Redis for 1 hour; failed fetches are not cached. Spot comes from the cached chain, or `?spot=` as a fallback.
 - **Example**: `GET /v1/derivatives/NIFTY/technicals?spot=22450.0`
 
 ---
 
 ### Pricer
 
-#### GET `/v1/pricer/ticker/{symbol}` â€” Live Options Parameters
-Returns live option chain parameters, spot price, implied volatility, risk-free rate, dividend yield, and available strike grids for Black-Scholes-Merton calculations. Reads from Redis cache first, falling back to live adapter fetch.
+#### GET `/v1/pricer/ticker/{symbol}` — Live Options Parameters
+Returns live option chain parameters, spot price, implied volatility, risk-free rate, dividend yield, and available strike grids for Black-Scholes-Merton calculations. Reads from the Redis cache first. On a miss, one request fetches live data under a short Redis lock while concurrent requests for the same symbol wait for its result. A live fetch has a 25 s deadline; if every source fails the endpoint returns `503` (it never invents data).
 - **Example**: `GET /v1/pricer/ticker/NIFTY`
 
-#### POST `/v1/pricer/calculate` â€” BSM Pricing Calculator
+#### POST `/v1/pricer/calculate` — BSM Pricing Calculator
 Performs high-precision analytical Black-Scholes-Merton pricing on arbitrary parameters.
 - **Request Body**:
   ```json
@@ -45,7 +45,7 @@ Performs high-precision analytical Black-Scholes-Merton pricing on arbitrary par
 
 ### Ingestion
 
-#### GET `/v1/ingestion/nse/option-chain/{symbol}` â€” NSE Raw Option Chain Ingestion
+#### GET `/v1/ingestion/nse/option-chain/{symbol}` — NSE Raw Option Chain Ingestion
 Fetches raw option chain payload from NSE API adapter for the specified symbol.
 - **Example**: `GET /v1/ingestion/nse/option-chain/NIFTY`
 
@@ -53,10 +53,10 @@ Fetches raw option chain payload from NSE API adapter for the specified symbol.
 
 ### Symbols
 
-#### GET `/v1/symbols` â€” System Watchlist
+#### GET `/v1/symbols` — System Watchlist
 Returns the default watchlist from configuration settings.
 
-#### GET `/v1/symbols/search` â€” Active Instrument Autocomplete
+#### GET `/v1/symbols/search` — Active Instrument Autocomplete
 Searches across the 2,000+ NSE equity and indices catalog.
 - **Query Parameter**: `q` (e.g. `?q=RELIANCE`)
 
@@ -96,10 +96,10 @@ Deletes one of the caller's rules by UUID. Returns `204 No Content` on success.
 ---
 ### System
 
-#### GET `/config` â€” Client Application Configuration
+#### GET `/config` — Client Application Configuration
 Returns public environment configuration (Supabase URL and anon key) used by frontend JS.
 
-#### GET `/health` â€” System Health Status
+#### GET `/health` — System Health Status
 Returns health status for API, Redis, and Database connections.
 
 ### Client-Side Auth & User Profile (Supabase JS SDK)

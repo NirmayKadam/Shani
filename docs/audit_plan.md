@@ -2,6 +2,8 @@
 
 Comprehensive audit of the AlphaStreams/Shani project — frontend → backend → DB → deployment.
 
+> **Status (November 2026):** this is the August 2026 audit, kept for history. The platform audit in PR #20 ([NirmayKadam/Shani#20](https://github.com/NirmayKadam/Shani/pull/20)) resolved, among others: 1.3 (Supabase JWTs are now verified), 1.6 (WebSocket alerts require an authenticated socket and go only to the rule's owner), 2.4 (dividend yield is sourced per symbol), 2.5 (historical volatility is computed), 5.6 (one polling leader across workers), 5.8 (multiple uvicorn workers), 6.2 (tick retention is 90 days) and 7.1 (the production compose file runs one service per process). See [architecture.md](architecture.md) for the current design and its known limitations.
+
 ---
 
 ## 1. 🔴 SECURITY ISSUES (Critical)

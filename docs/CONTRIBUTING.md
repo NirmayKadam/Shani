@@ -15,13 +15,13 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 1. **Clone the repo**
    ```bash
-   git clone https://github.com/NirmayKadam/AlphaStreams---Quantitative-Analytics-Tool-for-Options.git
-   cd AlphaStreams---Quantitative-Analytics-Tool-for-Options
+   git clone https://github.com/NirmayKadam/Shani.git
+   cd Shani
    ```
 
 2. **Create environment file**
    ```bash
-   cp .env.template .env
+   cp .env.example .env
    # Configure MARKET_DATA_PROVIDER and any adapter credentials in .env
    ```
 
@@ -72,7 +72,7 @@ Market data ingestion uses a **pluggable adapter factory** (`adapter_factory.py`
 1. Create a new router file in `domains/analytics/api/` (or `domains/ingestion/api/`).
 2. Define Pydantic schemas in `schemas.py`.
 3. Register the router in `app/main.py`.
-4. Add an entry to the API Reference section in `README.md`.
+4. Add an entry to `docs/api.md`.
 
 ---
 
@@ -82,7 +82,7 @@ Market data ingestion uses a **pluggable adapter factory** (`adapter_factory.py`
 2. Implement both `IMarketPriceSourcePort` and `IOptionChainSourcePort` interfaces.
 3. Add a fallback to `NseApiAdapter` for resilience (see `GrowwApiAdapter` as reference).
 4. Register the provider in `adapter_factory.py` with a new `MARKET_DATA_PROVIDER` value.
-5. Add any required credentials to `app/config.py` (`Settings` class) and `.env.template`.
+5. Add any required credentials to `app/config/settings.py` (`Settings` class) and `.env.example`.
 6. Write unit tests in `tests/unit/test_<provider>_adapter.py`.
 
 ---
@@ -92,46 +92,42 @@ Market data ingestion uses a **pluggable adapter factory** (`adapter_factory.py`
 1. Define the event contract in `shared/infrastructure/event_bus/contracts.py`.
 2. Register the stream name in `shared/constants.py` under the `Streams` class.
 3. Add Pub/Sub channel in `shared/constants.py` under the `Channels` class (if UX push is needed).
-4. Implement producer logic in the relevant domain.
-5. Implement consumer logic in the target domain.
+4. Publish with `DurableEventStream.publish` (length-bounded `XADD`); add a dead-letter stream (`*_DLQ`) and a consumer group in `StreamGroups`.
+5. Consume with `run_durable_consumer` (`shared/infrastructure/event_bus/consumer.py`): it acknowledges after handling, retries, dead-letters and reclaims stalled messages. Handlers must be idempotent, because a message can be delivered more than once.
 
 ---
 
 ## Testing
 
 ```bash
-# Run all tests
-docker compose exec app python -m pytest tests/ -v
+# Unit tests (default: integration and live tests are skipped, and startup network calls are mocked)
+python -m pytest
 
-# Run unit tests only
-docker compose exec app python -m pytest tests/unit/ -v
+# Tests that need Redis/Postgres
+python -m pytest -m integration
 
-# Run integration tests only
-docker compose exec app python -m pytest tests/integration/ -v
-
-# Run a specific test file
-docker compose exec app python -m pytest tests/unit/test_groww_api_adapter.py -v
+# Tests that call external APIs (NSE, yfinance)
+python -m pytest -m live
 ```
 
 ### Test Coverage
 
-| Category | Files |
+| Category | Files (`tests/unit/` unless noted) |
 |---|---|
-| **Adapters** | `test_groww_api_adapter.py`, `test_nse_api_adapter.py` |
-| **Services** | `test_ingestion_service.py`, `test_derivatives_orchestrator.py` |
-| **Pricing** | `test_black_scholes.py`, `test_options_subscriber.py`, `test_pricer_router_api.py` |
-| **Utilities** | `test_symbol_validator.py`, `test_market_status.py`, `test_channels.py` |
-| **Notifications** | `test_notification_domain.py`, `test_notification_subscriber.py`, `test_rule_matcher.py`, `test_alert_repository.py`, `test_notifications_api.py` |
-| **Routers** | `test_events_router_api.py`, `test_api_endpoints.py` |
-| **Pipelines** | `test_derivatives_pipeline.py`, `test_notifications_pipeline.py` |
+| **Adapters & ingestion** | `test_groww_api_adapter.py`, `test_nse_api_adapter.py`, `test_ingestion_service.py`, `test_market_time.py`, `test_market_status.py` |
+| **Pricing** | `test_black_scholes.py`, `test_pde_solver.py` (accuracy grid, batched parity), `test_options_subscriber.py`, `test_pricer_router_api.py`, `test_pcr_and_technicals.py`, `test_volatility_surface.py` |
+| **Notifications** | `test_notification_domain.py`, `test_rule_matcher.py`, `test_notification_subscriber.py`, `test_channels.py` |
+| **Security** | `test_security.py` (JWT verification, alert ownership, WebSocket routing, SSRF guard) |
+| **Reliability & performance** | `test_durable_consumer.py`, `test_backend_caching.py`, `test_events_router_api.py` |
+| **Other** | `test_symbol_validator.py`, `test_analytics_domain.py`, `test_ohlc_historical.py`, `test_historical_research_exporter.py` |
+| **Integration** | `tests/integration/`: `test_alert_repository.py`, `test_api_endpoints.py`, `test_derivatives_pipeline.py`, `test_notifications_api.py`; `tests/e2e/test_notifications_pipeline.py` |
 
-When adding a new adapter or service, add corresponding tests following the existing patterns in `tests/conftest.py` for shared fixtures.
+The unit suite has 196 tests and runs in about 15 seconds. When adding a new adapter or service, add corresponding tests following the existing patterns in `tests/conftest.py` for shared fixtures.
 
 ---
-
 ## Database Migrations
 
-Schema changes go in `scripts/init_schema.sql`. To apply:
+Schema changes go in `scripts/init_schema.sql` or a new `scripts/migration_*.sql` file. `scripts/migrate.py` applies them on every container start. To apply by hand:
 
 ```bash
 docker compose exec app psql -U postgres -d NexusQuantDB -f /app/scripts/init_schema.sql
@@ -157,6 +153,7 @@ refactor: extract symbol validation into shared utility
 ## Performance Guidelines
 
 - **Celery Tasks**: Use `_get_or_create_loop()` from `ingestion_tasks.py` for persistent event loops. Never call `asyncio.run()` — it creates and destroys a loop per invocation.
-- **Connection Pools**: Reuse Redis and `aiohttp` sessions via `_get_or_create_service()`. Connections are bound to the event loop that created them.
-- **Static Data Caching**: Cache slow-changing data (e.g., dividend yields) in Redis with appropriate TTLs. See `GrowwApiAdapter.fetch_price()` for the pattern.
+- **Connection Pools**: Redis clients, asyncpg pools and market adapters are cached **per event loop** (`get_redis_client()`, `get_database_pool()`, `get_market_data_adapter()`). Don't close a shared adapter, and don't share a client across loops.
+- **Static Data Caching**: Cache slow-changing data (e.g., dividend yields) in Redis with appropriate TTLs. Examples: Groww token and expiry list (`GrowwApiAdapter`), technicals history (`derivatives_router_api._daily_history`). Never cache failures.
 - **uvloop**: The production container uses `uvloop` for the FastAPI server (`--loop uvloop`). This is Linux-only and ignored on Windows.
+- **CPU-bound work**: Offload to the pricing `ProcessPoolExecutor` (spawn start method), not `asyncio.to_thread`: threads share the GIL, so pure-Python loops don't run in parallel.

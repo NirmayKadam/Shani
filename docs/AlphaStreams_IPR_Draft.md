@@ -81,12 +81,12 @@ The following elements represent **original expression** authored by the team:
 
 #### Source Code — Computer Software
 
-1. **Crank-Nicolson PDE Numerical Solver** (`domains/analytics/domain/services/pde_solver.py`) — Original Python implementation of the 1D Black-Scholes PDE solver with CFL stability guards, SuperLU pre-factorization via `scipy.sparse.linalg.splu`, and adaptive grid refinement.
+1. **Crank-Nicolson PDE Numerical Solver** (`domains/analytics/domain/services/pde_solver.py`) — Original Python implementation of the 1D Black-Scholes PDE solver with continuous dividend yield, a ±4σ adaptive price grid, Rannacher start-up smoothing, SuperLU pre-factorization via `scipy.sparse.linalg.splu`, and a batched block-diagonal solver that prices a whole option chain in one sparse system (within ₹0.19 of closed-form BSM across the tested range).
 2. **BSM Analytical Calculator Domain Service** (`domains/analytics/domain/services/bsm_calculator.py`) — Original implementation of closed-form BSM pricing with continuous dividend yield and all five Greeks ($\Delta, \Gamma, \nu, \Theta, \rho$).
 3. **Cubic Spline Volatility Surface Calibrator** (`domains/analytics/domain/services/volatility_surface.py`) — Original code resolving the volatility circularity problem via natural cubic spline cross-sectional interpolation.
 4. **Indian Statutory Friction Model** (`research/models/friction_model.py`) — Original `IndianOptionsFrictionModel` class with `FrictionEstimate` dataclass, full round-trip cost decomposition (STT, exchange fees, stamp duty, SEBI fees, GST, brokerage, bid-ask spread), and dynamic epsilon threshold computation.
 5. **Backtesting Engine & Strategy Implementations** (`research/backtest/engine.py`, `research/backtest/strategies.py`) — Original `BacktestEngine`, `RetailBaselineStrategy`, `PDEMispricingStrategy`, and `HybridFilterStrategy` implementations with position sizing, equity tracking, and exit logic.
-6. **Event-Driven Domain Architecture** — Original modular monolith architecture code with DDD bounded contexts (Ingestion, Analytics, Notifications, Historical), Hexagonal Ports & Adapters pattern, Redis Streams/Pub/Sub event bus, and multi-channel notification dispatch.
+6. **Event-Driven Domain Architecture** — Original modular monolith architecture code with DDD bounded contexts (Ingestion, Analytics, Notifications, Historical), Hexagonal Ports & Adapters pattern, durable Redis Streams consumer groups with dead-letter streams, verified Supabase JWT authentication, and per-user, fire-on-crossing alert dispatch (WebSocket, HMAC-signed webhook, email).
 7. **Market Data Adapter Factory & NSE/Groww Adapters** — Original adapter implementations including NSE session cookie rotation, Groww OAuth handling, and tiered fallback chain with fail-fast 503 policy.
 8. **Technical Indicators Engine** — Original vectorized implementations of RSI, MACD, EMA, Bollinger Bands, ATR, and Classic Floor Pivot calculations.
 9. **Frontend Dashboard** — Original glassmorphic dark-theme trading terminal UI (HTML5/CSS3/Vanilla JS) including client-side BSM simulator with Hastings' CDF polynomial approximation.
@@ -165,7 +165,7 @@ Per current Copyright Office portal instructions:
 | 1 | `domains/ingestion/infrastructure/outbound/nse_api_adapter.py` | NSE session management + cookie rotation | Original adapter logic |
 | 2 | `domains/notifications/domain/services/rule_matcher.py` | Alert condition evaluation engine | Original domain service |
 | 3 | `domains/analytics/infrastructure/options_subscriber.py` | Redis Stream consumer daemon | Original event pipeline |
-| 4 | `shared/infrastructure/event_bus/redis_event_bus.py` | Redis Streams/Pub/Sub event bus | Original infrastructure |
+| 4 | `shared/infrastructure/event_bus/streams.py`, `consumer.py` | Durable Redis Streams consumer groups (ack, retry, dead-letter, reclaim) | Original infrastructure |
 | 5 | `frontend/app.js` (last pages) | Client-side BSM simulator with Hastings CDF | Original frontend math |
 
 ### 4.3 Software Copyright Filing Pack

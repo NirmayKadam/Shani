@@ -17,9 +17,10 @@
   {}
   \resumeItemListStart
     \item {Architected a modular monolith using Domain-Driven Design (DDD) and Hexagonal Architecture in FastAPI, isolating Ingestion, Analytics, Notifications, and Historical OHLC bounded contexts via strict Ports and Adapters interfaces.}
-    \item {Engineered an asynchronous options pricing pipeline with Redis Streams and background workers, solving European option fair values and 5 sensitivity Greeks ($\Delta, \Gamma, \nu, \Theta, \rho$) via analytical Black-Scholes-Merton and numerical Crank-Nicolson PDE schemes with SuperLU sparse matrix factorization.}
-    \item {Built a real-time event-driven alert engine consuming processed tick streams, evaluating user-defined trigger conditions (Price, IV spikes, Delta limits) with atomic cooldown policies and multi-channel dispatch (WebSockets, HMAC Webhooks, Celery Email).}
-    \item {Constructed a low-latency analytics gateway via WebSockets and Redis Pub/Sub, persisting time-series data across partitioned TimescaleDB hypertables with automated chunk retention (7-day ticks, 14-day alert logs, 90-day OHLC bars).}
+    \item {Engineered an asynchronous options pricing pipeline on durable Redis Streams consumer groups (ack, retry, dead-letter), pricing European options via closed-form Black-Scholes-Merton and a Crank-Nicolson PDE solver (dividend yield, adaptive grid, Rannacher smoothing) accurate to within Rs 0.19 of the closed form.}
+    \item {Batched a whole option chain into one block-diagonal sparse system pre-factorized with SuperLU and split across a process pool, raising throughput from 66 to about 1,300 contracts/s on 4 workers.}
+    \item {Built a real-time alert engine with verified Supabase JWT ownership, fire-on-crossing rules on spot price and ATM IV, atomic Postgres cooldowns, and delivery over WebSockets, HMAC-signed webhooks and email.}
+    \item {Constructed a WebSocket gateway fed by Redis Pub/Sub, persisting time-series data in TimescaleDB hypertables with automated chunk retention (90-day ticks, 14-day alert logs, 90-day OHLC bars).}
     \item {Implemented multi-tenant persistent watchlists and profile state using Supabase PostgreSQL with Row Level Security (RLS) policies and Google OAuth authentication.}
   \resumeItemListEnd
 ```
@@ -30,10 +31,27 @@
 |---|---|---|
 | **Modular Monolith & Bounded Context Split** | Decoupling domain logic into isolated packages (`domains/ingestion`, `domains/analytics`, `domains/notifications`, `domains/historical`) communicating strictly via abstract input/output interfaces (Ports) and durable event streams (`stream:options.raw_fetched`, `stream:options.priced`). | *"I organized the project as a Modular Monolith following Hexagonal Architecture across distinct bounded contexts: Ingestion, Analytics, Notifications, and Historical data. Business math logic never touches HTTP requests or database code directly. Instead, domain interfaces (`IOptionChainSourcePort`, `IAlertRuleRepositoryPort`) let us swap external market providers or persistence engines without altering core pricing formulas."* |
 | **Async Pipeline (Redis Streams & Celery)** | Decoupling data retrieval from computationally heavy pricing algorithms using a durable, append-only log (`stream:options.raw_fetched`). | *"Celery Beat polls raw option chains asynchronously from external market adapters and publishes them to a Redis Stream. A background consumer daemon (`OptionsPricingSubscriber`) picks up raw tick frames, executes options pricing math off the HTTP event loop, and pushes processed events down the stream."* |
-| **Crank-Nicolson PDE & SuperLU Factorization** | A second-order implicit-explicit finite difference scheme solving the Black-Scholes partial differential equation over an $M \times N$ spatial/temporal grid using pre-factorized sparse matrices (`scipy.sparse.linalg.splu`). | *"To price options where closed-form solutions are insufficient, I implemented a Crank-Nicolson PDE scheme. We discretize price and time onto a grid and factorize the implicit tridiagonal coefficient matrix $\mathbf{A}$ using SuperLU outside the time loop, reducing per-timestep evaluation time to $O(M)$."* |
-| **Real-Time Notification Engine & Multi-Channel Dispatch** | An autonomous consumer daemon (`NotificationStreamSubscriber`) evaluating price, IV spike, and Delta threshold rules against live market streams, enforcing cooldown periods and dispatching via WebSockets, Webhooks, and Email. | *"The notifications domain listens to the priced options stream (`stream:options.priced`). When a tick matches user criteria, `EvaluateAlertsService` validates rule cooldowns to prevent alert storms and fans out notifications via WebSocket toasts (`alerts.dispatched.{symbol}`), signed HTTP webhooks, or asynchronous Celery SMTP emails."* |
-| **TimescaleDB Hypertables & Multi-Tier Retention** | Time-partitioned PostgreSQL tables optimized for high-frequency write ingestion and time-range queries, paired with automated table chunk purging across multiple domains. | *"Time-series data is persisted in TimescaleDB hypertables partitioned into 1-day chunks. We enforce automated data lifecycle policies: 7-day retention for raw ticks (`TickData`), 14-day retention for alert audit records (`NotificationLogs`), and 90-day retention for historical candle bars (`OhlcCandles`), avoiding expensive SQL `DELETE` table locks."* |
-| **WebSockets + Redis Pub/Sub Gateway** | Low-latency bi-directional streaming pushing processed option chain JSON frames to web browsers with sub-50ms latency. | *"When option chains are priced, workers publish to Redis Pub/Sub (`market.options_updated.{symbol}`). FastAPI WebSocket connections listening to the pub/sub channel immediately relay payloads to client dashboards, while a client-side Hastings polynomial normal CDF simulator enables instant zero-latency slider recalculations."* |
+| **Crank-Nicolson PDE & SuperLU Factorization** | A second-order finite difference scheme solving the Black-Scholes PDE (with dividend yield q) over an $M \times N$ grid using pre-factorized sparse matrices (`scipy.sparse.linalg.splu`). | *"I solve the Black-Scholes PDE with Crank-Nicolson as a cross-check on the closed form and as the general method for exotic payoffs. The grid spans four standard deviations around spot and strike, the first steps are fully implicit (Rannacher) to smooth the payoff kink, and the tridiagonal matrix A is factorised once with SuperLU, so each step is O(M). It matches closed-form BSM to within 19 paise across strikes ±10%, 1–60 days and 10–40% IV."* |
+| **Batched chain pricing** | Stacking every contract's tridiagonal matrix into one block-diagonal system and splitting the chain across a spawn-based process pool. | *"Pricing 100 contracts one by one was dominated by Python loop overhead. I stack a chunk of contracts into one block-diagonal matrix, so each time step is one sparse product and one SuperLU solve for all of them, and give each worker one chunk. End to end that went from 66 contracts/s to 527 on one worker and 1,291 on four."* |
+| **Real-Time Notification Engine & Multi-Channel Dispatch** | A consumer-group daemon (`NotificationStreamSubscriber`) evaluating each user's symbol-level rules (spot price above/below, ATM IV %) once per priced chain, firing only on a false→true crossing, with an atomic cooldown. | *"The notifications domain reads `stream:options.priced` through a consumer group. For each rule, one conditional `UPDATE … RETURNING` in Postgres records the new condition state and enforces the cooldown in a single statement, so two workers can never both fire. Alerts go only through the channels on the rule: WebSocket toasts to the owner's authenticated sockets, HMAC-signed webhooks with retries, or SMTP email off the event loop."* |
+| **TimescaleDB Hypertables & Multi-Tier Retention** | Time-partitioned PostgreSQL tables optimized for high-frequency write ingestion and time-range queries, paired with automated table chunk purging across multiple domains. | *"Time-series data is persisted in TimescaleDB hypertables partitioned into 1-day chunks, with retention policies of 90 days for raw ticks (`TickData`), 14 days for alert audit records (`NotificationLogs`) and 90 days for candles (`OhlcCandles`). Dropping a chunk deletes a file instead of running a row-by-row `DELETE`. Unchanged chains (outside market hours) are not re-inserted at all."* |
+| **WebSockets + Redis Pub/Sub Gateway** | Live push to browsers: Pub/Sub carries small `{symbol, last_updated}` notifications and the browser refetches the priced chain. | *"Each API worker runs one pattern subscription and fans messages out to per-client bounded queues; slow or idle clients are closed with 4000-series codes and reconnect with backoff. Alerts carry a user id and go only to sockets that authenticated as that user. Slider recalculation runs in the browser with a Hastings normal-CDF approximation, so it needs no server call."* |
+
+### Measured Numbers (November 2026)
+
+All measured on an Intel i5-12450H, Python 3.11, NumPy 1.26.4, SciPy 1.17.1. Quote these, not round guesses.
+
+| Metric | Value | How it was measured |
+|---|---|---|
+| CN accuracy vs closed-form BSM | worst ₹0.19, mean ₹0.022 (was ₹21.20 / ₹0.94) | strikes ±10%, 1–60 days, 10–40% IV, calls and puts (`tests/unit/test_pde_solver.py`) |
+| Worked example (NIFTY 24200C, 30 d, 14% IV, q 1.2%) | CN 339.15 vs BSM 339.14 (was 349.12) | `docs/SuperLU_PDE_Explanation.md` |
+| SuperLU pre-factorisation, one contract | 23.3 ms → 5.8 ms (−75%, 4.0×) at M = N = 300 | `spsolve` every step vs `splu` once, identical prices |
+| Batched chain, one core | 605 ms → 202 ms for 100 contracts (3.0×) | per-contract loop vs `price_chain_cn` |
+| End-to-end pricing throughput | 527 / 975 / 1,291 contracts/s on 1 / 2 / 4 workers | `OptionsPricingSubscriber.process_event`, 100-contract chain, CN + BSM per contract |
+| Before batching | 66 (sequential), 28 (threads), ~560 (4 processes) contracts/s | same benchmark |
+| LAPACK `gttrs` vs SuperLU on the batched system | 1.3× | kept SuperLU |
+| Unit tests | 196 passing in ~15 s | `python -m pytest` |
+| Outage response time | 286 s → 25 s to a clean 503 | overall live-fetch deadline |
 
 ---
 
@@ -81,13 +99,13 @@
 │ 2. ANALYTICS BOUNDED CONTEXT (`domains/analytics` - Quantitative Math Engine)                    │
 │  ┌────────────────────────────────────────────────────────────────────────────────────────────┐  │
 │  │                           OptionsPricingSubscriber Daemon                                  │  │
-│  │              (Executes in background thread pool via asyncio.to_thread)                    │  │
+│  │      (Consumer group; batched CN solves in a spawn ProcessPoolExecutor, PRICING_WORKERS)   │  │
 │  │                                                                                            │  │
 │  │   ┌─────────────────────────────────────────┐    ┌──────────────────────────────────────┐  │  │
 │  │   │  Black-Scholes Analytical Engine (BSM)  │    │  Crank-Nicolson PDE Numerical Solver │  │  │
 │  │   │   - Exact Fair Call / Put Price         │    │   - Spatial & Temporal Grid ($M, N$) │  │  │
 │  │   │   - 5 Dynamic Greeks ($\Delta, \Gamma, \nu, \Theta, \rho$)│    │   - SuperLU Sparse Matrix LU Factor  │  │  │
-│  │   │   - Continuous Dividend Yield ($q$)     │    │   - CFL Dynamic Stability Guard      │  │  │
+│  │   │   - Continuous Dividend Yield ($q$)     │    │   - ±4σ grid, q, Rannacher start-up  │  │  │
 │  │   └─────────────────────────────────────────┘    └──────────────────────────────────────┘  │  │
 │  │                                                                                            │  │
 │  │   ┌────────────────────────────────────────────────────────────────────────────────────┐   │  │
@@ -108,15 +126,15 @@
 │                        ▼                         │  │  │ Pub/Sub: `market.options_updated`    │  │
 │  ┌────────────────────────────────────────────┐  │  │  │ Pub/Sub: `market.price_updated`      │  │
 │  │         EvaluateAlertsService              │  │  │  │ Pub/Sub: `alerts.dispatched`        │  │
-│  │  - RuleMatcher (PRICE, IV, DELTA)          │  │  │  └──────────────────┬───────────────────┘  │
-│  │  - Cooldown Enforcement (Atomic Check)     │  │  └─────────────────────┼──────────────────────┘
+│  │  - RuleMatcher (SPOT PRICE, ATM IV %)      │  │  │  └──────────────────┬───────────────────┘  │
+│  │  - Crossing + cooldown (atomic UPDATE)     │  │  └─────────────────────┼──────────────────────┘
 │  └─────────────────────┬──────────────────────┘                           │
 │                        ▼                                                  │
 │  ┌────────────────────────────────────────────┐                           │
 │  │          Multi-Channel Dispatch            │                           │
 │  │  - WebSocket Toast (`alerts.dispatched`)   │                           │
 │  │  - Webhook POST (HMAC Signed + Retry)      │                           │
-│  │  - Celery Email (SMTP Dispatcher)          │                           │
+│  │  - Email (SMTP via asyncio.to_thread)      │                           │
 │  └─────────────────────┬──────────────────────┘                           │
 └────────────────────────┼──────────────────────────────────────────────────┼──────────────────────┘
                          │                                                  │
@@ -126,7 +144,7 @@
 │ 4. HISTORICAL & PERSISTENCE (`domains/historical`)│  │ 5. APPLICATION & SERVING (`app/`, `frontend`)│
 │  ┌────────────────────────────────────────────┐  │  │  ┌──────────────────────────────────────┐  │
 │  │ TimescaleDB Hypertables (PostgreSQL)       │  │  │  │ FastAPI Uvicorn REST Routers         │  │
-│  │  - `TickData` (7-Day Auto Retention)       │  │  │  │  - `/v1/pricer/ticker/{symbol}`      │  │
+│  │  - `TickData` (90-Day Auto Retention)      │  │  │  │  - `/v1/pricer/ticker/{symbol}`      │  │
 │  │  - `NotificationLogs` (14-Day Retention)   │  │  │  │  - `/v1/derivatives`, `/v1/technicals`│  │
 │  │  - `OhlcCandles` (90-Day Retention)       │  │  │  │  - `/v1/alerts` (Alert Rule CRUD)    │  │
 │  │  - `AlertRules` (Relational Table)         │  │  │  └──────────────────┬───────────────────┘  │
@@ -237,7 +255,9 @@ classDiagram
         +int cooldown_seconds
         +datetime last_triggered_at
         +bool is_active
-        +is_in_cooldown(current_time: datetime) bool
+        +UUID user_id
+        +bool last_condition_met
+        +str webhook_secret
     }
     class RuleMatcherDomainService {
         +match(rule: AlertRule, tick_payload: dict) Tuple[bool, float, str]
@@ -322,42 +342,47 @@ sequenceDiagram
 
     %% 1. Ingestion Phase
     Note over Celery, RawStream: 1. Ingestion Bounded Context
-    Celery->>Ingestion: Trigger poll_options(symbol)
+    Celery->>Ingestion: fetch_and_publish_options(symbol) (one poll leader per symbol, every 15 s)
     Ingestion->>Adapter: fetch_option_chain(symbol)
-    Adapter-->>Ingestion: Return RawTickDTO
-    Ingestion->>RawStream: XADD stream:options.raw_fetched (tick data)
+    Adapter-->>Ingestion: Return RawTickDTO list
+    alt Chain hash unchanged
+        Ingestion->>Ingestion: Skip TickData COPY and re-pricing
+    else Chain changed
+        Ingestion->>RawStream: XADD MAXLEN~10000 stream:options.raw_fetched (nearest expiry)
+    end
 
     %% 2. Analytics Phase
     Note over RawStream, PricedStream: 2. Analytics Bounded Context
-    RawStream->>PricingSub: XREAD stream:options.raw_fetched
-    PricingSub->>MathEng: Offload math via asyncio.to_thread()
-    MathEng->>MathEng: Solve BSM, 5 Greeks & Crank-Nicolson PDE
-    MathEng-->>PricingSub: Return PricedOptionChainDTO
-    PricingSub->>PricedStream: XADD stream:options.priced (priced chain)
-    PricingSub->>PubSub: PUBLISH market.options_updated.{symbol}
-    PubSub->>WSGateway: Relay updated priced chain
-    WSGateway->>Browser: Push WebSocket frame {"type": "options", "data": {...}}
+    RawStream->>PricingSub: XREADGROUP cg:options_pricing
+    PricingSub->>MathEng: One batched CN chunk per worker (spawn process pool)
+    MathEng->>MathEng: price_chain_cn (block-diagonal SuperLU) + vectorised BSM
+    MathEng-->>PricingSub: Fair prices per contract
+    PricingSub->>PricedStream: XADD stream:options.priced (chain, spot, ATM IV %)
+    PricingSub->>PubSub: PUBLISH market.options_updated.{symbol} {symbol, last_updated}
+    PricingSub->>RawStream: XACK (after success; retry then DLQ on failure)
+    PubSub->>WSGateway: Pattern subscription relays notification
+    WSGateway->>Browser: {"type": "options"}; browser refetches the chain
 
     %% 3. Notifications Phase
     Note over PricedStream, Browser: 3. Notifications Bounded Context
-    PricedStream->>NotifSub: XREAD stream:options.priced
-    NotifSub->>RuleMatcher: Match conditions (PRICE, IV_SPIKE, DELTA)
-    RuleMatcher-->>NotifSub: Condition matched (e.g. IV > 25.0)
-    NotifSub->>NotifSub: Check rule cooldown (is_in_cooldown)
-    alt Outside Cooldown (Active)
-        NotifSub->>ChannelAdapter: Dispatch via active channels
-        par Channel Broadcasts
-            ChannelAdapter->>PubSub: PUBLISH alerts.dispatched.{symbol}
-            PubSub->>WSGateway: Forward alert toast
-            WSGateway->>Browser: Push WebSocket Alert Toast
-        and External Webhook
-            ChannelAdapter->>ChannelAdapter: HTTP POST Webhook (HMAC signed)
-        and Asynchronous Email
-            ChannelAdapter->>Celery: Queue async SMTP email task
+    PricedStream->>NotifSub: XREADGROUP cg:alert_evaluation
+    NotifSub->>RuleMatcher: Match each active rule (spot price / ATM IV %)
+    RuleMatcher-->>NotifSub: met = true/false
+    NotifSub->>NotifSub: try_transition: UPDATE ... WHERE crossed AND cooldown elapsed RETURNING id
+    alt Row returned (crossed false→true, outside cooldown)
+        NotifSub->>ChannelAdapter: Dispatch via the rule's channels only
+        par WebSocket
+            ChannelAdapter->>PubSub: PUBLISH alerts.dispatched.{symbol} (with user_id)
+            PubSub->>WSGateway: Forward alert
+            WSGateway->>Browser: Toast on the owner's authenticated sockets only
+        and Webhook
+            ChannelAdapter->>ChannelAdapter: HTTPS POST, HMAC-signed with the rule's secret, retried with backoff
+        and Email
+            ChannelAdapter->>ChannelAdapter: SMTP in asyncio.to_thread
         end
-        NotifSub->>NotifSub: Persist execution to NotificationLogs hypertable
-    else In Cooldown
-        NotifSub->>NotifSub: Suppress execution to prevent alert storms
+        NotifSub->>NotifSub: Log to NotificationLogs hypertable
+    else No row
+        NotifSub->>NotifSub: Still true, re-armed, or in cooldown: nothing sent
     end
 ```
 
@@ -369,7 +394,7 @@ sequenceDiagram
 * **Decision:** Built the platform as a single deployable process structured into isolated domain packages (`domains/ingestion`, `domains/analytics`, `domains/notifications`, `domains/historical`, `shared`).
 * **Why:** Microservices introduce distributed transaction overhead, network serialization latency between calls, complex multi-repo deployment pipelines, and service mesh management. For a quantitative analytics platform processing high-frequency option chains on single or dual nodes, in-memory function calls and local event queues deliver sub-millisecond execution without inter-service network serialization penalties.
 * **Trade-off:** If ingestion or math computing spikes CPU to 100%, it could starve the FastAPI HTTP server if not properly offloaded to separate worker threads/processes.
-* **Mitigation:** Utilized multi-threading (`asyncio.to_thread`), Celery background task workers, and container process supervision via Docker/Supervisord.
+* **Mitigation:** Pricing runs in its own subscriber process with a spawn-based `ProcessPoolExecutor` (threads would not help: the solver loop holds the GIL), ingestion runs in Celery workers, and the production compose file runs each process as a separate service.
 
 ### 2. Hexagonal Architecture (Ports & Adapters)
 * **Decision:** Enforced clean separation where application core logic depends only on interfaces (Ports), while external APIs, databases, and message brokers implement those interfaces (Adapters).
@@ -385,7 +410,7 @@ sequenceDiagram
   4. `domains/historical`: Immutable OHLC candle persistence and 1m/5m/1d timeframe aggregation.
 * **Why:** Coupling alert evaluation or historical aggregation inside the ingestion or pricing loop adds latency and violates the Single Responsibility Principle. If an external SMTP server hangs or an alert webhook fails, the options pricing loop and ingestion scheduler must continue unaffected.
 * **Trade-off:** Requires asynchronous event streaming (`stream:options.raw_fetched` $\rightarrow$ `stream:options.priced`) to bridge domain boundaries.
-* **Mitigation:** Redis Streams provide sub-millisecond decoupled communication with durable message acknowledgments (`XACK`).
+* **Mitigation:** Redis Streams consumer groups with explicit acknowledgment (`XACK`), retries, dead-letter streams and reclaim of stalled messages (`XAUTOCLAIM`).
 
 ### 4. Redis Streams + Pub/Sub vs. Apache Kafka / RabbitMQ
 * **Decision:** Utilized Redis Streams for durable tick logging (`stream:options.raw_fetched`, `stream:options.priced`) and Redis Pub/Sub (`market.options_updated.{symbol}`, `alerts.dispatched.{symbol}`) for real-time WebSocket broadcasting.
@@ -395,7 +420,7 @@ sequenceDiagram
 
 ### 5. TimescaleDB Multi-Hypertables vs. InfluxDB / MongoDB
 * **Decision:** Selected PostgreSQL with the TimescaleDB extension for time-series persistence across three separate hypertables:
-  - `TickData`: High-frequency raw tick prices (7-day automated chunk retention).
+  - `TickData`: High-frequency raw tick prices (90-day automated chunk retention).
   - `NotificationLogs`: Triggered alert audit history (14-day automated retention).
   - `OhlcCandles`: 1m/5m/1d aggregated bars (90-day automated retention).
 * **Why:** Pure NoSQL databases (MongoDB) lack strict ACID guarantees and financial SQL analytical aggregations (`time_bucket()`, moving averages). Dedicated TSDBs (InfluxDB) introduce a second query language (Flux/InfluxQL) and don't integrate with relational user auth tables. TimescaleDB provides standard SQL, hypertable automatic partitioning, and native retention policies while preserving relational integrity for user accounts, alert rules, and watchlists.
@@ -454,37 +479,32 @@ Where:
 #### The Black-Scholes PDE
 The pricing equation for any derivative option $V(S, t)$ is governed by:
 
-$$\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0$$
+$$\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + (r - q) S \frac{\partial V}{\partial S} - r V = 0$$
 
-#### Grid Discretization & Dynamic CFL Stability Guard
-- **Price Domain:** $S \in [0, S_{max}]$ with $S_{max} = \max(3K, 2.5 S_0)$. Discretized into $M$ equal space steps: $dS = \frac{S_{max}}{M}$.
-- **Time Domain:** $t \in [0, T]$. Discretized into $N$ equal time steps: $dt = \frac{T}{N}$.
-- **CFL Stability Check:** To guarantee numerical stability when backward-stepping, $dt$ is dynamically validated against:
-  $$dt_{max} = \frac{0.9}{\sigma^2 M^2} S_{max}^2$$
-  If $dt > dt_{max}$, $N$ is automatically adjusted upwards: $N_{new} = \lfloor \frac{T}{dt_{max}} \rfloor + 1$.
+#### Grid Discretization
+- **Price Domain:** $S \in [\min(S_0, K)\,e^{-w},\ \max(S_0, K)\,e^{w}]$ with $w = 4\sigma\sqrt{T}$: four standard deviations of the log-price at expiry beyond both spot and strike, in $M = 300$ uniform steps. For the worked example (NIFTY 24200 call, 30 days, 14% IV) that is 20,440 to 28,414, a node every 26.6 points (the old $[0, \max(3K, 2.5S_0)]$ grid had one every 242).
+- **Time Domain:** $\tau \in [0, T]$ in $N = 300$ steps, $dt = T/N$.
+- **Stability:** Crank-Nicolson is unconditionally stable for this equation, so there is **no CFL check**. The first 2 steps are replaced by 4 fully implicit half-steps (Rannacher start-up) to damp oscillations from the payoff's kink at the strike.
 
 #### Tridiagonal Linear System Construction
 Crank-Nicolson averages implicit and explicit finite difference schemes:
 
-$$\mathbf{A} \mathbf{V}^j = \mathbf{B} \mathbf{V}^{j+1}$$
+$$\mathbf{A} \mathbf{V}^{new} = \mathbf{B} \mathbf{V}^{old} + \text{boundary}$$
 
-For inner nodes $i \in [1, M-1]$:
-$$\alpha_i = -\frac{1}{4} dt \left( \sigma^2 i^2 - r i \right)$$
-$$\beta_i = \frac{1}{2} dt \left( \sigma^2 i^2 + r \right)$$
-$$\gamma_i = -\frac{1}{4} dt \left( \sigma^2 i^2 + r i \right)$$
+For inner nodes, with $D_i = \frac{\sigma^2 S_i^2}{2\,dS^2}$ and $R_i = \frac{(r - q) S_i}{2\,dS}$:
+$$\alpha_i = \frac{dt}{2}(D_i - R_i), \qquad \beta_i = \frac{dt}{2}(2D_i + r), \qquad \gamma_i = \frac{dt}{2}(D_i + R_i)$$
 
-- **Matrix $\mathbf{A}$ (Implicit side - LHS):**
-  Tridiagonal with lower diagonal $-\alpha[1:]$, main diagonal $1 - \beta$, upper diagonal $-\gamma[:-1]$.
-- **Matrix $\mathbf{B}$ (Explicit side - RHS):**
-  Tridiagonal with lower diagonal $\alpha[1:]$, main diagonal $1 + \beta$, upper diagonal $\gamma[:-1]$.
+- **Matrix $\mathbf{A}$ (Implicit side - LHS):** lower diagonal $-\alpha$, main diagonal $1 + \beta$, upper diagonal $-\gamma$.
+- **Matrix $\mathbf{B}$ (Explicit side - RHS):** lower diagonal $\alpha$, main diagonal $1 - \beta$, upper diagonal $\gamma$.
 
 #### SuperLU Sparse Matrix Optimization & Boundary Conditions
-1. **Pre-Factorization:** Since Matrix $\mathbf{A}$ depends only on grid steps ($M, N$) and static parameters ($\sigma, r$), $\mathbf{A}$ is converted to CSC format and factorized using SuperLU (`scipy.sparse.linalg.splu(A)`) **once** outside the time loop.
-2. **Backward Time Loop:** Solves $\mathbf{A} \mathbf{V}^j = \mathbf{B} \mathbf{V}^{j+1}$ from terminal expiration $t=T$ down to $t=0$ in linear $O(M)$ time per step.
-3. **Boundary Conditions:**
-   - Call Option at $S=0$: $V(0, t) = 0$; at $S=S_{max}$: $V(S_{max}, t) = S_{max} - K e^{-r (T-t)}$.
-   - Put Option at $S=0$: $V(0, t) = K e^{-r (T-t)}$; at $S=S_{max}$: $V(S_{max}, t) = 0$.
-4. **Spatial Interpolation:** Linear interpolation (`np.interp(S0, S_nodes, grid)`) derives the exact option value corresponding to spot price $S_0$.
+1. **Pre-Factorization:** $\mathbf{A}$ depends only on the grid and static parameters ($\sigma, r, q, dt$), so it is converted to CSC and factorized with SuperLU (`splu(A)`) **once** outside the time loop. At the default grid this cut one solve from 23.3 ms (`spsolve` every step) to 5.8 ms, a 75% reduction with identical prices.
+2. **Backward Time Loop:** each step is one `B.dot` and one forward/back substitution, $O(M)$.
+3. **Boundary Conditions:** call top edge $S_{max} e^{-q\tau} - K e^{-r\tau}$, put bottom edge $K e^{-r\tau} - S_{min} e^{-q\tau}$, zero on the other edge.
+4. **Spatial Interpolation:** `np.interp(S0, S_nodes, grid)` reads the value at spot. Worked example: CN 339.15 vs closed-form BSM 339.14.
+5. **Batched chains:** `price_chain_cn` stacks each contract's matrix as a block of one block-diagonal system, so a whole chunk of contracts is one factorization and one solve per step (100 contracts: 605 ms looped vs 202 ms batched on one core).
+
+**Accuracy** against closed-form BSM over strikes ±10%, 1–60 days, 10–40% IV: worst error ₹0.19, mean ₹0.022 (the old grid without q or Rannacher: ₹21.20 and ₹0.94). Full walkthrough: [SuperLU_PDE_Explanation.md](SuperLU_PDE_Explanation.md).
 
 ---
 
@@ -519,25 +539,34 @@ $$\gamma_i = -\frac{1}{4} dt \left( \sigma^2 i^2 + r i \right)$$
 * **Problem:** Direct calls to `nseindia.com/api/option-chain-indices` failed with HTTP 403 or empty JSON because NSE validates browser headers, cookies, and session lifecycle. Static HTTP clients were blocked within minutes.
 * **Solution:** Developed `NseApiAdapter` with active session warm-up. On startup, the adapter hits `https://www.nseindia.com` to capture session cookies (`nsit`, `nseappid`). A background timer refreshes session cookies every 10 minutes (600s). In addition, requests spoof Chrome/Firefox User-Agent strings and set `Referer: https://www.nseindia.com/option-chain`.
 
-### Issue 2: FastAPI Event Loop Blocking During Heavy PDE Calculations
-* **Problem:** Executing Crank-Nicolson PDE grid backward loops for 50+ option strikes in the main thread blocked FastAPI's ASGI event loop, causing WebSocket ping/pong timeouts and spiking HTTP latency to >2000ms.
-* **Solution:** Refactored strike calculation logic into pure synchronous functions (`_solve_strike_sync`) and dispatched them via `asyncio.to_thread()` / process worker pools. This delegated heavy NumPy/SciPy matrix operations to OS worker threads, keeping the FastAPI event loop under 5ms response latency.
+### Issue 2: Pricing Throughput (GIL, then Python Overhead)
+* **Problem:** Pricing a 100-contract chain one contract at a time ran at **66 contracts/s**. Moving it to `asyncio.to_thread` made it *slower* (**28 contracts/s**): the solver loop is Python code, and the GIL lets only one thread run it at a time.
+* **Solution, step 1:** A spawn-based `ProcessPoolExecutor` (each process has its own interpreter and GIL): about **560 contracts/s** on 4 workers. Spawn, not fork, because the pool is created inside a running event loop with open Redis connections.
+* **Solution, step 2:** Profiling showed the remaining cost was Python loop overhead per contract. `price_chain_cn` stacks a chunk of contracts into one block-diagonal tridiagonal system (one factorization, one solve per step for all of them) and each worker gets one chunk. End to end: **527 contracts/s on 1 worker, 975 on 2, 1,291 on 4**, with prices identical to the per-contract solver. LAPACK's tridiagonal solver was benchmarked too and was only 1.3× faster than SuperLU, so SuperLU stayed.
 
-### Issue 3: Stream-Driven Notifications Decoupling & Alert Storm Mitigation
-* **Problem:** When high market volatility triggered rapid price and IV fluctuations, users received hundreds of duplicate alerts within seconds (alert storm), overloading downstream webhook endpoints and exhausting email SMTP rate limits.
-* **Solution:** Decoupled notifications into an independent domain (`domains/notifications`) consuming `stream:options.priced`. Implemented atomic cooldown checks in `AlertRule.is_in_cooldown()` (default 300s). When triggered, the repository immediately updates `last_triggered_at` in PostgreSQL before dispatching via channels, suppressing duplicate alerts while persisting an immutable execution log to the `NotificationLogs` hypertable.
+### Issue 3: Alert Storms and Racy Cooldowns
+* **Problem:** Alerts fired on every tick while a condition held, and the cooldown was check-then-act, so two workers could both fire. Rules also compared against per-strike data that never matched equity symbols.
+* **Solution:** Rules became symbol-level (spot price, ATM IV %) and fire only when the condition **crosses** from false to true. One conditional `UPDATE AlertRules … WHERE last_condition_met IS DISTINCT FROM $met AND (cooldown elapsed) RETURNING id` records the state and enforces the cooldown atomically; the alert is sent only if a row comes back. Verified against real Postgres: fire, no re-fire while true, re-arm, cooldown.
 
-### Issue 4: Hypertable Disk Growth under High Tick Ingestion Frequency
-* **Problem:** Storing tick updates for multiple index options every 5 seconds generated over 500,000 database rows per day, rapidly exhausting local container disk space.
-* **Solution:** Configured TimescaleDB hypertables with 1-day chunk intervals (`chunk_time_interval => INTERVAL '1 day'`) and attached an automated retention policy (`SELECT add_retention_policy('TickData', INTERVAL '7 days');`). TimescaleDB drops entire underlying table file chunks instantly from disk without performing expensive row-by-row SQL `DELETE` operations.
+### Issue 4: Hypertable Disk Growth and Redundant Writes
+* **Problem:** The poller inserts every expiry's chain into `TickData` every 15 s while a symbol is watched, including outside market hours when nothing changes.
+* **Solution:** 1-day chunks with a 90-day retention policy (dropping a chunk deletes a file instead of a row-by-row `DELETE`), and a hash of each chain's market fields: if it matches the previous poll, the insert and re-pricing are skipped. The hash key expires at half the priced-chain TTL, so the read model never goes stale.
 
 ### Issue 5: WebSocket Reconnections & Stale Client Sockets
-* **Problem:** Network interruptions caused browser WebSocket clients to disconnect ungracefully, leaving orphaned socket listeners subscribing to Redis Pub/Sub and wasting RAM.
-* **Solution:** Built a centralized `WebSocketManager` that handles client lifecycle events. Disconnections automatically unsubscribe from Redis Pub/Sub channels and remove socket objects from active memory sets. Client browsers execute an exponential backoff reconnect strategy with heartbeats every 15 seconds.
+* **Problem:** Slow or dead browser connections could back up the server, and dropped connections left the dashboard silently stale.
+* **Solution:** Each API worker runs one Redis pattern subscription and fans messages out to a bounded queue per client. A client whose queue fills is closed with code 4002, an idle one (120 s) with 4000, and the subscription stops when no clients remain. The browser reconnects with exponential backoff (1 s up to 30 s) and sends a heartbeat every 30 s.
 
-### Issue 6: Upstream Market Data Outages & Rate Limits
+### Issue 6: Unverified Authentication
+* **Problem:** The auth middleware decoded Supabase JWTs without verifying them, alert rules had no owner, and webhook URLs could point at internal addresses (SSRF).
+* **Solution:** PyJWT verification (ES256/RS256 through the project's JWKS, HS256 with a shared secret for legacy projects), rules owned by the token's user (other users get 404), alerts routed only to that user's authenticated sockets, and webhooks restricted to HTTPS public addresses with a per-rule HMAC secret.
+
+### Issue 7: Upstream Market Data Outages & Rate Limits (and caching)
 * **Problem:** Groww API rate-limits requests during high market volatility, returning `429 Too Many Requests`. Falling back to synthetic mock data caused inaccurate option pricing.
-* **Solution:** Created an `AdapterFactory` implementing a multi-tiered fallback strategy: Redis Cache $\rightarrow$ Groww API $\rightarrow$ NSE Web Scraper. If all external providers fail, the system triggers a **Fail-Fast** error policy (`HTTP 503 Service Unavailable`), guaranteeing data integrity over false theoretical metrics.
+* **Solution:** Created an `AdapterFactory` implementing a multi-tiered fallback strategy: Redis Cache $\rightarrow$ Groww API $\rightarrow$ NSE Web Scraper $\rightarrow$ yfinance. If all external providers fail, the system triggers a **Fail-Fast** error policy (`HTTP 503 Service Unavailable`), guaranteeing data integrity over false theoretical metrics. A live fetch has an overall 25 s deadline (an outage used to take 286 s to answer), concurrent cache misses share one fetch through a Redis lock, and slow-changing data is cached: the Groww token until expiry, the expiry list per day, dividend yield for 24 h, technicals history for 1 h.
+
+### Issue 8: Wrong Pricing Inputs
+* **Problem:** NSE reports IV in percent (14.2) while the solvers expect a decimal (0.142); yfinance reports dividend yield in percent too; strikes from different expiries were priced with one T; and T counted whole days.
+* **Solution:** Adapters normalise IV to decimals, dividend yield is derived from `dividendRate / price`, only the nearest expiry is priced, and T is fractional time to 15:30 IST.
 
 ---
 
@@ -548,17 +577,17 @@ $$\gamma_i = -\frac{1}{4} dt \left( \sigma^2 i^2 + r i \right)$$
 > **Interviewer:** *"Can you tell me about AlphaStreams?"*
 
 **Script:**
-"AlphaStreams is a real-time quantitative analytics and derivative pricing engine designed to ingest live option chains from Indian financial markets, compute theoretical fair values and sensitivity Greeks using analytical Black-Scholes-Merton and numerical Crank-Nicolson PDE solvers, and stream sub-50ms market updates and automated alerts to an interactive trading terminal.
+"AlphaStreams is a real-time quantitative analytics and derivative pricing engine designed to ingest live option chains from Indian financial markets, compute theoretical fair values and sensitivity Greeks using analytical Black-Scholes-Merton and numerical Crank-Nicolson PDE solvers, and stream live updates and per-user alerts to an interactive trading terminal.
 
 Architecturally, I engineered the system as a **Modular Monolith** using **FastAPI** and **Hexagonal Architecture (Ports and Adapters)** across four strictly isolated bounded contexts: **Ingestion**, **Analytics**, **Notifications**, and **Historical OHLC**.
 
 Data ingestion is handled asynchronously via **Celery** tasks and an `AdapterFactory` supporting both Groww API and an automated NSE India scraper with dynamic 10-minute session cookie rotation. Raw market ticks are published to **Redis Streams** (`stream:options.raw_fetched`).
 
-Our **Analytics** consumer daemon processes these stream events, offloads heavy PDE matrix computations to OS worker threads via `asyncio.to_thread`, and factorizes tridiagonal coefficient matrices with **SuperLU** in linear $O(M)$ time per step. Priced payloads are published to `stream:options.priced` and broadcasted over **Redis Pub/Sub** to active **WebSocket** clients.
+Our **Analytics** consumer reads that stream through a consumer group and prices the whole chain in one batched Crank-Nicolson solve per worker of a process pool: each contract's tridiagonal matrix is a block of one sparse system factorised once with **SuperLU**. That runs at about 1,300 contracts/s on four workers and matches closed-form BSM to within 19 paise. Priced chains go to `stream:options.priced`, and a small notification over **Redis Pub/Sub** tells **WebSocket** clients to refetch.
 
-A dedicated **Notifications** engine listens to the priced stream, evaluates real-time alert conditions (Price limits, IV spikes, Delta thresholds), enforces atomic cooldown periods to prevent alert storms, and dispatches notifications across WebSockets, signed Webhooks, and Celery SMTP emails.
+A dedicated **Notifications** engine reads the priced stream, evaluates each user's rules on spot price and ATM IV, fires only when a condition crosses, enforces the cooldown atomically in Postgres, and delivers over WebSockets (to the owner only), HMAC-signed webhooks or email. Alert APIs verify Supabase JWTs.
 
-For storage, we utilize **TimescaleDB hypertables** with automated chunk retention policies (7-day ticks, 14-day alert logs, 90-day OHLC bars), while user watchlists are secured with **Supabase PostgreSQL Row Level Security (RLS)**. The entire system is containerized with **Docker** and supervised via **Supervisord**."
+For storage, we utilize **TimescaleDB hypertables** with automated chunk retention policies (90-day ticks, 14-day alert logs, 90-day OHLC bars), while user watchlists are secured with **Supabase PostgreSQL Row Level Security (RLS)**. The entire system is containerized with **Docker** and supervised via **Supervisord**, with application processes running as a non-root user."
 
 ---
 
@@ -574,13 +603,13 @@ For storage, we utilize **TimescaleDB hypertables** with automated chunk retenti
   "To bypass anti-scraping protections on NSE endpoints, our `NseApiAdapter` executes an automated session warm-up sequence capturing initial cookies (`nsit`, `nseappid`) and refreshes them every 10 minutes. If the primary Groww API rate-limits, our `AdapterFactory` falls back to the NSE scraper. If all sources fail, we enforce a Fail-Fast policy returning `HTTP 503 Service Unavailable` rather than corrupting mathematical pricing with synthetic mock data."
 
 - **Minute 3: Mathematical Solver Engine & SuperLU PDE Optimization:**
-  "For derivatives pricing, we implement both analytical BSM with continuous dividend yield ($q$) and a numerical Crank-Nicolson PDE solver. To evaluate the $M \times N$ finite-difference grid efficiently, we pre-factorize the implicit tridiagonal matrix $\mathbf{A}$ using SciPy's SuperLU direct solver (`splu`) outside the time loop. This reduces backward-step solving time from $O(M^3)$ to linear $O(M)$."
+  "For derivatives pricing, we implement both analytical BSM with continuous dividend yield ($q$) and a numerical Crank-Nicolson PDE solver. The grid covers four standard deviations around spot and strike, dividends are in the drift, and the first steps are fully implicit to smooth the payoff kink, which brought the worst error against the closed form from ₹21 to ₹0.19. The implicit matrix $\mathbf{A}$ never changes during the loop, so we factorise it once with SuperLU (`splu`) instead of calling `spsolve` every step: 75% faster with identical prices. That is a constant-factor win; a tridiagonal solve is $O(M)$ either way."
 
 - **Minute 4: Asynchronous Streaming & Notifications Alert Engine:**
-  "To keep the FastAPI ASGI event loop under 5ms latency, heavy PDE math is dispatched to OS worker threads via `asyncio.to_thread`. Processed option chains flow into `stream:options.priced`. Our `NotificationStreamSubscriber` daemon consumes this stream, matches user alert rules against live IV and Delta values, enforces atomic cooldown periods to suppress alert storms, and fans out alerts via WebSockets, HMAC-signed webhooks, and Celery emails."
+  "Pricing runs in its own subscriber process. Threads didn't help (28 contracts/s against 66 sequential, because of the GIL), so it uses a spawn-based process pool, and each worker solves one block-diagonal batch of contracts: 527 contracts/s on one worker, 1,291 on four. Both subscribers use consumer groups, so a message is acknowledged only after it's handled, retried on failure and dead-lettered after its retries. `NotificationStreamSubscriber` matches each rule against spot price and ATM IV, fires only on a crossing with an atomic cooldown, and delivers over WebSockets, HMAC-signed webhooks and email."
 
 - **Minute 5: Storage Optimization & Multi-Tenant Security:**
-  "For persistent time-series data, we leverage TimescaleDB hypertables partitioned into 1-day chunks with multi-tier retention policies (7-day ticks, 14-day notification logs, 90-day OHLC candles) that drop physical file chunks instantly. User authentication and watchlists are managed via Supabase PostgreSQL with Row Level Security (`auth.uid() = user_id`), ensuring complete tenant isolation."
+  "For persistent time-series data, we leverage TimescaleDB hypertables partitioned into 1-day chunks with multi-tier retention policies (90-day ticks, 14-day notification logs, 90-day OHLC candles) that drop physical file chunks instantly. User authentication and watchlists are managed via Supabase PostgreSQL with Row Level Security (`auth.uid() = user_id`), ensuring complete tenant isolation."
 
 ---
 
@@ -606,11 +635,10 @@ Splitting them ensures that a failure in external email dispatch or web scraping
 - **Redis Streams** is an append-only, durable log data structure. It supports consumer groups, message acknowledgement (`XACK`), and replayability. If a worker process crashes, it can resume processing unacknowledged ticks from the stream upon restart.
 
 ### Q5: How does the Notifications engine prevent alert storms during extreme market volatility?
-**Answer:** When market prices or IV spike rapidly, hundreds of ticks can match a user's alert condition within seconds. To prevent spamming users:
-1. Each `AlertRule` has an atomic `cooldown_seconds` setting (default 300s).
-2. The domain service checks `rule.is_in_cooldown(current_time)`.
-3. If triggered, `update_last_triggered()` updates the rule's timestamp in PostgreSQL immediately before channel dispatch.
-4. Subsequent ticks within the cooldown window are dropped by the rule matcher.
+**Answer:** Two mechanisms, both enforced in one SQL statement:
+1. **Crossing:** a rule fires only when its condition goes from false to true. The last state is stored in `last_condition_met`, so a price that stays above the threshold fires once, and the rule re-arms when it drops back below.
+2. **Cooldown:** `cooldown_seconds` (default 300, 10 s–24 h) is the minimum gap between two alerts from the same rule.
+3. `try_transition` runs `UPDATE AlertRules SET last_condition_met = $met, last_triggered_at = … WHERE id = $id AND last_condition_met IS DISTINCT FROM $met AND (NOT $met OR cooldown elapsed) RETURNING id`. Dispatch happens only if a row comes back. Because the check and the write are one statement, two subscriber instances can never both fire the same alert (the old check-then-act code could).
 
 ### Q6: Why use Crank-Nicolson instead of explicit or fully implicit finite difference schemes?
 **Answer:**
@@ -619,10 +647,10 @@ Splitting them ensures that a failure in external email dispatch or web scraping
 - **Crank-Nicolson** averages implicit and explicit schemes. It is unconditionally stable and achieves second-order accuracy in both space and time $O(dt^2, dS^2)$, allowing larger time steps while maintaining high precision.
 
 ### Q7: How did you solve the tridiagonal matrix in Crank-Nicolson efficiently?
-**Answer:** The discretized PDE yields a tridiagonal system $\mathbf{A} \mathbf{V}^j = \mathbf{B} \mathbf{V}^{j+1}$. Since Matrix $\mathbf{A}$ depends on static parameters ($\sigma, r, dt, dS$), we convert $\mathbf{A}$ into CSC sparse format and pre-factorize it using SciPy's SuperLU direct solver (`splu(A)`) **before** starting the backward time loop. During each time step, solving $\mathbf{A} \mathbf{V}^j = \text{rhs}$ requires only forward/backward substitution in $O(M)$ time instead of full matrix inversion $O(M^3)$.
+**Answer:** The discretized PDE yields a tridiagonal system $\mathbf{A} \mathbf{V}^j = \mathbf{B} \mathbf{V}^{j+1}$. Since Matrix $\mathbf{A}$ depends on static parameters ($\sigma, r, dt, dS$), we convert $\mathbf{A}$ into CSC sparse format and pre-factorize it using SciPy's SuperLU direct solver (`splu(A)`) **before** starting the backward time loop. During each time step, solving $\mathbf{A} \mathbf{V}^{new} = \text{rhs}$ requires only forward/backward substitution in $O(M)$. Calling `spsolve` every step was also $O(M)$ for a tridiagonal matrix, so the gain is a constant factor (it skips the repeated analysis and factorization): 23.3 ms → 5.8 ms at the default grid. For a chain, all contracts' matrices are stacked into one block-diagonal system and factorised once.
 
-### Q8: What is the CFL stability condition in your PDE solver?
-**Answer:** The Courant-Friedrichs-Lewy (CFL) condition determines maximum time step thresholds to prevent numerical oscillations in finite difference schemes. In our solver, we enforce $dt \le \frac{0.9}{\sigma^2 M^2} S_{max}^2$. If the configured time step exceeds this threshold, the solver automatically increases the number of time steps $N$, shrinking $dt$ to guarantee convergence.
+### Q8: Does your PDE solver need a CFL stability condition?
+**Answer:** No. The CFL condition limits the time step of **explicit** schemes. Crank-Nicolson is unconditionally stable for the Black-Scholes equation, so any dt is stable. Its weakness is different: the payoff's kink at the strike can make the solution oscillate for the first few steps when dS is small relative to dt. The solver handles that with Rannacher start-up: the first 2 steps are replaced by 4 fully implicit half-steps, which damp the kink, and Crank-Nicolson takes over after that.
 
 ### Q9: How do you calculate Options Greeks?
 **Answer:** Greeks are computed using analytical partial derivatives of the Black-Scholes-Merton continuous dividend formula:
@@ -648,13 +676,15 @@ Splitting them ensures that a failure in external email dispatch or web scraping
 ### Q13: What is Row Level Security (RLS) in PostgreSQL/Supabase?
 **Answer:** RLS allows database administrators to define security policies at the table level that restrict which rows a user can SELECT, INSERT, UPDATE, or DELETE based on their authenticated user ID (`auth.uid()`). In AlphaStreams, watchlists use the policy `USING (auth.uid() = user_id)`, ensuring users can only read and modify their own watchlists even if connected via public API keys.
 
-### Q14: Why run heavy computations in `asyncio.to_thread` instead of directly in an async function?
-**Answer:** Async functions in Python use cooperative multitasking on a single event loop thread. CPU-bound operations (like NumPy array manipulations or SciPy LU solves) do not yield control back to the event loop via `await`. Executing heavy math inside an async function blocks the entire thread, halting all incoming HTTP requests and WebSocket frames. `asyncio.to_thread()` offloads the computation to a separate OS thread pool, freeing the main event loop.
+### Q14: Why a process pool for pricing instead of `asyncio.to_thread`?
+**Answer:** Running CPU-bound math directly in an async function blocks the event loop, so it has to go somewhere else. Threads keep the loop free, but the solver's time-stepping loop is Python code and the GIL lets only one thread execute Python at a time; measured, threads gave 28 contracts/s against 66 sequential. A `ProcessPoolExecutor` gives each worker its own interpreter and GIL (about 560 contracts/s on 4 workers), and batching each worker's contracts into one block-diagonal solve took it to 1,291. `asyncio.to_thread` is still the right tool for **blocking I/O** with no async client, like SMTP and yfinance, which is where the code uses it.
 
 ### Q15: How does the WebSocket gateway handle client disconnections?
-**Answer:** FastAPI WebSocket connections are managed by a centralized `WebSocketManager`. When a client closes the socket or drops connection:
-1. The socket connection is removed from the active connection registry.
-2. If no active clients remain for a symbol, the manager unsubscribes from the corresponding Redis Pub/Sub channel to conserve network bandwidth and RAM.
+**Answer:** A `ConnectionManager` per API worker tracks each socket with its own bounded send queue and sender task:
+1. On disconnect, the socket and its queue are removed from the registry.
+2. A client whose queue fills (too slow) is closed with code 4002; one idle for 120 s with 4000.
+3. When no clients remain at all, the worker's Redis pattern subscription and background tasks stop.
+4. The browser reconnects with exponential backoff (1 s, 2 s, 4 s … capped at 30 s) on any close while a symbol is selected.
 
 ### Q16: How do you compute technical indicators like RSI and MACD?
 **Answer:** `technical_indicators_engine.py` processes raw close price series:
@@ -668,20 +698,25 @@ Splitting them ensures that a failure in external email dispatch or web scraping
 **Answer:** The frontend SPA contains a JavaScript implementation of Hastings' polynomial approximation for the Cumulative Normal Distribution ($N(x)$). When a user adjusts spot price or implied volatility sliders on the UI, the browser executes the Hastings algorithm in local JavaScript, rendering theoretical option prices instantly with 0ms server latency.
 
 ### Q18: How do you prevent deadlocks and lost messages in Redis Stream processing?
-**Answer:** Consumer groups use explicit message acknowledgment (`XACK`). If a worker crashes mid-processing, unacknowledged messages remain in the Pending Entries List (PEL). A background janitor task checks for pending messages exceeding 60 seconds of processing time and claims them (`XCLAIM`) for retry. If a message fails 3 times, it is moved to a Dead-Letter Queue stream (`stream:dlq:refresh_request`).
+**Answer:** Both subscribers run `run_durable_consumer` on a consumer group (`XREADGROUP`):
+1. A message is acknowledged (`XACK`) only after the handler succeeds.
+2. If the handler raises, the message is re-queued with a retry count; after its retries (2 for pricing, 5 for alerts) it moves to a dead-letter stream (`stream:dlq:options.raw_fetched`, `stream:dlq:options.priced`), which `scripts/read_dlq.py` can inspect.
+3. If a worker crashes mid-message, the entry stays in the Pending Entries List; every 30 s the consumer reclaims entries idle for over 60 s (`XAUTOCLAIM`).
+4. Because a message can be delivered twice, handlers are idempotent: re-pricing overwrites the same cache key, and the alert `UPDATE` cannot fire twice for one crossing.
+5. A new group starts at `$` so history isn't replayed, and every `XADD` is capped at about 10,000 entries.
 
 ### Q19: What is continuous dividend yield ($q$) in Black-Scholes?
 **Answer:** In stock index options (like NIFTY 50), underlying stocks pay dividends over time. Continuous dividend yield ($q$) reduces the growth rate of the spot price from $r$ to $(r - q)$, lowering call option prices and increasing put option prices:
 $$C = S_0 e^{-q T} N(d_1) - K e^{-r T} N(d_2)$$
 
 ### Q20: What is implied volatility (IV) and how is it used in your system?
-**Answer:** Implied Volatility is the market's forward-looking expectation of asset volatility derived from live option market prices. We extract IV directly from option chain feeds (or solve for it using Newton-Raphson inversion) and pass it into our BSM and PDE solvers to calculate fair model values and Greeks.
+**Answer:** Implied Volatility is the market's forward-looking expectation of asset volatility derived from live option market prices. We take IV from the option chain feed (normalised to a decimal: NSE reports 14.2, the solvers need 0.142) or solve for it with Newton-Raphson, falling back to Brent's method when Newton fails to converge (deep in- or out-of-the-money, where vega is tiny). Legs with no usable IV are left unpriced rather than given a made-up value. The IV then feeds both the BSM and PDE solvers.
 
 ### Q21: Why use Celery instead of standard background asyncio tasks for ingestion?
 **Answer:** Asyncio background tasks run within the FastAPI web process. If the web server restarts or crashes, active background tasks are killed. Celery uses external message queues (Redis) and standalone worker processes, providing distributed task scheduling, task retry mechanisms, and isolation from the web server process lifecycle.
 
 ### Q22: How do you secure REST endpoints and WebSockets in FastAPI?
-**Answer:** OAuth2 JWT tokens issued by Supabase Auth are validated via custom FastAPI dependency injection middleware (`get_current_user`). For WebSockets, the JWT access token is passed via query parameter (`/v1/ws/{symbol}?token=...`) and validated during the initial ASGI HTTP upgrade handshake before accepting the connection.
+**Answer:** The auth middleware verifies Supabase access tokens with PyJWT: ES256/RS256 against the project's JWKS (`PyJWKClient`), or HS256 with `SUPABASE_JWT_SECRET` for legacy projects, checking signature, expiry and audience `authenticated`. Alert endpoints require a valid token, and each rule is owned by the token's user (other users' rules return 404). WebSocket market data is public; to receive alerts, the client sends `{"action": "auth", "token": ...}` as a message after connecting, which keeps the token out of URLs and access logs, and alerts are forwarded only to sockets authenticated as the rule's owner. Internal endpoints use an API key compared with `hmac.compare_digest`, and fail closed in production if it isn't set.
 
 ### Q23: What is the computational complexity of your BSM vs PDE solver?
 **Answer:**
@@ -689,7 +724,7 @@ $$C = S_0 e^{-q T} N(d_1) - K e^{-r T} N(d_2)$$
 - **Crank-Nicolson PDE Solver:** $O(M \times N)$ time complexity for an $M \times N$ grid. With pre-factorized SuperLU sparse matrices, each time step requires $O(M)$ operations, yielding total execution time $O(M \cdot N)$.
 
 ### Q24: How do you containerize the application for local and cloud deployment?
-**Answer:** We build a multi-stage Docker image based on `python:3.11-slim`. A `supervisord` configuration manages process execution inside the container (FastAPI ASGI server, Celery ingestion worker, Options subscriber daemon, and Notification subscriber daemon). Environment variables control service endpoints (`REDIS_URL`, `DATABASE_URL`).
+**Answer:** A multi-stage Docker image on `python:3.11-slim-bookworm`. Locally, `supervisord` runs everything in one container (Redis, Postgres, uvicorn with 2 workers, Celery worker and beat, both subscribers), with application processes as the non-root `appuser` and only port 8000 published. In production, `docker-compose.prod.yml` runs each process as its own service plus a one-shot `migrate` service the API waits for. Migrations run on every start. Environment variables control service endpoints (`REDIS_URL`, `DATABASE_URL`).
 
 ### Q25: How do you prevent SQL injection and dynamic query vulnerability?
 **Answer:** All database operations utilize parameterized async SQL queries via `asyncpg` or SQLAlchemy ORM models. Inputs are validated and sanitized by Pydantic models before reaching repository layers.
@@ -698,10 +733,10 @@ $$C = S_0 e^{-q T} N(d_1) - K e^{-r T} N(d_2)$$
 **Answer:** The Shared Kernel (`shared/`) contains cross-cutting code used by all domain bounded contexts without creating circular dependencies. This includes Redis connection pool singletons, database pool helpers, global stream constants, symbol validation rules, custom exception classes, and structured logging configurations.
 
 ### Q27: How does webhook notification delivery guarantee security and resilience?
-**Answer:** The `WebhookNotificationChannelAdapter` constructs a SHA-256 HMAC signature using a shared secret header (`X-AlphaStreams-Signature`), allowing receiving webhooks to verify payload authenticity. Webhook dispatches are executed with configurable timeouts (5s) and automatic exponential backoff retries.
+**Answer:** Each rule gets its own random secret (`secrets.token_hex`), returned once when the rule is created. Every POST carries `X-AlphaStreams-Signature`, the hex HMAC-SHA256 of the raw body keyed with that secret, so the receiver can verify it. Delivery has a 5 s timeout, no redirects, and up to 3 attempts with exponential backoff. To prevent SSRF, URLs must be HTTPS and the host is resolved and rejected if it is a private, loopback or link-local address.
 
 ### Q28: How are historical OHLC candles stored and queried?
-**Answer:** The `domains/historical` context provides `TimescaleOhlcRepository` implementing `IOhlcRepositoryPort`. It persists 1m, 5m, and 1d candlestick aggregates into the `OhlcCandles` hypertable. Solvers query historical candles to calculate rolling ATR, Bollinger Bands, and moving averages.
+**Answer:** The `domains/historical` context provides `TimescaleOhlcRepository` implementing `IOhlcRepositoryPort` over the `OhlcCandles` hypertable. Be honest here: no live candle writer feeds it yet. Technicals use 3 months of daily history from yfinance, cached in Redis for an hour. Writing candles from the tick stream is a listed next step.
 
 ### Q29: What is the fail-fast policy in your market data architecture?
 **Answer:** If all external market adapters (Groww and NSE) fail and no cached data exists, the application immediately returns `HTTP 503 Service Unavailable`. We strictly reject generating synthetic mock prices because inaccurate option prices would generate false Greeks and dangerous trading signals.
@@ -731,7 +766,7 @@ To fully understand, articulate, and defend **AlphaStreams V2** in a technical i
 ### 2. Asynchronous Python & Concurrency Model
 - **ASGI vs. WSGI**: WSGI (Flask/Django) is synchronous (1 request per OS thread). ASGI (FastAPI/Starlette) uses asynchronous event loops to handle thousands of concurrent I/O connections on a single thread.
 - **Event Loop & Non-Blocking I/O**: An event loop continuously monitors network sockets. When waiting for database queries or API responses (`await`), the event loop yields control to serve other concurrent HTTP/WebSocket connections.
-- **Global Interpreter Lock (GIL) & Thread Offloading**: Python's GIL prevents multi-threaded parallel execution of CPython bytecode. CPU-bound math operations (NumPy/SciPy matrix algorithms) must be offloaded to OS worker threads via `asyncio.to_thread` or process pools to keep the ASGI event loop unblocked.
+- **Global Interpreter Lock (GIL) & Thread Offloading**: Python's GIL prevents multi-threaded parallel execution of CPython bytecode. CPU-bound Python code must run in a **process pool** to run in parallel; threads (`asyncio.to_thread`) only help for blocking I/O or for library calls that release the GIL.
 
 ### 3. Software Architecture & Domain-Driven Design (DDD)
 - **Modular Monolith**: Organizing a single deployable codebase into strictly separated domain packages (`domains/ingestion`, `domains/analytics`, `domains/notifications`, `domains/historical`) to maintain clean architectural boundaries without microservice networking complexity.
@@ -745,7 +780,7 @@ To fully understand, articulate, and defend **AlphaStreams V2** in a technical i
 
 ### 5. Time-Series Databases & Database Security
 - **TimescaleDB Hypertables**: A PostgreSQL extension that automatically partitions time-series tables into physical 1-day time chunks, enabling fast write throughput and accelerated time-range queries.
-- **Automated Multi-Tier Data Retention**: Purging expired historical data chunks via `drop_chunks()` directly at the file-system level across `TickData` (7 days), `NotificationLogs` (14 days), and `OhlcCandles` (90 days), bypassing slow SQL `DELETE` queries and WAL log bloat.
+- **Automated Multi-Tier Data Retention**: Purging expired historical data chunks via `drop_chunks()` directly at the file-system level across `TickData` (90 days), `NotificationLogs` (14 days), and `OhlcCandles` (90 days), bypassing slow SQL `DELETE` queries and WAL log bloat.
 - **Row Level Security (RLS)**: PostgreSQL policy rules enforced directly in the database engine (`auth.uid() = user_id`), restricting users from accessing or modifying other tenants' persistent watchlists and profile data.
 
 ### 6. Numerical Methods & Partial Differential Equations (PDEs)
