@@ -4,7 +4,8 @@ File Overview: Print the newest entries of a Redis Streams dead-letter queue.
 Usage:
     python scripts/read_dlq.py [STREAM] [--count N] [--redis-url URL]
 
-STREAM defaults to the refresh-request DLQ (Streams.REFRESH_REQUEST_DLQ).
+STREAM defaults to the pricing DLQ (Streams.OPTIONS_RAW_FETCHED_DLQ); the alert DLQ is
+Streams.OPTIONS_PRICED_DLQ.
 """
 import argparse
 import json
@@ -24,7 +25,7 @@ def _decode(value):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("stream", nargs="?", default=Streams.REFRESH_REQUEST_DLQ)
+    parser.add_argument("stream", nargs="?", default=Streams.OPTIONS_RAW_FETCHED_DLQ)
     parser.add_argument("--count", type=int, default=5)
     parser.add_argument("--redis-url", default=os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
     args = parser.parse_args()

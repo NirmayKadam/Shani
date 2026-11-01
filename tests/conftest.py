@@ -128,8 +128,18 @@ def clear_validator_cache():
 
 @pytest.fixture
 def test_client():
-    """Lazy TestClient fixture for FastAPI endpoint tests to prevent eager DB loading."""
+    """TestClient for FastAPI endpoint tests, with the app's startup network calls mocked.
+
+    The real lifespan pings Redis and warms an NSE session (tens of seconds offline); endpoint
+    tests patch the clients they need themselves.
+    """
     from fastapi.testclient import TestClient
     from app.main import app
-    with TestClient(app) as client:
-        yield client
+    with patch("shared.infrastructure.redis_client.get_redis_client", new=AsyncMock()), \
+         patch("shared.infrastructure.redis_client.close_redis_client", new=AsyncMock()), \
+         patch("shared.infrastructure.database.close_database_pool", new=AsyncMock()), \
+         patch("domains.ingestion.api.nse_options_router_api.startup_nse_client", new=AsyncMock()), \
+         patch("domains.ingestion.api.nse_options_router_api.shutdown_nse_client", new=AsyncMock()), \
+         patch("domains.analytics.api.pricer_router_api._historical_volatility_sync", return_value=12.5):
+        with TestClient(app) as client:
+            yield client

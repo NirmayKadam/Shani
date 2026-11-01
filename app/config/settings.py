@@ -43,6 +43,15 @@ class Settings(BaseSettings):
 
     # Webhooks: deliver only to public HTTPS endpoints unless explicitly allowed (local testing)
     WebhookAllowPrivate: bool = Field(False, validation_alias="WEBHOOK_ALLOW_PRIVATE")
+    WebhookMaxAttempts: int = Field(3, validation_alias="WEBHOOK_MAX_ATTEMPTS")
+
+    # Email alerts (the EMAIL channel is disabled while SMTP_HOST is empty)
+    SmtpHost: str = Field("", validation_alias="SMTP_HOST")
+    SmtpPort: int = Field(587, validation_alias="SMTP_PORT")
+    SmtpUser: str = Field("", validation_alias="SMTP_USER")
+    SmtpPassword: str = Field("", validation_alias="SMTP_PASSWORD")
+    SmtpFromEmail: str = Field("alerts@alphastreams.io", validation_alias="SMTP_FROM_EMAIL")
+    SmtpUseTls: bool = Field(True, validation_alias="SMTP_USE_TLS")
 
     # WebSocket abuse limits (per API process)
     WsMaxConnections: int = Field(1000, validation_alias="WS_MAX_CONNECTIONS")

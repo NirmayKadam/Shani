@@ -5,13 +5,16 @@ Endpoints/APIs:
 - GET /v1/export/research-eod: Download custom multi-day Excel workbook.
 """
 
-from datetime import datetime, date
-from typing import Optional
+import asyncio
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Response
 import logging
 
 from shared.utils.symbol_validator import SymbolValidator
-from domains.analytics.application.historical_research_exporter import generate_research_excel_workbook
+from domains.analytics.application.historical_research_exporter import (
+    MarketDataUnavailableError,
+    generate_research_excel_workbook,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +34,12 @@ async def export_research_eod(
     with exact screenshot styling.
     """
     symbol_upper = symbol.strip().upper()
-    is_valid = SymbolValidator.validate(symbol_upper)
+    # Validation and the export both call yfinance synchronously: run them off the event loop.
+    is_valid = await asyncio.to_thread(SymbolValidator.validate, symbol_upper)
     if not is_valid:
         raise HTTPException(status_code=400, detail=f"Symbol '{symbol_upper}' is invalid or not supported.")
 
-    symbol_clean = SymbolValidator.get_clean_symbol(symbol_upper)
+    symbol_clean = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol_upper)
 
     try:
         dt_start = datetime.strptime(start_date, "%Y-%m-%d").date()
@@ -53,23 +57,26 @@ async def export_research_eod(
         raise HTTPException(status_code=400, detail="Maximum export date range is 90 days per request.")
 
     try:
-        excel_bytes = generate_research_excel_workbook(
+        excel_bytes = await asyncio.to_thread(
+            generate_research_excel_workbook,
             symbol=symbol_clean,
             start_date=dt_start,
             end_date=dt_end,
-            layout_mode=layout_mode
+            layout_mode=layout_mode,
         )
-
-        filename = f"AlphaStreams_{symbol_clean}_{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}.xlsx"
-        
-        return Response(
-            content=excel_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "Access-Control-Expose-Headers": "Content-Disposition"
-            }
-        )
+    except MarketDataUnavailableError as exc:
+        # No real prices for the period: report it instead of exporting invented numbers
+        raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         logger.error("[%s] Error generating research Excel export: %s", symbol_clean, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate research Excel file: {str(exc)}")
+        raise HTTPException(status_code=500, detail="Failed to generate research Excel file.")
+
+    filename = f"AlphaStreams_{symbol_clean}_{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}.xlsx"
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )

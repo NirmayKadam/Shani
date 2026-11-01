@@ -1,4 +1,3 @@
-import json
 import asyncio
 import logging
 import os
@@ -11,8 +10,9 @@ from domains.notifications.infrastructure.channels.webhook_channel import Webhoo
 from domains.notifications.infrastructure.channels.email_channel import EmailNotificationChannelAdapter
 from domains.notifications.application.evaluate_alerts_service import EvaluateAlertsService
 from domains.notifications.domain.value_objects import DeliveryChannel
-from shared.constants import Streams
+from shared.constants import Streams, StreamGroups
 from shared.infrastructure.event_bus import EventBus
+from shared.infrastructure.event_bus.consumer import run_durable_consumer
 
 logger = logging.getLogger("notification_subscriber")
 
@@ -31,39 +31,25 @@ class NotificationStreamSubscriber:
         }
         self.evaluator = EvaluateAlertsService(repository=self.repo, channels=self.channels)
 
-    async def start_consuming(self):
-        last_id = "$"
+    async def start_consuming(self, stop_event: Optional[asyncio.Event] = None):
+        """At-least-once: priced chains published while this process is down are evaluated after
+        restart. Redelivery is safe because a rule fires only on a recorded state transition."""
         logger.info(f"Notification Stream Subscriber listening on stream '{self.consume_stream}'...")
+        try:
+            await run_durable_consumer(
+                self.redis,
+                stream=self.consume_stream,
+                group=StreamGroups.ALERT_EVALUATION,
+                dlq_stream=Streams.OPTIONS_PRICED_DLQ,
+                handler=self.process_event,
+                max_retries=5,
+                stop_event=stop_event,
+            )
+        except asyncio.CancelledError:
+            logger.info("Notification Stream Subscriber stopping...")
 
-        while True:
-            try:
-                events = await self.redis.xread({self.consume_stream: last_id}, count=5, block=5000)
-                if not events:
-                    continue
-
-                for stream, messages in events:
-                    for message_id, payload in messages:
-                        try:
-                            await self.process_event(payload)
-                        except Exception as exc:
-                            logger.error(f"Failed to process alert stream event {message_id}: {exc}", exc_info=True)
-                        last_id = message_id
-            except asyncio.CancelledError:
-                logger.info("Notification Stream Subscriber stopping...")
-                break
-            except Exception as ex:
-                logger.error(f"Error in Notification Stream Subscriber consume loop: {ex}")
-                await asyncio.sleep(2)
-
-    async def process_event(self, payload: dict):
-        raw_data = payload.get(b"data") or payload.get("data")
-        if not raw_data:
-            return
-
-        if isinstance(raw_data, bytes):
-            raw_data = raw_data.decode("utf-8")
-
-        parsed = json.loads(raw_data)
+    async def process_event(self, parsed: dict):
+        """Evaluate one priced-chain event (the dict published by the pricing subscriber)."""
         symbol = parsed.get("symbol")
         if not symbol:
             return

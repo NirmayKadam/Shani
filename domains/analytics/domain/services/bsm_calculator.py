@@ -1,14 +1,19 @@
 """
-File Overview: Pure domain service for Black-Scholes-Merton option pricing, Greeks sensitivities calculation, and Newton-Raphson implied volatility solving.
+File Overview: Pure domain service for Black-Scholes-Merton option pricing, Greeks sensitivities calculation, and implied volatility solving (Newton-Raphson with a Brent fallback).
 Pure domain code with zero external infrastructure dependencies.
 """
 import math
 from dataclasses import dataclass
 from typing import Dict, Optional
+from scipy.optimize import brentq
 from scipy.stats import norm
 import numpy as np
 
 from domains.analytics.domain.value_objects import GreekValueObject
+
+# Implied volatility search range (0.01% to 500%)
+_IV_MIN = 1e-4
+_IV_MAX = 5.0
 
 
 @dataclass(frozen=True)
@@ -118,25 +123,35 @@ class BsmCalculatorDomainService:
         max_iterations: int = 100,
         precision: float = 1e-5,
     ) -> float:
-        """Newton-Raphson solver to find Implied Volatility for a given market price."""
-        if market_price <= 0 or spot <= 0 or strike <= 0:
+        """Implied volatility for a market price: Newton-Raphson, then a bracketed Brent search.
+
+        Newton converges in a few steps near the money but stalls where vega is tiny (deep
+        in/out of the money, near expiry). Brent on [1e-4, 5.0] always converges when a solution
+        exists. Returns 0.0 when no volatility reproduces the price (e.g. below intrinsic value),
+        which callers treat as "IV unavailable"; it never returns an unconverged guess.
+        """
+        if market_price <= 0 or spot <= 0 or strike <= 0 or expiry_years <= 0:
             return 0.0
+
+        def price_error(vol: float) -> float:
+            return cls.calculate_price(spot, strike, expiry_years, rate, vol, option_type, dividend_yield) - market_price
 
         vol = initial_vol
         for _ in range(max_iterations):
-            price = cls.calculate_price(spot, strike, expiry_years, rate, vol, option_type, dividend_yield)
-            greeks = cls.calculate_greeks(spot, strike, expiry_years, rate, vol, option_type, dividend_yield)
-            diff = price - market_price
-            
+            diff = price_error(vol)
             if abs(diff) < precision:
                 return float(vol)
-            
-            vega = greeks.vega * 100.0  # Convert back to unscaled vega
+            vega = cls.calculate_greeks(spot, strike, expiry_years, rate, vol, option_type, dividend_yield).vega * 100.0
             if abs(vega) < 1e-8:
                 break
-                
             vol = vol - diff / vega
-            if vol <= 0:
-                vol = 1e-4
+            if vol <= 0 or vol > _IV_MAX:
+                break
 
-        return float(vol)
+        low, high = _IV_MIN, _IV_MAX
+        if price_error(low) * price_error(high) > 0:
+            return 0.0  # price outside what any volatility can produce
+        try:
+            return float(brentq(price_error, low, high, xtol=1e-8, maxiter=200))
+        except (ValueError, RuntimeError):
+            return 0.0

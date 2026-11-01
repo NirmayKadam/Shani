@@ -59,15 +59,14 @@ async def test_end_to_end_notification_pipeline():
         "chain": [],
     }
 
-    event_payload = {
-        b"data": json.dumps(tick_payload).encode("utf-8")
-    }
+    event_payload = tick_payload  # as decoded from the durable stream by run_durable_consumer
 
     mock_resp = AsyncMock()
     mock_resp.is_success = True
     mock_resp.status_code = 200
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_http_post:
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_http_post, \
+         patch("domains.notifications.infrastructure.channels.webhook_channel.assert_public_https_url"):
         mock_http_post.return_value = mock_resp
 
         # Execute consumer processing logic

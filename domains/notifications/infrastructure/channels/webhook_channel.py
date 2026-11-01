@@ -25,8 +25,9 @@ def sign_payload(secret: str, body: bytes) -> str:
 class WebhookNotificationChannelAdapter(INotificationChannelAdapterPort):
     """Outbound adapter delivering alert payloads via HTTP POST to user webhooks."""
 
-    def __init__(self, timeout_seconds: float = 5.0):
+    def __init__(self, timeout_seconds: float = 5.0, backoff_base_seconds: float = 1.0):
         self._timeout = timeout_seconds
+        self._backoff_base = backoff_base_seconds  # waits 1s, 2s, 4s ... between attempts
 
     async def dispatch(self, event: NotificationEvent, rule: AlertRule) -> bool:
         if not rule.webhook_url:
@@ -62,16 +63,21 @@ class WebhookNotificationChannelAdapter(INotificationChannelAdapterPort):
             # Rules created before per-rule secrets cannot be signed meaningfully.
             logger.warning("Rule %s has no webhook secret; delivering unsigned", rule.id)
 
-        try:
-            # Redirects are not followed: a redirect could point at an internal address.
-            async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=False) as client:
-                resp = await client.post(rule.webhook_url, content=body_bytes, headers=headers)
-                if resp.is_success:
-                    logger.info(f"Webhook notification delivered for event {event.id} to {rule.webhook_url}")
-                    return True
-                else:
-                    logger.error(f"Webhook POST failed status={resp.status_code} for {rule.webhook_url}")
-                    return False
-        except Exception as ex:
-            logger.error(f"Webhook HTTP error for {rule.webhook_url}: {ex}")
-            return False
+        attempts = max(1, get_settings().WebhookMaxAttempts)
+        # Redirects are not followed: a redirect could point at an internal address.
+        async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=False) as client:
+            for attempt in range(1, attempts + 1):
+                try:
+                    resp = await client.post(rule.webhook_url, content=body_bytes, headers=headers)
+                    if resp.is_success:
+                        logger.info(f"Webhook notification delivered for event {event.id} to {rule.webhook_url}")
+                        return True
+                    logger.error(f"Webhook POST failed status={resp.status_code} for {rule.webhook_url} (attempt {attempt})")
+                    # Other 4xx mean the receiver rejected the request: retrying won't help.
+                    if resp.status_code < 500 and resp.status_code != 429:
+                        return False
+                except httpx.HTTPError as ex:
+                    logger.error(f"Webhook HTTP error for {rule.webhook_url} (attempt {attempt}): {ex}")
+                if attempt < attempts:
+                    await asyncio.sleep(self._backoff_base * 2 ** (attempt - 1))
+        return False

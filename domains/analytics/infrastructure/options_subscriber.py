@@ -30,7 +30,9 @@ from datetime import datetime, timezone
 from redis.asyncio import Redis
 from domains.analytics.application.services.derivatives.pde_solver import CrankNicolsonPDE
 from domains.analytics.application.services.derivatives.black_scholes import BlackScholesMerton
-from shared.constants import RedisKeys, TTL, Streams, Channels
+from shared.constants import RedisKeys, TTL, Streams, StreamGroups, Channels
+from shared.infrastructure.event_bus.consumer import run_durable_consumer
+from shared.infrastructure.event_bus.streams import DurableEventStream
 
 logger = logging.getLogger("options_pricing_subscriber")
 
@@ -112,29 +114,26 @@ class OptionsPricingSubscriber:
             self._executor.shutdown(wait=True, cancel_futures=True)
             self._executor = None
 
-    async def start_consuming(self):
-        # WARNING: Using "$" means we only read NEW messages — any messages
-        # published while this subscriber was down are lost.  For durable
-        # processing, migrate to XREADGROUP with a consumer group (like
-        # DurableEventStream in shared/infrastructure/event_bus/streams.py).
-        last_id = "$"
+    async def start_consuming(self, stop_event: asyncio.Event | None = None):
+        """At-least-once consumption through a consumer group: a chain published while this
+        process is down is priced after restart, and a failing chain is retried twice, then
+        dead-lettered to Streams.OPTIONS_RAW_FETCHED_DLQ."""
         logger.info("PDE Solver Engine listening for raw options data...")
+        await run_durable_consumer(
+            self.redis,
+            stream=self.consume_stream,
+            group=StreamGroups.OPTIONS_PRICING,
+            dlq_stream=Streams.OPTIONS_RAW_FETCHED_DLQ,
+            handler=self.process_event,
+            max_retries=2,
+            batch_size=1,
+            stop_event=stop_event,
+        )
 
-        while True:
-            # Block and wait for new raw options data
-            events = await self.redis.xread({self.consume_stream: last_id}, count=1, block=5000)
-
-            for stream, messages in events:
-                for message_id, payload in messages:
-                    try:
-                        await self.process_event(payload)
-                    except Exception as exc:
-                        logger.error("Failed to process options event %s: %s", message_id, exc, exc_info=True)
-                    last_id = message_id
-
-    async def process_event(self, payload: dict):
-        symbol = payload[b"symbol"].decode("utf-8").upper()
-        data = json.loads(payload[b"data"].decode("utf-8"))
+    async def process_event(self, message: dict):
+        """Price one raw chain. message = {"symbol": str, "data": {spot_price, ..., strikes_data}}."""
+        symbol = str(message["symbol"]).upper()
+        data = message["data"]
 
         S0 = data["spot_price"]
         r = data["risk_free_rate"]
@@ -182,18 +181,18 @@ class OptionsPricingSubscriber:
         await self.redis.set(cache_key, json.dumps(cache_payload), ex=TTL.MARKET_OPTIONS_PRICED)
 
         # Publish Durable Event: the priced chain plus the symbol-level snapshot alerts evaluate
-        event_data = json.dumps({
+        event = {
             "symbol": symbol,
             "spot_price": S0,
             "atm_iv_pct": _atm_iv_pct(S0, priced_chain),
             "expiry": data.get("expiry"),
             "last_updated": last_updated,
             "chain": priced_chain,
-        })
-        await self.redis.xadd(self.publish_stream, {"data": event_data})
+        }
+        await DurableEventStream(self.redis).publish(self.publish_stream, event)
 
         # Publish Ephemeral Event (Live UX update)
-        await self.redis.publish(self.pubsub_channel.format(symbol=symbol), event_data)
+        await self.redis.publish(self.pubsub_channel.format(symbol=symbol), json.dumps(event))
         logger.debug("Priced %d strikes for %s. Surface published.", len(priced_chain), symbol)
 
 

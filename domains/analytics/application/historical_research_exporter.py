@@ -62,11 +62,15 @@ else:
     FONT_BOLD = FONT_BULLISH = FONT_BEARISH = THIN_BORDER = None
 
 
+class MarketDataUnavailableError(Exception):
+    """No real market data exists for the requested symbol and period."""
+
+
 def fetch_historical_daily_prices(symbol_clean: str, start_date: date, end_date: date) -> Dict[date, Dict[str, Any]]:
     """
     Fetch daily OHLC price history for symbol over the target date range using yfinance.
     Returns mapping from date -> {open, high, low, close, volume, history}.
-    Includes robust fallback generation if yfinance returns empty data.
+    Raises MarketDataUnavailableError when yfinance returns no trading days.
     """
     today = date.today()
     # Clamp future end_date to today
@@ -119,24 +123,12 @@ def fetch_historical_daily_prices(symbol_clean: str, start_date: date, end_date:
     except Exception as exc:
         logger.error("Failed fetching daily historical prices for %s: %s", symbol_clean, exc)
 
-    # --- Robust Fallback Mechanism ---
-    # If no trading days were found (e.g. API network error or unsupported symbol),
-    # generate fallback business days so the user ALWAYS gets a valid Excel file.
+    # No real prices means no export: invented prices (the old fallback used fixed spots such as
+    # 24500 for NIFTY) would produce a convincing but meaningless workbook.
     if not daily_data:
-        logger.warning("No yfinance history retrieved for %s. Generating fallback daily snapshots.", symbol_clean)
-        fallback_spot = 24500.0 if "NIFTY" in symbol_clean else (52000.0 if "BANK" in symbol_clean else 150.0)
-        curr = start_date
-        while curr <= end_date:
-            if curr.weekday() < 5:  # Monday - Friday
-                daily_data[curr] = {
-                    "open": fallback_spot,
-                    "high": round(fallback_spot * 1.008, 2),
-                    "low": round(fallback_spot * 0.992, 2),
-                    "close": fallback_spot,
-                    "volume": 1250000,
-                    "history": [fallback_spot] * 30
-                }
-            curr += timedelta(days=1)
+        raise MarketDataUnavailableError(
+            f"No historical prices are available for {symbol_clean} between {start_date} and {end_date}."
+        )
 
     return daily_data
 

@@ -49,6 +49,25 @@ def test_bsm_calculator_implied_volatility_solver():
     assert abs(iv - 0.20) < 0.05
 
 
+@pytest.mark.parametrize("vol,strike,days", [
+    (0.80, 100.0, 365),   # very high vol: Newton overshoots from 25%
+    (0.15, 60.0, 30),     # deep in the money: tiny vega
+    (0.15, 140.0, 30),    # deep out of the money: tiny vega
+    (0.30, 100.0, 1),     # one day to expiry
+])
+def test_implied_volatility_round_trips_where_newton_struggles(vol, strike, days):
+    T = days / 365.0
+    price = BsmCalculatorDomainService.calculate_price(100.0, strike, T, 0.065, vol, "call", 0.0)
+    iv = BsmCalculatorDomainService.solve_implied_volatility(price, 100.0, strike, T, 0.065, "call")
+    repriced = BsmCalculatorDomainService.calculate_price(100.0, strike, T, 0.065, iv, "call", 0.0)
+    assert repriced == pytest.approx(price, abs=1e-4)
+
+
+def test_implied_volatility_reports_impossible_prices_as_zero():
+    # A call priced below its intrinsic value (S - K e^{-rT}) has no implied volatility
+    assert BsmCalculatorDomainService.solve_implied_volatility(5.0, 100.0, 80.0, 0.25, 0.065, "call") == 0.0
+
+
 def test_pcr_value_object():
     pcr_bullish = PCRValueObject(value=1.5)
     assert pcr_bullish.interpretation() == "BULLISH"

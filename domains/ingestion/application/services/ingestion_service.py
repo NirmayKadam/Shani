@@ -19,7 +19,6 @@ from shared.constants import RedisKeys, TTL, Channels
 from domains.ingestion.ports.interface.outbound.i_option_chain_source_port import IOptionChainSourcePort
 from domains.ingestion.ports.interface.outbound.i_market_price_source_port import IMarketPriceSourcePort
 from domains.ingestion.ports.interface.outbound.i_event_publisher_port import IEventPublisherPort
-from domains.ingestion.ports.interface.outbound.i_dedup_store_port import IDedupStorePort
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +64,11 @@ class IngestionService:
         self,
         price_fetcher: IMarketPriceSourcePort,
         option_fetcher: IOptionChainSourcePort,
-        dedup_store: IDedupStorePort,
         event_bus: IEventPublisherPort,
         redis_client=None, # For caching until we have ICachePort
     ):
         self._price = price_fetcher
         self._option = option_fetcher
-        self._dedup = dedup_store
         self._bus = event_bus
         self._redis = redis_client
 

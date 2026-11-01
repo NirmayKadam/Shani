@@ -54,6 +54,14 @@ async def lifespan(application: FastAPI):
     except Exception as exc:
         logger.warning("Redis warmup failed (will retry on first use): %s", exc)
 
+    # Startup: load the instrument catalog in the background. Searches before it finishes wait on
+    # its lock in a worker thread (see symbols_router_api), never on the event loop.
+    try:
+        from domains.analytics.api.instruments_loader import instruments_catalog
+        instruments_catalog.load_in_background()
+    except Exception as exc:
+        logger.warning("Instrument catalog background load failed to start: %s", exc)
+
     # Startup: initialize NSE httpx client for option chain fetching
     try:
         from domains.ingestion.api.nse_options_router_api import startup_nse_client
@@ -120,45 +128,29 @@ async def health(response: Response):
     from shared.infrastructure.database import get_database_pool
 
     current_settings = get_settings()
-    redis_status = "disabled"
-    db_status = "disabled"
-    healthy = True
+    # Degraded (HTTP 503) whenever a dependency is down, in every environment, so the Docker
+    # HEALTHCHECK and orchestrators see the real state.
+    redis_status = "disconnected"
+    db_status = "disconnected"
 
     try:
         r = await get_redis_client()
         if r and await r.ping():
             redis_status = "connected"
-        else:
-            redis_status = "disconnected"
-            if current_settings.AppEnv == "production":
-                healthy = False
     except Exception as exc:
         redis_status = "error"
         logger.debug("Health check Redis ping failed: %s", exc)
-        if current_settings.AppEnv == "production":
-            healthy = False
 
     try:
         pool = await get_database_pool()
-        if pool:
-            async with pool.acquire() as conn:
-                val = await conn.fetchval("SELECT 1")
-                if val == 1:
-                    db_status = "connected"
-                else:
-                    db_status = "disconnected"
-                    if current_settings.AppEnv == "production":
-                        healthy = False
-        else:
-            db_status = "disconnected"
-            if current_settings.AppEnv == "production":
-                healthy = False
+        async with pool.acquire() as conn:
+            if await conn.fetchval("SELECT 1") == 1:
+                db_status = "connected"
     except Exception as exc:
         db_status = "error"
         logger.debug("Health check DB query failed: %s", exc)
-        if current_settings.AppEnv == "production":
-            healthy = False
 
+    healthy = redis_status == "connected" and db_status == "connected"
     if not healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 

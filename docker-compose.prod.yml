@@ -100,7 +100,7 @@ services:
       dockerfile: Dockerfile
     user: appuser
     restart: unless-stopped
-    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "worker", "-Q", "celery,ingestion,analytics", "-l", "info", "-c", "4"]
+    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "worker", "-Q", "celery,ingestion", "-l", "info", "-c", "4"]
     env_file: .env
     environment: *app-env
     depends_on: *after-migrations

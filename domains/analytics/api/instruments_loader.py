@@ -193,6 +193,12 @@ class InstrumentsCatalog:
             # Build O(1) lookup set from loaded instruments
             self._symbol_set = {inst["symbol"] for inst in self._instruments}
 
+    def load_in_background(self) -> threading.Thread:
+        """Start load() on a daemon thread so app startup and the event loop never wait on NSE."""
+        thread = threading.Thread(target=self.load, name="instruments-catalog-load", daemon=True)
+        thread.start()
+        return thread
+
     def search(self, query: str, limit: int = 15) -> List[Dict[str, str]]:
         """
         Search through instruments in memory.

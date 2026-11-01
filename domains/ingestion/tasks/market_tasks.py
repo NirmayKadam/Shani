@@ -18,6 +18,7 @@ import logging
 import asyncio
 from celery import shared_task
 from shared.infrastructure.redis_client import get_redis_client
+from shared.infrastructure.event_bus.streams import DurableEventStream
 from shared.constants import Streams
 
 # Reuse persistent loop from ingestion_tasks
@@ -110,10 +111,8 @@ async def _fetch_and_publish_options_async(symbol: str):
             "strikes_data": strikes_payload
         }
 
-        await redis.xadd(Streams.OPTIONS_RAW_FETCHED, {
-            "symbol": symbol,
-            "data": json.dumps(payload)
-        })
+        # Durable, length-bounded publish; read by the pricing consumer group
+        await DurableEventStream(redis).publish(Streams.OPTIONS_RAW_FETCHED, {"symbol": symbol, "data": payload})
         logger.debug("Published raw options for %s: %d ticks saved to DB, %d strikes to stream.",
                      symbol, len(db_records), len(strikes_payload))
 

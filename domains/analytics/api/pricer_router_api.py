@@ -42,6 +42,8 @@ _SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.\-^&]+$")
 # A chain snapshot older than this is reported as stale
 _STALE_AFTER_SECONDS = 120
 _HV_TTL_SECONDS = 3600
+# Upper bound on a cache-miss live fetch before the endpoint answers 503
+_LIVE_FETCH_DEADLINE_SECONDS = 25
 _HV_CACHE: dict[str, tuple[float, float]] = {}
 
 
@@ -71,7 +73,10 @@ async def _get_historical_volatility(symbol_clean: str) -> float:
     cached = _HV_CACHE.get(symbol_clean)
     if cached and time.monotonic() - cached[1] < _HV_TTL_SECONDS:
         return cached[0]
-    hv = await asyncio.to_thread(_historical_volatility_sync, symbol_clean)
+    try:
+        hv = await asyncio.wait_for(asyncio.to_thread(_historical_volatility_sync, symbol_clean), timeout=10)
+    except asyncio.TimeoutError:
+        hv = None  # yfinance unreachable: report 0 rather than hold the response
     if hv is None:
         return 0.0
     _HV_CACHE[symbol_clean] = (hv, time.monotonic())
@@ -85,9 +90,16 @@ async def _live_fetch(symbol_clean: str, redis) -> Optional[tuple[dict, Optional
 
     adapter = get_market_data_adapter()
     dtos, price_data = [], None
+
+    async def fetch_both():
+        return await adapter.fetch_option_chain(symbol_clean), await adapter.fetch_price(symbol_clean)
+
     try:
-        dtos = await adapter.fetch_option_chain(symbol_clean)
-        price_data = await adapter.fetch_price(symbol_clean)
+        # Each source has its own retries and connect timeouts (~20 s each); without an overall
+        # deadline a full outage made this request take minutes before answering 503.
+        dtos, price_data = await asyncio.wait_for(fetch_both(), timeout=_LIVE_FETCH_DEADLINE_SECONDS)
+    except asyncio.TimeoutError:
+        logger.error("[%s] Live fetch exceeded %ss deadline", symbol_clean, _LIVE_FETCH_DEADLINE_SECONDS)
     except Exception as fetch_exc:
         logger.error("[%s] Dynamic live fetch failed: %s", symbol_clean, fetch_exc)
     finally:
