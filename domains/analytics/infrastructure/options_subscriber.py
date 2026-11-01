@@ -53,7 +53,7 @@ def _price_leg(S0: float, strike: float, T: float, r: float, iv, dividend_yield:
     """(PDE price, BSM price) for one leg, or (None, None) when the feed has no usable IV."""
     if not _valid_iv(iv):
         return None, None
-    pde_price = CrankNicolsonPDE(S0, strike, T, r, iv, option_type).solve()
+    pde_price = CrankNicolsonPDE(S0, strike, T, r, iv, option_type, q=dividend_yield).solve()
     bsm_price = BlackScholesMerton(S0, strike, T, r, iv, option_type, q=dividend_yield).solve()
     return round(pde_price, 2), round(bsm_price, 2)
 
