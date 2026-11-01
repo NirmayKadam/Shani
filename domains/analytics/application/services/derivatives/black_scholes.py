@@ -44,3 +44,20 @@ class BlackScholesMerton:
             return float(max(price, 0.0))
         else:
             raise ValueError(f"Invalid option type: {self.option_type}. Must be 'call' or 'put'.")
+
+
+def bsm_prices(S0: float, strikes, T: float, r: float, sigmas, is_call, q: float = 0.0) -> np.ndarray:
+    """Vectorised closed-form prices for a whole chain (same formula and guards as BlackScholesMerton)."""
+    K = np.asarray(strikes, dtype=float)
+    sigma = np.maximum(np.asarray(sigmas, dtype=float), 1e-6)
+    calls = np.asarray(is_call, dtype=bool)
+    T = max(float(T), 1e-6)
+    if S0 <= 0:
+        return np.zeros_like(K)
+
+    sqrt_t = np.sqrt(T)
+    d1 = (np.log(S0 / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * sqrt_t)
+    d2 = d1 - sigma * sqrt_t
+    call = S0 * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    put = K * np.exp(-r * T) * norm.cdf(-d2) - S0 * np.exp(-q * T) * norm.cdf(-d1)
+    return np.maximum(np.where(calls, call, put), 0.0)

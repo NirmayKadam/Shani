@@ -14,10 +14,12 @@ Endpoints/APIs: GET /v1/ingestion/options/{symbol} (Internal proxy, consumed by 
 Database Tables: TimescaleDB (tickdata), Redis (Streams: stream:options.raw_fetched)
 """
 import json
+import hashlib
 import logging
 import asyncio
 from celery import shared_task
 from shared.infrastructure.redis_client import get_redis_client
+from shared.infrastructure.event_bus.streams import DurableEventStream
 from shared.constants import Streams
 
 # Reuse persistent loop from ingestion_tasks
@@ -26,14 +28,26 @@ from domains.ingestion.tasks.ingestion_tasks import _get_or_create_loop
 logger = logging.getLogger(__name__)
 
 
+def _chain_digest(dtos) -> str:
+    """Stable hash of the market fields of a chain (order-independent)."""
+    rows = sorted(
+        (str(d.expiry), float(d.strike or 0), d.option_type, d.ltp, d.iv, d.oi, d.volume, d.underlying_price)
+        for d in dtos
+    )
+    return hashlib.blake2b(json.dumps(rows, default=str).encode(), digest_size=16).hexdigest()
+
+
 async def _fetch_and_publish_options_async(symbol: str):
     from shared.infrastructure.database import get_database_pool
-    from datetime import datetime
+    from datetime import datetime, timezone
     from domains.ingestion.infrastructure.outbound.adapter_factory import get_market_data_adapter
+    from domains.ingestion.application.services.ingestion_service import build_option_chain_snapshot
+    from shared.constants import RedisKeys, TTL
+    from shared.utils.market_time import nearest_expiry, parse_expiry, years_to_expiry, risk_free_rate_for
 
     redis = await get_redis_client()
     db_pool = await get_database_pool()
-    adapter = get_market_data_adapter(redis_client=redis)
+    adapter = get_market_data_adapter(redis_client=redis)  # shared per event loop; not closed here
 
     try:
         dtos = await adapter.fetch_option_chain(symbol)
@@ -42,41 +56,52 @@ async def _fetch_and_publish_options_async(symbol: str):
             logger.warning("[%s] No option chain data", symbol)
             return
 
+        # Single writer for the raw chain read model (PCR, expiries, /pricer cache)
+        snapshot = build_option_chain_snapshot(symbol, dtos)
+        await redis.set(
+            RedisKeys.MARKET_OPTIONS.format(symbol=symbol.upper()),
+            json.dumps(snapshot, default=str),
+            ex=TTL.MARKET_OPTIONS,
+        )
+
+        # Outside market hours (and between exchange updates) the chain is identical poll after
+        # poll. Skip the TickData COPY and re-pricing then. The hash key expires at half the
+        # priced-chain TTL, so an unchanged chain is still re-priced before its read model goes stale.
+        digest = _chain_digest(dtos)
+        hash_key = RedisKeys.MARKET_OPTIONS_HASH.format(symbol=symbol.upper())
+        previous = await redis.get(hash_key)
+        if isinstance(previous, bytes):
+            previous = previous.decode()
+        if previous == digest:
+            logger.debug("[%s] Option chain unchanged; skipping persist and pricing", symbol)
+            return
+        await redis.set(hash_key, digest, ex=TTL.MARKET_OPTIONS_PRICED // 2)
+
         # Fetch dividend yield dynamically from the yfinance adapter
         price_info = await adapter.fetch_price(symbol)
         dividend_yield = price_info.get("dividend_yield", 0.0) if price_info else 0.0
 
         S0 = dtos[0].underlying_price
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
-        # Prepare DB and PDE payloads
+        # Price only the nearest live expiry: strikes from different expiries need different T
+        # and would otherwise collide in the strike-keyed pricing map.
+        pricing_expiry = nearest_expiry(d.expiry for d in dtos)
+        T = years_to_expiry(pricing_expiry) if pricing_expiry else None
+        if T is None:
+            logger.warning("[%s] No parseable live expiry in chain; skipping pricing", symbol)
+
         strikes_payload = []
         db_records = []
-
-        # Calculate T using nearest expiry (simplistic approximation)
-        T = 30 / 365.0
-        nearest_expiry_str = dtos[0].expiry
-        try:
-            expiry_dt = datetime.strptime(nearest_expiry_str, "%Y-%m-%d")
-            days_to_expiry = (expiry_dt - timestamp).days
-            T = max(days_to_expiry, 1) / 365.0
-        except Exception:
-            logger.warning("Failed to parse expiry date: %s", nearest_expiry_str)
-
         for dto in dtos:
-            expiry_date = None
-            try:
-                expiry_date = datetime.strptime(dto.expiry, "%Y-%m-%d").date()
-            except Exception:
-                pass
-
-            # Prepare for TimescaleDB
+            # Every expiry is persisted to TimescaleDB
             db_records.append((
-                timestamp, symbol, "NSE", dto.option_type, dto.ltp, dto.oi, dto.volume, expiry_date, dto.strike, dto.iv, S0
+                timestamp, symbol, "NSE", dto.option_type, dto.ltp, dto.oi, dto.volume,
+                parse_expiry(dto.expiry), dto.strike, dto.iv, S0
             ))
 
-            # If strike is near the money (+/- 10%), include in PDE solver payload
-            if dto.strike and S0 * 0.9 <= dto.strike <= S0 * 1.1:
+            # Near-the-money (+/- 10%) strikes of the pricing expiry go to the PDE solver
+            if T is not None and dto.expiry == pricing_expiry and dto.strike and S0 * 0.9 <= dto.strike <= S0 * 1.1:
                 strikes_payload.append({
                     "strike": dto.strike,
                     "type": dto.option_type,
@@ -96,26 +121,26 @@ async def _fetch_and_publish_options_async(symbol: str):
                     ]
                 )
 
+        if not strikes_payload:
+            return
+
         # 2. Publish to Redis Stream for PDE Solver
         payload = {
             "spot_price": S0,
-            "risk_free_rate": 0.065,
+            "risk_free_rate": risk_free_rate_for(symbol),
             "dividend_yield": dividend_yield,
             "time_to_maturity": T,
+            "expiry": pricing_expiry,
             "strikes_data": strikes_payload
         }
 
-        await redis.xadd(Streams.OPTIONS_RAW_FETCHED, {
-            "symbol": symbol,
-            "data": json.dumps(payload)
-        })
+        # Durable, length-bounded publish; read by the pricing consumer group
+        await DurableEventStream(redis).publish(Streams.OPTIONS_RAW_FETCHED, {"symbol": symbol, "data": payload})
         logger.debug("Published raw options for %s: %d ticks saved to DB, %d strikes to stream.",
                      symbol, len(db_records), len(strikes_payload))
 
     except Exception as e:
         logger.error("Error fetching/publishing options for %s: %s", symbol, e, exc_info=True)
-    finally:
-        await adapter.close()
 
 
 @shared_task(queue='ingestion', name='ingestion.fetch_and_publish_options')

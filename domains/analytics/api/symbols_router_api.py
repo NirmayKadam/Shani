@@ -13,6 +13,8 @@ Database Tables:
 # app/domain/api/routers/symbols.py — GET /v1/symbols endpoint
 
 
+import asyncio
+
 from fastapi import APIRouter, Query
 
 from app.config import get_settings
@@ -46,7 +48,8 @@ async def GetSymbolsSearch(q: str = Query("", description="Query prefix or subst
     Case-insensitive search over all Indian stock market instruments.
     Returns matching stock tickers and indices with names and asset type.
     """
-    results = instruments_catalog.search(q, limit=15)
+    # A search during startup may wait for the catalog's lock/download: keep it off the event loop.
+    results = await asyncio.to_thread(instruments_catalog.search, q, 15)
     items = [
         SymbolSearchItem(
             symbol=item["symbol"],

@@ -12,6 +12,8 @@ Database Tables: None
 """
 
 import os
+import math
+import time
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -32,6 +34,10 @@ from shared.constants import MarketStatus, INDEX_SYMBOLS
 from shared.utils.symbol_validator import SymbolValidator
 
 logger = logging.getLogger(__name__)
+
+# yfinance ticker.info (dividend yield, currency) per process: {yf_symbol: (monotonic_ts, q, currency)}
+_INFO_CACHE: dict[str, tuple[float, float, str]] = {}
+_INFO_CACHE_TTL_SECONDS = 24 * 3600
 
 # ── NSE India API Configuration ────────────────────────────────
 
@@ -185,8 +191,16 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             prev_close = float(prev["close"])
             change_pct = round(((last_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
 
-            # Extract dividend yield (usually as float ratio e.g. 0.015 for 1.5%)
-            div_yield = ticker.info.get("dividendYield") or ticker.info.get("trailingAnnualDividendYield") or 0.0
+            # ticker.info is a heavy quote-summary request; dividend yield and currency change
+            # rarely, so cache them for a day instead of fetching them on every 5 s price poll.
+            cached = _INFO_CACHE.get(yf_symbol)
+            if cached and time.monotonic() - cached[0] < _INFO_CACHE_TTL_SECONDS:
+                div_yield, currency = cached[1], cached[2]
+            else:
+                info = ticker.info or {}
+                div_yield = NseApiAdapter._dividend_yield_decimal(info, last_price)
+                currency = info.get("currency", "INR")
+                _INFO_CACHE[yf_symbol] = (time.monotonic(), div_yield, currency)
 
             return {
                 "last_price": round(last_price, 2),
@@ -196,13 +210,38 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 "volume": int(latest.get("volume", 0)),
                 "previous_close": round(prev_close, 2),
                 "change_percent": change_pct,
-                "currency": ticker.info.get("currency", "INR"),
-                "dividend_yield": float(div_yield),
+                "currency": currency,
+                "dividend_yield": div_yield,
                 "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as exc:
             logger.error("[%s] _fetch_price_sync error: %s", yf_symbol, exc)
             return None
+
+    @staticmethod
+    def _dividend_yield_decimal(info: dict, price: float) -> float:
+        """Continuous dividend yield as a decimal (0.0602 for 6.02%).
+
+        yfinance >= 0.2.5x reports `dividendYield` in percent (ITC: 6.02), while
+        `trailingAnnualDividendYield` is a ratio but often 0. Prefer the annual dividend
+        amount over price, then the percent field, then the trailing ratio.
+        """
+        def positive(key):
+            try:
+                value = float(info.get(key) or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+            return value if value > 0 and not math.isnan(value) else 0.0
+
+        rate = positive("dividendRate")
+        if rate and price > 0:
+            q = rate / price
+        elif positive("dividendYield"):
+            q = positive("dividendYield") / 100.0
+        else:
+            q = positive("trailingAnnualDividendYield")
+        # No liquid index or stock pays more than 25% a year; anything above is a units error.
+        return round(min(q, 0.25), 6)
 
     # ── Option Chain (NSE V3 API) ───────────────────────────────
 
@@ -262,7 +301,7 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         session = await self._ensure_session()
         await self._soft_initialise(symbol)
 
-        clean_sym = SymbolValidator.get_clean_symbol(symbol.upper())
+        clean_sym = await asyncio.to_thread(SymbolValidator.get_clean_symbol, symbol.upper())
         is_nse = clean_sym in INDEX_SYMBOLS or clean_sym.endswith(".NS") or clean_sym.endswith(".BO")
 
         if not is_nse:
@@ -327,36 +366,43 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             logger.error("[%s] Session init failed: %s", clean_name, exc)
 
     async def _fetch_yfinance_options_fallback(self, symbol: str) -> Optional[dict]:
-        try:
-            yf_symbol = _to_yfinance_symbol(symbol)
-            ticker = yf.Ticker(yf_symbol)
-            expiries = ticker.options
-            if not expiries: return None
+        # yfinance is synchronous network I/O; keep it off the event loop.
+        return await asyncio.to_thread(self._fetch_yfinance_options_sync, symbol)
 
-            chains = {}
+    @staticmethod
+    def _fetch_yfinance_options_sync(symbol: str) -> Optional[dict]:
+        def num(value, cast=float):
+            # yfinance returns NaN for missing volume/OI on illiquid strikes.
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                return cast(0)
+            return cast(0) if math.isnan(value) else cast(value)
+
+        def rows_to_ticks(frame, option_type: str, expiry: str) -> list[dict]:
+            return [{
+                "strike": num(r.get("strike")), "type": option_type, "last_price": num(r.get("lastPrice")),
+                "oi": num(r.get("openInterest"), int), "volume": num(r.get("volume"), int),
+                "iv": num(r.get("impliedVolatility")),
+                "bid": num(r.get("bid")), "ask": num(r.get("ask")),
+                "expiry": expiry,
+            } for _, r in frame.iterrows()]
+
+        try:
+            ticker = yf.Ticker(_to_yfinance_symbol(symbol))
+            expiries = ticker.options
+            if not expiries:
+                return None
+
             spot = ticker.fast_info.get("last_price", 0) if ticker.fast_info else 0
-            
+            chains = {}
             for exp in expiries[:2]:
                 opt = ticker.option_chain(exp)
-                ticks = []
-                for _, r in opt.calls.iterrows():
-                    ticks.append({
-                        "strike": float(r["strike"]), "type": "CE", "last_price": float(r["lastPrice"]),
-                        "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)),
-                        "bid": float(r.get("bid", 0.0) or 0.0), "ask": float(r.get("ask", 0.0) or 0.0),
-                        "expiry": exp
-                    })
-                for _, r in opt.puts.iterrows():
-                    ticks.append({
-                        "strike": float(r["strike"]), "type": "PE", "last_price": float(r["lastPrice"]),
-                        "oi": int(r.get("openInterest", 0)), "volume": int(r.get("volume", 0)),
-                        "bid": float(r.get("bid", 0.0) or 0.0), "ask": float(r.get("ask", 0.0) or 0.0),
-                        "expiry": exp
-                    })
-                chains[exp] = ticks
-            
-            return {"symbol": symbol.upper(), "spot_price": float(spot), "expiry_dates": list(expiries), "chains": chains}
-        except Exception:
+                chains[exp] = rows_to_ticks(opt.calls, "CE", exp) + rows_to_ticks(opt.puts, "PE", exp)
+
+            return {"symbol": symbol.upper(), "spot_price": num(spot), "expiry_dates": list(expiries), "chains": chains}
+        except Exception as exc:
+            logger.warning("[%s] yfinance option chain fallback failed: %s", symbol, exc)
             return None
 
     @staticmethod
@@ -376,20 +422,24 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             for opt_key in ["CE", "PE"]:
                 opt = row.get(opt_key)
                 if opt:
-                    lp = opt.get("lastPrice", 0)
-                    if lp > 0:
+                    lp = float(opt.get("lastPrice", 0) or 0)
+                    oi = int(opt.get("openInterest", 0) or 0)
+                    # Keep untraded strikes that still carry open interest (needed for OI-based PCR).
+                    if lp > 0 or oi > 0:
                         bid_p = float(opt.get("buyPrice1", 0.0) or opt.get("bid", 0.0) or 0.0)
                         bid_q = int(opt.get("buyQuantity1", 0) or opt.get("bid_qty", 0) or 0)
                         ask_p = float(opt.get("sellPrice1", 0.0) or opt.get("ask", 0.0) or 0.0)
                         ask_q = int(opt.get("sellQuantity1", 0) or opt.get("ask_qty", 0) or 0)
                         chains[expiry].append({
-                            "strike": float(strike), "type": opt_key, "last_price": float(lp),
-                            "oi": int(opt.get("openInterest", 0)), "volume": int(opt.get("totalTradedVolume", 0)),
-                            "iv": float(opt.get("impliedVolatility", 0.0)),
+                            "strike": float(strike), "type": opt_key, "last_price": lp,
+                            "oi": oi, "volume": int(opt.get("totalTradedVolume", 0) or 0),
+                            # NSE reports IV in percent (e.g. 13.45); the rest of the system uses decimals.
+                            "iv": float(opt.get("impliedVolatility", 0.0) or 0.0) / 100.0,
                             "bid": bid_p, "bid_qty": bid_q, "ask": ask_p, "ask_qty": ask_q,
                             "expiry": expiry
                         })
-        return {"symbol": symbol.upper(), "spot_price": float(underlying), "expiry_dates": expiry_dates_raw, "chains": chains}
+        expiry_dates = [d for d in (NseApiAdapter._parse_nse_date(e) for e in expiry_dates_raw) if d]
+        return {"symbol": symbol.upper(), "spot_price": float(underlying), "expiry_dates": expiry_dates, "chains": chains}
 
     @staticmethod
     def _parse_nse_date(date_str: str) -> Optional[str]:

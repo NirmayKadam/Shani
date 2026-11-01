@@ -117,17 +117,29 @@ def mock_publisher():
 
 @pytest.fixture(autouse=True)
 def clear_validator_cache():
-    """Automatically clear SymbolValidator validate cache between tests."""
+    """Automatically clear both SymbolValidator caches between tests."""
     from shared.utils.symbol_validator import SymbolValidator
     SymbolValidator.validate.cache_clear()
+    SymbolValidator.get_clean_symbol.cache_clear()
     yield
     SymbolValidator.validate.cache_clear()
+    SymbolValidator.get_clean_symbol.cache_clear()
 
 
 @pytest.fixture
 def test_client():
-    """Lazy TestClient fixture for FastAPI endpoint tests to prevent eager DB loading."""
+    """TestClient for FastAPI endpoint tests, with the app's startup network calls mocked.
+
+    The real lifespan pings Redis and warms an NSE session (tens of seconds offline); endpoint
+    tests patch the clients they need themselves.
+    """
     from fastapi.testclient import TestClient
     from app.main import app
-    with TestClient(app) as client:
-        yield client
+    with patch("shared.infrastructure.redis_client.get_redis_client", new=AsyncMock()), \
+         patch("shared.infrastructure.redis_client.close_redis_client", new=AsyncMock()), \
+         patch("shared.infrastructure.database.close_database_pool", new=AsyncMock()), \
+         patch("domains.ingestion.api.nse_options_router_api.startup_nse_client", new=AsyncMock()), \
+         patch("domains.ingestion.api.nse_options_router_api.shutdown_nse_client", new=AsyncMock()), \
+         patch("domains.analytics.api.pricer_router_api._historical_volatility_sync", return_value=12.5):
+        with TestClient(app) as client:
+            yield client

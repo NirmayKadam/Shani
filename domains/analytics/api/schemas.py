@@ -56,7 +56,7 @@ class OptionTick(BaseModel):
     expiry: str
 
 class OptionsSummaryResponse(BaseModel):
-    pcr: float = 0.0
+    pcr: Optional[float] = None
     ce_volume: int = 0
     pe_volume: int = 0
     ce_oi: int = 0
@@ -71,11 +71,12 @@ class OptionsSummaryResponse(BaseModel):
 # ── Derivatives Response ────────────────────────────────────────
 
 class PricedStrike(BaseModel):
+    # Legs without a usable implied volatility are left unpriced (None).
     strike: float
-    fair_call: float
-    fair_put: float
-    call_iv: float
-    put_iv: float
+    fair_call: Optional[float] = None
+    fair_put: Optional[float] = None
+    call_iv: Optional[float] = None
+    put_iv: Optional[float] = None
     bs_fair_call: Optional[float] = None
     bs_fair_put: Optional[float] = None
     live_call: Optional[float] = None
@@ -84,7 +85,7 @@ class PricedStrike(BaseModel):
 
 class DerivativesResponse(ResponseMetadata):
     symbol: str
-    pcr: float = 0.0
+    pcr: Optional[float] = None  # open-interest put/call ratio of the nearest expiry; None without call OI
     ce_volume: int = 0
     pe_volume: int = 0
     ce_oi: int = 0
@@ -147,6 +148,7 @@ class OptionChainRow(BaseModel):
 class PricerTickerDataResponse(ResponseMetadata):
     symbol: str
     stock_price: float
+    data_as_of: str = ""  # when the underlying chain/quote snapshot was fetched (not when it was served)
     implied_volatility: Optional[float] = 0.0
     historical_volatility: Optional[float] = 0.0
     bid_price: Optional[float] = None
@@ -154,7 +156,7 @@ class PricerTickerDataResponse(ResponseMetadata):
     open_interest: int = 0
     volume: int = 0
     strike_price: float = 0.0
-    expiry_days: int = 0
+    expiry_days: float = 0.0  # fractional days to 15:30 IST settlement
     risk_free_rate: float = 6.5
     dividend_yield: float = 0.0
     expiry_dates: list[str] = Field(default_factory=list)

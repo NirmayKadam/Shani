@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class ManageAlertRulesService(IManageAlertRulesUseCasePort):
-    """Application service orchestrating AlertRule creation, queries, and deletion."""
+    """Application service orchestrating AlertRule creation, queries, and deletion.
+
+    `user_id` is the authenticated owner. Another user's rule is reported as not found, so rule
+    ids cannot be probed. user_id=None means anonymous local development (no ownership).
+    """
 
     def __init__(self, repository: IAlertRuleRepositoryPort):
         self._repo = repository
@@ -24,19 +28,22 @@ class ManageAlertRulesService(IManageAlertRulesUseCasePort):
         logger.info(f"Creating alert rule {rule.id} for symbol {rule.symbol}")
         return await self._repo.save_rule(rule)
 
-    async def get_rule(self, rule_id: uuid.UUID) -> Optional[AlertRule]:
+    async def get_rule(self, rule_id: uuid.UUID, user_id: Optional[uuid.UUID] = None) -> AlertRule:
         rule = await self._repo.get_rule_by_id(rule_id)
-        if not rule:
+        if not rule or (user_id is not None and rule.user_id != user_id):
             raise AlertRuleNotFoundError(f"Alert rule {rule_id} not found")
         return rule
 
-    async def list_active_rules(self, symbol: Optional[str] = None) -> List[AlertRule]:
+    async def list_active_rules(
+        self, symbol: Optional[str] = None, user_id: Optional[uuid.UUID] = None
+    ) -> List[AlertRule]:
         if symbol:
-            return await self._repo.get_active_rules_by_symbol(symbol)
-        # Fetch for empty symbol yields empty list
-        return await self._repo.get_active_rules_by_symbol(symbol="")
+            rules = await self._repo.get_active_rules_by_symbol(symbol)
+            return [r for r in rules if user_id is None or r.user_id == user_id]
+        return await self._repo.list_active_rules(user_id)
 
-    async def delete_rule(self, rule_id: uuid.UUID) -> bool:
+    async def delete_rule(self, rule_id: uuid.UUID, user_id: Optional[uuid.UUID] = None) -> bool:
+        await self.get_rule(rule_id, user_id)  # ownership check
         logger.info(f"Deleting alert rule {rule_id}")
         deleted = await self._repo.delete_rule(rule_id)
         if not deleted:

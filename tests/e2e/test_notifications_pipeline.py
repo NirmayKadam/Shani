@@ -28,7 +28,7 @@ async def test_end_to_end_notification_pipeline():
     # 2. Setup mock repository returning our real rule
     mock_repo = AsyncMock()
     mock_repo.get_active_rules_by_symbol.return_value = [rule]
-    mock_repo.update_last_triggered = AsyncMock()
+    mock_repo.try_transition = AsyncMock(return_value=True)
     mock_repo.log_notification_event = AsyncMock()
 
     # 3. Setup real Channel Adapters
@@ -40,7 +40,7 @@ async def test_end_to_end_notification_pipeline():
     # 4. Instantiate real Application Service
     evaluate_service = EvaluateAlertsService(
         repository=mock_repo,
-        channels=[ws_channel, webhook_channel]
+        channels={DeliveryChannel.WEBSOCKET: ws_channel, DeliveryChannel.WEBHOOK: webhook_channel}
     )
 
     # 5. Instantiate Subscriber Daemon with evaluate_service overridden
@@ -50,30 +50,31 @@ async def test_end_to_end_notification_pipeline():
     )
     subscriber.evaluator = evaluate_service
 
-    # 6. Simulate incoming stream payload (market tick above threshold)
+    # 6. Simulate an incoming priced-chain event (spot above threshold)
     tick_payload = {
         "symbol": "NIFTY",
-        "last_price": 24500.00,
-        "timestamp": "2026-08-07T12:00:00Z"
+        "spot_price": 24500.00,
+        "atm_iv_pct": 14.2,
+        "last_updated": "2026-08-07T12:00:00Z",
+        "chain": [],
     }
 
-    event_payload = {
-        b"data": json.dumps(tick_payload).encode("utf-8")
-    }
+    event_payload = tick_payload  # as decoded from the durable stream by run_durable_consumer
 
     mock_resp = AsyncMock()
     mock_resp.is_success = True
     mock_resp.status_code = 200
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_http_post:
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_http_post, \
+         patch("domains.notifications.infrastructure.channels.webhook_channel.assert_public_https_url"):
         mock_http_post.return_value = mock_resp
 
         # Execute consumer processing logic
         await subscriber.process_event(event_payload)
 
-        # 7. Verification: Repository rule status was updated (update_last_triggered recorded)
-        assert mock_repo.update_last_triggered.called
-        assert mock_repo.update_last_triggered.call_args[0][0] == rule_id
+        # 7. Verification: the crossing was recorded atomically before dispatch
+        assert mock_repo.try_transition.called
+        assert mock_repo.try_transition.call_args[0][:2] == (rule_id, True)
 
         assert mock_repo.log_notification_event.called
         logged_event = mock_repo.log_notification_event.call_args[0][0]

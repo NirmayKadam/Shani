@@ -29,6 +29,8 @@ class WebSocketNotificationChannelAdapter(INotificationChannelAdapterPort):
 
         payload = {
             "type": "ALERT_NOTIFICATION",
+            # The WS gateway delivers an alert only to the owner's sockets; None = no owner (dev).
+            "user_id": str(rule.user_id) if rule.user_id else None,
             "id": str(event.id),
             "rule_id": str(event.rule_id),
             "symbol": event.symbol,

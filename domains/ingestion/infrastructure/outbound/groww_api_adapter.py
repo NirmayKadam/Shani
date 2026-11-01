@@ -3,18 +3,24 @@ File Overview: Outbound adapter for Groww API. Handles market price and option c
 Includes automated fallback to yfinance and NSE API if Groww credentials are not active.
 """
 
+import json
 import logging
 import asyncio
 import aiohttp
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from domains.ingestion.ports.interface.outbound.i_market_price_source_port import IMarketPriceSourcePort
 from domains.ingestion.ports.interface.outbound.i_option_chain_source_port import IOptionChainSourcePort
 from domains.ingestion.application.dto.raw_tick_dto import RawTickDTO
 from domains.ingestion.infrastructure.outbound.nse_api_adapter import NseApiAdapter
+from shared.utils.market_time import parse_expiry
 
 logger = logging.getLogger(__name__)
+
+_IST = timezone(timedelta(hours=5, minutes=30))
+_TOKEN_CACHE_KEY = "groww:access_token"
+_TOKEN_EXPIRY_MARGIN_SECONDS = 60
 
 try:
     from growwapi import GrowwAPI
@@ -89,6 +95,13 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             logger.info("Access token in settings is expired. Cleared to refresh dynamically.")
             self._access_token = ""
 
+        # Adapters are created per task, so without a shared cache every 5 s poll generated a new
+        # daily token through the SDK. Share it across processes in Redis until it expires.
+        cached = await self._cached_token()
+        if cached:
+            self._access_token = cached
+            return cached
+
         if (self.totp_secret or (self.api_key and self.secret_key)) and GROWW_SDK_AVAILABLE:
             try:
                 loop = asyncio.get_running_loop()
@@ -98,6 +111,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 )
                 if token:
                     self._access_token = token
+                    await self._store_token(token)
                     logger.info("Successfully retrieved daily Groww API Access Token.")
                     try:
                         import base64
@@ -118,6 +132,64 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 logger.error("Failed to generate Groww access token dynamically: %s", e)
 
         return None
+
+    async def _cached_token(self) -> Optional[str]:
+        if self._redis is None:
+            return None
+        try:
+            token = await self._redis.get(_TOKEN_CACHE_KEY)
+            if isinstance(token, bytes):
+                token = token.decode()
+            if isinstance(token, str) and token and not self._is_token_expired(token):
+                return token
+        except Exception as exc:
+            logger.debug("Groww token cache read failed: %s", exc)
+        return None
+
+    async def _store_token(self, token: str) -> None:
+        if self._redis is None:
+            return
+        ttl = self._token_seconds_left(token)
+        if ttl is None or ttl <= _TOKEN_EXPIRY_MARGIN_SECONDS:
+            return
+        try:
+            await self._redis.set(_TOKEN_CACHE_KEY, token, ex=int(ttl - _TOKEN_EXPIRY_MARGIN_SECONDS))
+        except Exception as exc:
+            logger.debug("Groww token cache write failed: %s", exc)
+
+    @staticmethod
+    def _token_seconds_left(token: str) -> Optional[float]:
+        """Seconds until the JWT's exp claim, or None if it has none."""
+        import base64
+        import json
+        import time
+        try:
+            payload_b64 = token.split('.')[1]
+            payload_b64 += '=' * (-len(payload_b64) % 4)
+            exp = json.loads(base64.urlsafe_b64decode(payload_b64)).get('exp')
+            return float(exp) - time.time() if exp else None
+        except Exception:
+            return None
+
+    async def _expiry_dates(self, symbol: str) -> list:
+        """Expiry list from the fallback adapter, cached for the IST trading day."""
+        ist_day = datetime.now(_IST).date().isoformat()
+        cache_key = f"groww:expiries:{symbol.upper()}:{ist_day}"
+        if self._redis is not None:
+            try:
+                cached = await self._redis.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception as exc:
+                logger.debug("[%s] Expiry cache read failed: %s", symbol, exc)
+
+        expiries = await self._fallback_adapter.fetch_expiry_dates(symbol)
+        if expiries and self._redis is not None:
+            try:
+                await self._redis.set(cache_key, json.dumps(expiries), ex=24 * 3600)
+            except Exception as exc:
+                logger.debug("[%s] Expiry cache write failed: %s", symbol, exc)
+        return expiries
 
     def _is_token_expired(self, token: str) -> bool:
         import base64
@@ -150,12 +222,15 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 except Exception as e:
                     logger.warning("TOTP generation failed: %s", e)
 
-            # Try SDK methods with available parameters
-            if totp_code:
+            # Try SDK methods with available parameters. The TOTP secret is never sent as an
+            # identifier; without an API key the TOTP flow cannot be used.
+            if totp_code and not self.api_key:
+                logger.warning("GROWW_TOTP_SECRET is set but GROWW_API_KEY is empty; skipping TOTP login.")
+            elif totp_code:
                 # Attempt 1: GrowwAPI SDK get_access_token with totp
                 try:
                     return GrowwAPI.get_access_token(
-                        api_key=self.api_key or self.totp_secret,
+                        api_key=self.api_key,
                         totp=totp_code,
                         pin=self.pin
                     )
@@ -219,7 +294,8 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                         
                         # Dividend yield: check Redis cache first, fallback to yfinance only on miss
                         dividend_yield = 0.0
-                        div_key = f"market:dividend_yield:{symbol.upper()}"
+                        # v2: values are decimals; v1 entries held yfinance's percent value.
+                        div_key = f"market:dividend_yield:v2:{symbol.upper()}"
                         try:
                             cached_div = await self._redis.get(div_key) if self._redis else None
                             if cached_div is not None:
@@ -238,7 +314,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                             "last_price": round(float(last_price), 2),
                             "open": round(float(open_p), 2),
                             "high": round(float(high_p), 2),
-                            "low": round(float(open_p), 2) if open_p < low_p else round(float(low_p), 2),
+                            "low": round(float(low_p), 2),
                             "volume": int(volume),
                             "previous_close": round(float(close_p), 2),
                             "change_percent": round(float(change_percent), 2),
@@ -270,7 +346,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             # 1. Fetch available expiries from fallback adapter (NSE/yfinance) to bypass the forbidden expiries endpoint
             expiries = []
             try:
-                expiries = await self._fallback_adapter.fetch_expiry_dates(symbol)
+                expiries = await self._expiry_dates(symbol)
             except Exception as e:
                 logger.warning("[%s] Failed to fetch expiries from fallback adapter: %s", symbol, e)
 
@@ -301,7 +377,7 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             # Parse and format expiries to YYYY-MM-DD
             formatted_expiries = []
             for exp in expiries:
-                if exp.count("-") == 2 and all(part.isdigit() for part in exp.split("-")):
+                if parse_expiry(exp):  # strict YYYY-MM-DD; "28-11-2026" must not pass as ISO
                     formatted_expiries.append(exp)
                 else:
                     parsed = NseApiAdapter._parse_nse_date(exp)
@@ -352,10 +428,10 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                                     continue
                                 
                                 ltp = float(opt_data.get("ltp") or 0.0)
-                                if ltp <= 0:
-                                    continue
-
                                 oi = int(opt_data.get("open_interest") or 0)
+                                # Keep untraded strikes that still carry open interest (OI-based PCR).
+                                if ltp <= 0 and oi <= 0:
+                                    continue
                                 volume = int(opt_data.get("volume") or 0)
                                 
                                 greeks = opt_data.get("greeks", {})

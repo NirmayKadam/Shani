@@ -43,16 +43,17 @@ class Streams:
     PRICE_TRIGGER         = "stream:market.price_trigger"
     OPTIONS_RAW_FETCHED   = "stream:options.raw_fetched"
     OPTIONS_PRICED        = "stream:options.priced"
-    ANALYSIS_REFRESH_REQUESTED = "stream:analysis.refresh_requested"
 
-    # Dead-letter topics
-    REFRESH_REQUEST_DLQ   = "stream:dlq:refresh_request"
+    # Dead-letter topics (messages that failed processing after all retries)
+    OPTIONS_RAW_FETCHED_DLQ = "stream:dlq:options.raw_fetched"
+    OPTIONS_PRICED_DLQ      = "stream:dlq:options.priced"
 
 
 class StreamGroups:
     """Consumer-group names for durable stream processing."""
 
-    REFRESH_TO_INGESTION = "cg:refresh_to_ingestion"
+    OPTIONS_PRICING = "cg:options_pricing"        # raw chains -> pricing subscriber
+    ALERT_EVALUATION = "cg:alert_evaluation"      # priced chains -> notification subscriber
 
 
 # ── Enums ──────────────────────────────────────────────────────
@@ -78,6 +79,10 @@ class RedisKeys:
     MARKET_PRICE       = "market:price:{symbol}"            # Today's OHLCV snapshot
     MARKET_OPTIONS     = "market:options:{symbol}"           # Latest option chain
     MARKET_OPTIONS_PRICED = "market:options:priced:{symbol}" # Fair priced option chain
+    MARKET_OPTIONS_HASH = "market:options:hash:{symbol}"     # Hash of the last chain sent for pricing
+
+    # Analytics domain owns:
+    HISTORY_DAILY_3MO  = "analytics:history:3mo:{symbol}"   # Daily close/high/low for technicals
 
 
 # ── TTLs (seconds) ────────────────────────────────────────────

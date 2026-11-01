@@ -6,9 +6,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Interactive Black-Scholes-Merton (BSM) Calculator
     initBsmSimulator();
 
-    // 3. Dynamic Sentiment Indicator Stream
-    initSentimentStream();
-
     // 4. Supabase Session Check
     checkSupabaseSession();
 });
@@ -240,98 +237,4 @@ function normalCDF(x) {
     const poly = t * (b1 + t * (b2 + t * (b3 + t * (b4 + t * b5))));
     const cdf = 1.0 - (1.0 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x) * poly;
     return x >= 0 ? cdf : 1.0 - cdf;
-}
-
-/**
- * 3. Dynamic Sentiment Indicator Stream
- * Mimics active feeds and sweeps the needle randomly within a realistic zone.
- */
-function initSentimentStream() {
-    const needle = document.getElementById("sentiment-needle");
-    const label = document.getElementById("sentiment-label");
-    const confidence = document.getElementById("sentiment-confidence");
-    const terminalBody = document.getElementById("nlp-terminal-body");
-
-    if (!needle) return;
-
-    // List of stock tickers and options symbols to simulate NLP parsing
-    const assets = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"];
-    const newsVerbs = [
-        "breaking consolidation barrier, institutional block buys observed",
-        "options call writing increases at ATM strike, solidifying resistance",
-        "IV spikes 8% after positive macro guidance, fair prices adjusting",
-        "block order processed for near-month calls; Crank-Nicolson PDE signal bullish",
-        "relative volume hits 2.5x standard deviation, spot testing support",
-        "unwinding of puts observed at key strikes, short cover rally probable"
-    ];
-
-    function updateSentiment() {
-        // Generate pseudo-random sentiment score (-90deg to 90deg, 0deg being neutral)
-        // Let's bias it slightly bullish (e.g. 15deg to 65deg)
-        const degrees = 15 + Math.floor(Math.random() * 50) + (Math.random() > 0.6 ? 15 : -15);
-        needle.style.transform = `rotate(${degrees}deg)`;
-
-        // Calculate confidence score based on degree intensity
-        const confPercent = 70 + Math.floor(Math.random() * 22);
-        
-        let sentimentText = "Neutral";
-        let sentimentColor = "#f59e0b";
-        
-        if (degrees > 25) {
-            sentimentText = "Strong Bullish";
-            sentimentColor = "#10b981";
-        } else if (degrees > 10) {
-            sentimentText = "Bullish";
-            sentimentColor = "#34d399";
-        } else if (degrees < -25) {
-            sentimentText = "Strong Bearish";
-            sentimentColor = "#ef4444";
-        } else if (degrees < -10) {
-            sentimentText = "Bearish";
-            sentimentColor = "#f87171";
-        }
-
-        label.textContent = sentimentText;
-        label.style.color = sentimentColor;
-        confidence.textContent = `Model Confidence: ${confPercent}% | Delta Shift: +${(degrees/90).toFixed(2)}`;
-
-        // Add a line to the simulated NLP terminal
-        if (terminalBody) {
-            const timeStr = new Date().toLocaleTimeString();
-            const symbol = assets[Math.floor(Math.random() * assets.length)];
-            const verb = newsVerbs[Math.floor(Math.random() * newsVerbs.length)];
-            const sentimentClass = sentimentText.includes("Bullish") ? "bullish" : (sentimentText.includes("Bearish") ? "bearish" : "");
-
-            const newLine = document.createElement("div");
-            newLine.className = "nlp-line";
-            newLine.innerHTML = `
-                <span class="time">[${timeStr}]</span> 
-                <span class="model">NLP_INGEST_GROUP:</span> 
-                <span class="text">Analyzed news for <strong>${symbol}</strong>: ${verb}</span> 
-                <span class="sentiment ${sentimentClass}">[${sentimentText}]</span>
-            `;
-            
-            terminalBody.appendChild(newLine);
-            
-            // Keep container clean by pruning old entries
-            while (terminalBody.children.length > 20) {
-                terminalBody.removeChild(terminalBody.firstChild);
-            }
-            
-            // Scroll to bottom
-            terminalBody.scrollTop = terminalBody.scrollHeight;
-        }
-    }
-
-    // Run first update
-    updateSentiment();
-
-    // Recursive setTimeout for truly random interval each cycle
-    function scheduleNext() {
-        setTimeout(() => {
-            updateSentiment();
-            scheduleNext();
-        }, 6000 + Math.random() * 4000);
-    }
-    scheduleNext();
 }

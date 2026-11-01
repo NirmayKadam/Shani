@@ -47,9 +47,10 @@ class DurableEventStream:
         self._MaxRetries = max_retries
         self._MaxLen = maxlen
 
-    async def ensure_group(self, stream: str, group: str) -> None:
+    async def ensure_group(self, stream: str, group: str, start_id: str = "0-0") -> None:
+        """Create the consumer group if missing. start_id="$" skips history written before it."""
         try:
-            await self._Redis.xgroup_create(stream, group, id="0-0", mkstream=True)
+            await self._Redis.xgroup_create(stream, group, id=start_id, mkstream=True)
             logger.info("Created stream group %s on %s", group, stream)
         except aioredis.ResponseError as exc:
             if "BUSYGROUP" not in str(exc):

@@ -98,7 +98,7 @@ class TestParseOptionChain:
         assert result["chains"] == {}
         assert result["spot_price"] == 0.0
 
-    def test_parse_filters_zero_price(self):
+    def test_parse_keeps_untraded_strikes_with_open_interest(self):
         data = {
             "records": {
                 "underlyingValue": 24500.0,
@@ -109,15 +109,29 @@ class TestParseOptionChain:
                         "expiryDate": "29-May-2026",
                         "CE": {"lastPrice": 0, "openInterest": 100, "totalTradedVolume": 50, "impliedVolatility": 10.0},
                         "PE": {"lastPrice": 50.0, "openInterest": 200, "totalTradedVolume": 80, "impliedVolatility": 12.0},
-                    }
+                    },
+                    {
+                        "strikePrice": 24600,
+                        "expiryDate": "29-May-2026",
+                        "CE": {"lastPrice": 0, "openInterest": 0, "totalTradedVolume": 0, "impliedVolatility": 0.0},
+                    },
                 ],
             }
         }
         result = NseApiAdapter._parse_option_chain("NIFTY", data)
         chain = result["chains"]["2026-05-29"]
-        # Only PE should be included (CE has lastPrice=0)
-        assert len(chain) == 1
-        assert chain[0]["type"] == "PE"
+        # The untraded CE with OI is kept (OI-based PCR needs it); the empty 24600 CE is dropped.
+        assert sorted((t["strike"], t["type"]) for t in chain) == [(24500.0, "CE"), (24500.0, "PE")]
+
+    def test_parse_converts_iv_percent_to_decimal(self, sample_option_chain_raw):
+        result = NseApiAdapter._parse_option_chain("NIFTY", sample_option_chain_raw)
+        ivs = [t["iv"] for t in result["chains"]["2026-05-29"]]
+        assert all(0 < iv < 1 for iv in ivs)
+        assert 0.145 in ivs  # 14.5% in the fixture
+
+    def test_parse_normalises_expiry_dates(self, sample_option_chain_raw):
+        result = NseApiAdapter._parse_option_chain("NIFTY", sample_option_chain_raw)
+        assert result["expiry_dates"] == ["2026-05-29", "2026-06-05"]
 
     def test_parse_skips_missing_expiry(self):
         data = {
@@ -153,7 +167,8 @@ class TestFetchPriceSync:
 
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = mock_hist
-        mock_ticker.info = {"currency": "INR", "dividendYield": 0.015}
+        # yfinance >= 0.2.5x reports dividendYield in percent (1.5 means 1.5%)
+        mock_ticker.info = {"currency": "INR", "dividendYield": 1.5}
         mock_yf.Ticker.return_value = mock_ticker
 
         result = NseApiAdapter._fetch_price_sync("^NSEI")
@@ -168,6 +183,17 @@ class TestFetchPriceSync:
         assert result["currency"] == "INR"
         assert result["dividend_yield"] == 0.015
         assert abs(result["change_percent"] - 0.41) < 0.01
+
+    def test_dividend_yield_units(self):
+        q = NseApiAdapter._dividend_yield_decimal
+        # Real ITC values from yfinance 1.3: dividendRate 16, price 265.6, dividendYield 6.02 (percent)
+        assert q({"dividendRate": 16.0, "dividendYield": 6.02}, 265.6) == pytest.approx(0.0602, abs=1e-4)
+        assert q({"dividendYield": 6.02}, 265.6) == pytest.approx(0.0602)
+        assert q({"trailingAnnualDividendYield": 0.012}, 100.0) == pytest.approx(0.012)
+        assert q({}, 100.0) == 0.0
+        assert q({"dividendRate": float("nan")}, 100.0) == 0.0
+        # A units error can never produce an absurd yield
+        assert q({"dividendRate": 500.0}, 100.0) == 0.25
 
     @patch("domains.ingestion.infrastructure.outbound.nse_api_adapter.yf")
     def test_empty_history_returns_none(self, mock_yf):

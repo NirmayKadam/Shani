@@ -7,7 +7,7 @@ Delegates core mathematical computations to TechnicalIndicatorsEngine domain ser
 """
 
 import math
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from domains.analytics.domain.services.technical_indicators_engine import (
     TechnicalIndicatorsEngine,
@@ -155,8 +155,18 @@ def calculate_pivots(high: float, low: float, close: float) -> Dict[str, float]:
     return {"p": p, "r1": r1, "r2": r2, "r3": r3, "s1": s1, "s2": s2, "s3": s3}
 
 
-def compute_all_technicals(spot_price: float, price_history: List[float] = None) -> Dict[str, Any]:
-    """Compute comprehensive technical analysis suite for spot price and price history."""
+def compute_all_technicals(
+    spot_price: float,
+    price_history: List[float] = None,
+    highs: Optional[List[float]] = None,
+    lows: Optional[List[float]] = None,
+) -> Dict[str, Any]:
+    """Compute comprehensive technical analysis suite for spot price and price history.
+
+    With daily highs and lows aligned to price_history (the closes), ATR is the Wilder
+    average of the true range and pivots use the previous session's high/low/close.
+    Without them both fall back to close-only approximations.
+    """
     estimated = False
     if not price_history or len(price_history) < 5:
         price_history = [spot_price]
@@ -181,17 +191,27 @@ def compute_all_technicals(spot_price: float, price_history: List[float] = None)
         {"name": "EMA 50", "value": ema50, "signal": "BULLISH" if current_price >= ema50 else "BEARISH"},
     ]
 
-    # 3. Volatility / ATR
-    if price_history and len(price_history) >= 2:
-        diffs = [abs(price_history[i] - price_history[i - 1]) for i in range(1, len(price_history))]
-        atr = round(sum(diffs[-14:]) / min(len(diffs), 14), 2)
-    else:
-        atr = 0.0
+    has_ohlc = (
+        highs is not None and lows is not None
+        and len(highs) == len(lows) == len(price_history) and len(price_history) >= 2
+    )
 
-    # 4. Pivot Points
-    high = max(price_history[-15:]) if price_history else spot_price
-    low = min(price_history[-15:]) if price_history else spot_price
-    pivots = calculate_pivots(high, low, current_price)
+    # 3. Volatility / ATR
+    atr = None
+    if has_ohlc:
+        atr = TechnicalIndicatorsEngine.calculate_atr(highs, lows, price_history)
+    if atr is None and len(price_history) >= 2:
+        # Close-only approximation when no high/low data is available
+        diffs = [abs(price_history[i] - price_history[i - 1]) for i in range(1, len(price_history))]
+        atr = sum(diffs[-14:]) / min(len(diffs), 14)
+    atr = round(atr, 2) if atr is not None else 0.0
+
+    # 4. Classic floor pivots from the previous completed session's high / low / close
+    if has_ohlc:
+        pivots = calculate_pivots(highs[-2], lows[-2], price_history[-2])
+    else:
+        recent = price_history[-15:]
+        pivots = calculate_pivots(max(recent), min(recent), current_price)
 
     # 5. Composite Score & Overall Signal
     all_signals = [

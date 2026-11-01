@@ -6,7 +6,7 @@ from domains.notifications.domain.entities import AlertRule
 
 
 class IManageAlertRulesUseCasePort(ABC):
-    """Inbound port for managing user alert rules."""
+    """Inbound port for managing user alert rules (user_id is the owner; None = no ownership)."""
 
     @abstractmethod
     async def create_rule(self, rule: AlertRule) -> AlertRule:
@@ -14,16 +14,18 @@ class IManageAlertRulesUseCasePort(ABC):
         pass
 
     @abstractmethod
-    async def get_rule(self, rule_id: uuid.UUID) -> Optional[AlertRule]:
-        """Fetch rule by ID."""
+    async def get_rule(self, rule_id: uuid.UUID, user_id: Optional[uuid.UUID] = None) -> AlertRule:
+        """Fetch one of the user's rules by ID."""
         pass
 
     @abstractmethod
-    async def list_active_rules(self, symbol: Optional[str] = None) -> List[AlertRule]:
-        """List active alert rules optionally filtered by symbol."""
+    async def list_active_rules(
+        self, symbol: Optional[str] = None, user_id: Optional[uuid.UUID] = None
+    ) -> List[AlertRule]:
+        """List the user's active alert rules, optionally filtered by symbol."""
         pass
 
     @abstractmethod
-    async def delete_rule(self, rule_id: uuid.UUID) -> bool:
-        """Delete alert rule."""
+    async def delete_rule(self, rule_id: uuid.UUID, user_id: Optional[uuid.UUID] = None) -> bool:
+        """Delete one of the user's alert rules."""
         pass

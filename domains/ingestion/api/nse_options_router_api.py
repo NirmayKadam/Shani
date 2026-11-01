@@ -17,6 +17,7 @@ from urllib.parse import quote
 import httpx
 import asyncio
 import logging
+import time
 
 from shared.constants import INDEX_SYMBOLS
 
@@ -61,8 +62,29 @@ async def shutdown_nse_client() -> None:
 nse_options_router_api = APIRouter()
 
 
+_cookie_lock: asyncio.Lock | None = None
+_last_cookie_refresh = 0.0
+# A refresh this recent (by a concurrent request) is reused instead of repeated
+_COOKIE_REFRESH_COALESCE_SECONDS = 5.0
+
+
 async def refresh_nse_cookies(symbol: str = "NIFTY"):
-    """Hits the NSE homepage and option-chain page to generate fresh session cookies."""
+    """Hits the NSE homepage and option-chain page to generate fresh session cookies.
+
+    Serialised: clearing the shared client's cookies while another request is mid-flight would
+    break that request, and concurrent 401s would otherwise each trigger their own refresh.
+    """
+    global client, _cookie_lock, _last_cookie_refresh
+    if _cookie_lock is None:
+        _cookie_lock = asyncio.Lock()
+    async with _cookie_lock:
+        if time.monotonic() - _last_cookie_refresh < _COOKIE_REFRESH_COALESCE_SECONDS:
+            return
+        await _refresh_nse_cookies_locked(symbol)
+        _last_cookie_refresh = time.monotonic()
+
+
+async def _refresh_nse_cookies_locked(symbol: str):
     global client
     if client is None:
         client = httpx.AsyncClient(headers=HEADERS, timeout=20.0, follow_redirects=True)

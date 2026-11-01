@@ -1,5 +1,20 @@
 # docker-compose.prod.yml (Production Multi-Service Architecture)
-version: '3.8'
+#
+# Pipeline: api (WebSocket polling) -> celery_worker (ingestion) -> stream:options.raw_fetched
+#           -> options_subscriber (pricing) -> stream:options.priced -> notification_subscriber (alerts)
+# The one-shot `migrate` service applies every scripts/*.sql migration before anything else starts.
+
+x-app-env: &app-env
+  APP_ENV: production
+  PYTHONPATH: /app
+  DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/NexusQuantDB
+  REDIS_URL: redis://redis:6379/0
+
+x-after-migrations: &after-migrations
+  migrate:
+    condition: service_completed_successfully
+  redis:
+    condition: service_healthy
 
 services:
   postgres:
@@ -11,9 +26,8 @@ services:
       POSTGRES_DB: NexusQuantDB
     volumes:
       - prod_pg_data:/var/lib/postgresql/data
-      - ./scripts/init_schema.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d NexusQuantDB"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d NexusQuantDB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,24 +58,34 @@ services:
     networks:
       - backend-net
 
+  # Applies schema migrations (idempotent, tracked in schema_migrations) on every deploy.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: appuser
+    restart: "no"
+    command: ["python", "scripts/migrate.py"]
+    env_file: .env
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend-net
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "uvloop"]
     ports:
       - "8000:8000"
     env_file: .env
-    environment:
-      APP_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/NexusQuantDB
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    environment: *app-env
+    depends_on: *after-migrations
     deploy:
       resources:
         limits:
@@ -74,18 +98,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
-    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "worker", "-Q", "celery,ingestion,analytics", "-l", "info", "-c", "4"]
+    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "worker", "-Q", "celery,ingestion", "-l", "info", "-c", "4"]
     env_file: .env
-    environment:
-      APP_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/NexusQuantDB
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    environment: *app-env
+    depends_on: *after-migrations
     deploy:
       resources:
         limits:
@@ -98,15 +116,54 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: appuser
     restart: unless-stopped
-    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "beat", "-l", "info"]
+    command: ["celery", "-A", "shared.infrastructure.celery_app:celery_app", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule"]
     env_file: .env
-    environment:
-      APP_ENV: production
-      REDIS_URL: redis://redis:6379/0
+    environment: *app-env
     depends_on:
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - backend-net
+
+  # Prices each option chain (Black-Scholes + Crank-Nicolson) in a process pool.
+  options_subscriber:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: appuser
+    restart: unless-stopped
+    command: ["python", "-m", "domains.analytics.infrastructure.options_subscriber"]
+    env_file: .env
+    environment:
+      <<: *app-env
+      PRICING_WORKERS: "3"
+    depends_on: *after-migrations
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 2G
+    networks:
+      - backend-net
+
+  # Evaluates alert rules against each priced chain and dispatches notifications.
+  notification_subscriber:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: appuser
+    restart: unless-stopped
+    command: ["python", "-m", "domains.notifications.infrastructure.subscribers.notification_subscriber"]
+    env_file: .env
+    environment: *app-env
+    depends_on: *after-migrations
     deploy:
       resources:
         limits:

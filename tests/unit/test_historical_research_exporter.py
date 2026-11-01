@@ -4,14 +4,27 @@ File Overview: Unit tests for On-Demand Multi-Day Historical Research Excel Expo
 
 from datetime import date
 import io
+from unittest.mock import MagicMock, patch
 import pytest
 
 openpyxl = pytest.importorskip("openpyxl")
 
 from domains.analytics.application.historical_research_exporter import (
+    MarketDataUnavailableError,
+    fetch_historical_daily_prices,
     generate_strike_grid,
     generate_research_excel_workbook
 )
+
+
+def _test_prices(symbol: str, start: date, end: date):
+    """Two trading days of made-up test prices (the test must not depend on yfinance)."""
+    days = [date(2026, 8, 3), date(2026, 8, 4)]
+    return {
+        d: {"open": 180.0, "high": 182.0, "low": 178.5, "close": 180.0 + i, "volume": 1000,
+            "history": [170.0 + j for j in range(30)]}
+        for i, d in enumerate(days) if start <= d <= end
+    }
 
 
 def test_generate_strike_grid():
@@ -28,10 +41,20 @@ def test_generate_strike_grid():
     assert 180.0 in strikes_small
 
 
+def test_missing_history_raises_instead_of_inventing_prices():
+    empty = MagicMock()
+    empty.history.return_value.empty = True
+    with patch("yfinance.Ticker", return_value=empty):
+        with pytest.raises(MarketDataUnavailableError):
+            fetch_historical_daily_prices("IREDA.NS", date(2026, 8, 1), date(2026, 8, 5))
+
+
 def test_generate_research_excel_workbook():
     start = date(2026, 8, 1)
     end = date(2026, 8, 5)
-    excel_bytes = generate_research_excel_workbook("IREDA", start, end, layout_mode="separate_tabs")
+    with patch("domains.analytics.application.historical_research_exporter.fetch_historical_daily_prices",
+               side_effect=_test_prices):
+        excel_bytes = generate_research_excel_workbook("IREDA", start, end, layout_mode="separate_tabs")
 
     assert len(excel_bytes) > 0
 

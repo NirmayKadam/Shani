@@ -3,7 +3,7 @@ File Overview: Versioned domain event schemas and dataclasses for cross-domain c
 
 All Functions/Classes:
 - VersionedEvent (base class): Shared schema fields.
-- PriceUpdatedV1, OptionsUpdatedV1, PriceTriggerV1, AnalysisRefreshRequestedV1: Specific event payload schemas. Data: Domain Events -> Serialized JSON.
+- PriceUpdatedV1, OptionsUpdatedV1, PriceTriggerV1: Specific event payload schemas. Data: Domain Events -> Serialized JSON.
 
 Endpoints/APIs:
 - None.
@@ -89,21 +89,10 @@ class PriceTriggerV1(VersionedEvent):
         )
 
 
-@dataclass(slots=True)
-class AnalysisRefreshRequestedV1(VersionedEvent):
-    symbol: str = ""
-    reason: str = "stale_or_partial_read_model"
-    requested_at: str = field(default_factory=_utc_now_iso)
-
-    def __post_init__(self) -> None:
-        self.event_type = "analysis.refresh_requested"
-
-
 # Backward-compatible aliases (existing callers import these names).
 PriceUpdatedEvent = PriceUpdatedV1
 OptionsUpdatedEvent = OptionsUpdatedV1
 PriceTriggerEvent = PriceTriggerV1
-AnalysisRefreshRequestedEvent = AnalysisRefreshRequestedV1
 
 
 __all__ = [
@@ -111,9 +100,7 @@ __all__ = [
     "PriceUpdatedV1",
     "OptionsUpdatedV1",
     "PriceTriggerV1",
-    "AnalysisRefreshRequestedV1",
     "PriceUpdatedEvent",
     "OptionsUpdatedEvent",
     "PriceTriggerEvent",
-    "AnalysisRefreshRequestedEvent",
 ]

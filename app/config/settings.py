@@ -34,10 +34,32 @@ class Settings(BaseSettings):
     GrowwTotpSecret: str  = Field("", validation_alias="GROWW_TOTP_SECRET")
     GrowwPin: str         = Field("", validation_alias="GROWW_PIN")
 
-    # Supabase
+    # Supabase. SupabaseKey must be the public *anon* key: /config serves it to browsers.
     SupabaseUrl: str = Field("", validation_alias="supabaseUrl")
     SupabaseKey: str = Field("", validation_alias="supabaseKey")
     SupabaseConnectionString: str = Field("", validation_alias="supabaseConnectionString")
+    # Legacy HS256 projects only; projects with asymmetric signing keys are verified via JWKS.
+    SupabaseJwtSecret: str = Field("", validation_alias="SUPABASE_JWT_SECRET")
+
+    # Webhooks: deliver only to public HTTPS endpoints unless explicitly allowed (local testing)
+    WebhookAllowPrivate: bool = Field(False, validation_alias="WEBHOOK_ALLOW_PRIVATE")
+    WebhookMaxAttempts: int = Field(3, validation_alias="WEBHOOK_MAX_ATTEMPTS")
+
+    # Email alerts (the EMAIL channel is disabled while SMTP_HOST is empty)
+    SmtpHost: str = Field("", validation_alias="SMTP_HOST")
+    SmtpPort: int = Field(587, validation_alias="SMTP_PORT")
+    SmtpUser: str = Field("", validation_alias="SMTP_USER")
+    SmtpPassword: str = Field("", validation_alias="SMTP_PASSWORD")
+    SmtpFromEmail: str = Field("alerts@alphastreams.io", validation_alias="SMTP_FROM_EMAIL")
+    SmtpUseTls: bool = Field(True, validation_alias="SMTP_USE_TLS")
+
+    # WebSocket abuse limits (per API process)
+    WsMaxConnections: int = Field(1000, validation_alias="WS_MAX_CONNECTIONS")
+    WsMaxSymbols: int = Field(50, validation_alias="WS_MAX_SYMBOLS")
+
+    @property
+    def is_production(self) -> bool:
+        return self.AppEnv.lower() == "production"
 
     # Ingestion & Polling
     DefaultSymbols: str       = Field(

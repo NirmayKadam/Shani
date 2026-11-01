@@ -1,14 +1,48 @@
-import redis
-import json
+"""
+File Overview: Print the newest entries of a Redis Streams dead-letter queue.
 
-r = redis.from_url('redis://127.0.0.1:6379/0')
-msgs = r.xrevrange('stream:dlq:nlp_to_api', count=1)
-if msgs:
-    payload = msgs[0][1]
-    data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in payload.items()}
-    inner_payload = json.loads(data.get("payload", "{}"))
-    print(f"Error: {inner_payload.get('error')}")
-    print(f"Original Stream: {inner_payload.get('original_stream')}")
-    print(f"Symbol: {inner_payload.get('payload', {}).get('symbol')}")
-else:
-    print("DLQ is empty")
+Usage:
+    python scripts/read_dlq.py [STREAM] [--count N] [--redis-url URL]
+
+STREAM defaults to the pricing DLQ (Streams.OPTIONS_RAW_FETCHED_DLQ); the alert DLQ is
+Streams.OPTIONS_PRICED_DLQ.
+"""
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+import redis
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.constants import Streams  # noqa: E402
+
+
+def _decode(value):
+    return value.decode() if isinstance(value, bytes) else value
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("stream", nargs="?", default=Streams.OPTIONS_RAW_FETCHED_DLQ)
+    parser.add_argument("--count", type=int, default=5)
+    parser.add_argument("--redis-url", default=os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+    args = parser.parse_args()
+
+    client = redis.from_url(args.redis_url)
+    entries = client.xrevrange(args.stream, count=args.count)
+    if not entries:
+        print(f"{args.stream} is empty")
+        return
+
+    for message_id, fields in entries:
+        data = {_decode(k): _decode(v) for k, v in fields.items()}
+        inner = json.loads(data.get("payload", "{}"))
+        print(f"[{_decode(message_id)}] stream={inner.get('original_stream')} "
+              f"retries={inner.get('retry_count')} error={inner.get('error')}")
+        print(f"    payload={json.dumps(inner.get('payload'), default=str)}")
+
+
+if __name__ == "__main__":
+    main()

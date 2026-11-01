@@ -1,8 +1,10 @@
 """
 File Overview: PDE Solver worker consuming options data from Redis Streams.
 Calculates fair prices using Crank-Nicolson finite difference method.
-Strikes are priced in a process pool: the solver loop holds the GIL, so threads
-give no speed-up, while separate processes price strikes in parallel.
+The chain is priced with batched Crank-Nicolson solves (price_chain_cn: every contract in one
+block-diagonal system per time step), split into chunks across a process pool: the solver loop
+holds the GIL, so threads give no speed-up, while separate processes run in parallel.
+Black-Scholes prices are computed vectorised in-process.
 
 All Functions/Classes:
 - OptionsPricingSubscriber: Real-time derivatives pricing engine. Data: raw ticks -> priced chains.
@@ -28,9 +30,13 @@ from concurrent.futures import Executor, ProcessPoolExecutor
 from datetime import datetime, timezone
 
 from redis.asyncio import Redis
-from domains.analytics.application.services.derivatives.pde_solver import CrankNicolsonPDE
-from domains.analytics.application.services.derivatives.black_scholes import BlackScholesMerton
-from shared.constants import RedisKeys, TTL, Streams, Channels
+import numpy as np
+
+from domains.analytics.domain.services.pde_solver import price_chain_cn
+from domains.analytics.application.services.derivatives.black_scholes import bsm_prices
+from shared.constants import RedisKeys, TTL, Streams, StreamGroups, Channels
+from shared.infrastructure.event_bus.consumer import run_durable_consumer
+from shared.infrastructure.event_bus.streams import DurableEventStream
 
 logger = logging.getLogger("options_pricing_subscriber")
 
@@ -43,35 +49,27 @@ def _default_worker_count() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
-def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv: float, put_iv: float, dividend_yield: float, live_call: float, live_put: float) -> dict:
-    """Helper to solve single strike CE/PE pricing synchronously in a pool worker process."""
-    # Call Price (Crank-Nicolson PDE)
-    call_solver = CrankNicolsonPDE(S0, strike, T, r, call_iv, 'call')
-    call_price = call_solver.solve()
+# A chain is split into at most PRICING_WORKERS chunks of at least this many contracts; each
+# chunk is one batched Crank-Nicolson solve (smaller chunks lose more to process overhead).
+_MIN_CONTRACTS_PER_CHUNK = 16
 
-    # Put Price (Crank-Nicolson PDE)
-    put_solver = CrankNicolsonPDE(S0, strike, T, r, put_iv, 'put')
-    put_price = put_solver.solve()
 
-    # Call Price (Black-Scholes-Merton Analytical)
-    bs_call_solver = BlackScholesMerton(S0, strike, T, r, call_iv, 'call', q=dividend_yield)
-    bs_call_price = bs_call_solver.solve()
+def _valid_iv(iv) -> bool:
+    return iv is not None and iv > 0
 
-    # Put Price (Black-Scholes-Merton Analytical)
-    bs_put_solver = BlackScholesMerton(S0, strike, T, r, put_iv, 'put', q=dividend_yield)
-    bs_put_price = bs_put_solver.solve()
 
-    return {
-        "strike": strike,
-        "fair_call": round(call_price, 2),
-        "fair_put": round(put_price, 2),
-        "call_iv": call_iv,
-        "put_iv": put_iv,
-        "bs_fair_call": round(bs_call_price, 2),
-        "bs_fair_put": round(bs_put_price, 2),
-        "live_call": round(live_call, 2) if live_call is not None else 0.0,
-        "live_put": round(live_put, 2) if live_put is not None else 0.0
-    }
+def _price_chunk_sync(S0: float, T: float, r: float, q: float, strikes: list, sigmas: list, is_call: list) -> list:
+    """Crank-Nicolson prices for a chunk of contracts, run in a pool worker process."""
+    return price_chain_cn(S0, T, r, strikes, sigmas, is_call, q=q).tolist()
+
+
+def _atm_iv_pct(S0: float, priced_chain: list):
+    """At-the-money implied volatility in percent: the call IV of the strike nearest spot."""
+    candidates = [row for row in priced_chain if row.get("call_iv")]
+    if not candidates:
+        return None
+    atm = min(candidates, key=lambda row: abs(row["strike"] - S0))
+    return round(atm["call_iv"] * 100.0, 4)
 
 
 class OptionsPricingSubscriber:
@@ -99,29 +97,41 @@ class OptionsPricingSubscriber:
             self._executor.shutdown(wait=True, cancel_futures=True)
             self._executor = None
 
-    async def start_consuming(self):
-        # WARNING: Using "$" means we only read NEW messages — any messages
-        # published while this subscriber was down are lost.  For durable
-        # processing, migrate to XREADGROUP with a consumer group (like
-        # DurableEventStream in shared/infrastructure/event_bus/streams.py).
-        last_id = "$"
+    async def start_consuming(self, stop_event: asyncio.Event | None = None):
+        """At-least-once consumption through a consumer group: a chain published while this
+        process is down is priced after restart, and a failing chain is retried twice, then
+        dead-lettered to Streams.OPTIONS_RAW_FETCHED_DLQ."""
         logger.info("PDE Solver Engine listening for raw options data...")
+        await run_durable_consumer(
+            self.redis,
+            stream=self.consume_stream,
+            group=StreamGroups.OPTIONS_PRICING,
+            dlq_stream=Streams.OPTIONS_RAW_FETCHED_DLQ,
+            handler=self.process_event,
+            max_retries=2,
+            batch_size=1,
+            stop_event=stop_event,
+        )
 
-        while True:
-            # Block and wait for new raw options data
-            events = await self.redis.xread({self.consume_stream: last_id}, count=1, block=5000)
+    async def _price_chain_pde(self, S0, T, r, q, strikes, sigmas, is_call) -> list:
+        """Batched Crank-Nicolson prices, split into one chunk per pool worker."""
+        executor = self._get_executor()
+        workers = getattr(executor, "_max_workers", 1) or 1
+        chunks = max(1, min(workers, len(strikes) // _MIN_CONTRACTS_PER_CHUNK))
+        loop = asyncio.get_running_loop()
+        tasks = [
+            loop.run_in_executor(
+                executor, _price_chunk_sync, S0, T, r, q,
+                [strikes[i] for i in idx], [sigmas[i] for i in idx], [is_call[i] for i in idx],
+            )
+            for idx in np.array_split(np.arange(len(strikes)), chunks)
+        ]
+        return [price for chunk in await asyncio.gather(*tasks) for price in chunk]
 
-            for stream, messages in events:
-                for message_id, payload in messages:
-                    try:
-                        await self.process_event(payload)
-                    except Exception as exc:
-                        logger.error("Failed to process options event %s: %s", message_id, exc, exc_info=True)
-                    last_id = message_id
-
-    async def process_event(self, payload: dict):
-        symbol = payload[b"symbol"].decode("utf-8").upper()
-        data = json.loads(payload[b"data"].decode("utf-8"))
+    async def process_event(self, message: dict):
+        """Price one raw chain. message = {"symbol": str, "data": {spot_price, ..., strikes_data}}."""
+        symbol = str(message["symbol"]).upper()
+        data = message["data"]
 
         S0 = data["spot_price"]
         r = data["risk_free_rate"]
@@ -135,44 +145,70 @@ class OptionsPricingSubscriber:
             if strike not in strikes_map:
                 strikes_map[strike] = {}
             strikes_map[strike][s["type"]] = {
-                "iv": s.get("iv", 0.20),
+                "iv": s.get("iv"),
                 "ltp": s.get("ltp", 0.0)
             }
 
-        loop = asyncio.get_running_loop()
-        executor = self._get_executor()
-        tasks = []
-        for strike, type_data in strikes_map.items():
-            call_iv = type_data.get("CE", {}).get("iv", 0.20)
-            put_iv = type_data.get("PE", {}).get("iv", 0.20)
-            live_call = type_data.get("CE", {}).get("ltp", 0.0)
-            live_put = type_data.get("PE", {}).get("ltp", 0.0)
+        # Legs with a usable implied volatility; the others stay unpriced (None)
+        legs = [
+            (strike, opt_type, leg["iv"])
+            for strike, types in strikes_map.items()
+            for opt_type, leg in types.items()
+            if opt_type in ("CE", "PE") and _valid_iv(leg["iv"])
+        ]
+        prices: dict[tuple, tuple] = {}
+        if legs:
+            strikes = [leg[0] for leg in legs]
+            sigmas = [leg[2] for leg in legs]
+            is_call = [leg[1] == "CE" for leg in legs]
+            pde = await self._price_chain_pde(S0, T, r, dividend_yield, strikes, sigmas, is_call)
+            bsm = bsm_prices(S0, strikes, T, r, sigmas, is_call, q=dividend_yield)
+            prices = {(leg[0], leg[1]): (round(p, 2), round(float(b), 2)) for leg, p, b in zip(legs, pde, bsm)}
 
-            tasks.append(
-                loop.run_in_executor(
-                    executor,
-                    _solve_strike_sync,
-                    S0, strike, T, r, call_iv, put_iv, dividend_yield, live_call, live_put
-                )
-            )
-
-        priced_chain = await asyncio.gather(*tasks)
+        priced_chain = []
+        for strike, types in strikes_map.items():
+            call, put = types.get("CE", {}), types.get("PE", {})
+            fair_call, bs_fair_call = prices.get((strike, "CE"), (None, None))
+            fair_put, bs_fair_put = prices.get((strike, "PE"), (None, None))
+            priced_chain.append({
+                "strike": strike,
+                "fair_call": fair_call,
+                "fair_put": fair_put,
+                "call_iv": call.get("iv") if _valid_iv(call.get("iv")) else None,
+                "put_iv": put.get("iv") if _valid_iv(put.get("iv")) else None,
+                "bs_fair_call": bs_fair_call,
+                "bs_fair_put": bs_fair_put,
+                "live_call": round(call.get("ltp") or 0.0, 2),
+                "live_put": round(put.get("ltp") or 0.0, 2),
+            })
+        last_updated = datetime.now(timezone.utc).isoformat()
 
         # Cache in Redis for high performance read-model API querying
         cache_key = RedisKeys.MARKET_OPTIONS_PRICED.format(symbol=symbol)
         cache_payload = {
             "symbol": symbol,
             "chain": priced_chain,
-            "last_updated": datetime.now(timezone.utc).isoformat()
+            "last_updated": last_updated
         }
         await self.redis.set(cache_key, json.dumps(cache_payload), ex=TTL.MARKET_OPTIONS_PRICED)
 
-        # Publish Durable Event (for read-model updates)
-        event_data = json.dumps({"symbol": symbol, "chain": priced_chain})
-        await self.redis.xadd(self.publish_stream, {"data": event_data})
+        # Publish Durable Event: the priced chain plus the symbol-level snapshot alerts evaluate
+        event = {
+            "symbol": symbol,
+            "spot_price": S0,
+            "atm_iv_pct": _atm_iv_pct(S0, priced_chain),
+            "expiry": data.get("expiry"),
+            "last_updated": last_updated,
+            "chain": priced_chain,
+        }
+        await DurableEventStream(self.redis).publish(self.publish_stream, event)
 
-        # Publish Ephemeral Event (Live UX update)
-        await self.redis.publish(self.pubsub_channel.format(symbol=symbol), event_data)
+        # Publish Ephemeral Event (Live UX update). Browsers only use it as a "refetch" signal, so
+        # a small notification replaces the full chain that used to be fanned out to every socket.
+        await self.redis.publish(
+            self.pubsub_channel.format(symbol=symbol),
+            json.dumps({"symbol": symbol, "last_updated": last_updated}),
+        )
         logger.debug("Priced %d strikes for %s. Surface published.", len(priced_chain), symbol)
 
 

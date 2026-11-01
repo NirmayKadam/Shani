@@ -19,7 +19,7 @@ Database Tables:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response, HTTPException, status
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -53,6 +53,14 @@ async def lifespan(application: FastAPI):
         logger.info("Redis connection warmed during startup")
     except Exception as exc:
         logger.warning("Redis warmup failed (will retry on first use): %s", exc)
+
+    # Startup: load the instrument catalog in the background. Searches before it finishes wait on
+    # its lock in a worker thread (see symbols_router_api), never on the event loop.
+    try:
+        from domains.analytics.api.instruments_loader import instruments_catalog
+        instruments_catalog.load_in_background()
+    except Exception as exc:
+        logger.warning("Instrument catalog background load failed to start: %s", exc)
 
     # Startup: initialize NSE httpx client for option chain fetching
     try:
@@ -120,45 +128,29 @@ async def health(response: Response):
     from shared.infrastructure.database import get_database_pool
 
     current_settings = get_settings()
-    redis_status = "disabled"
-    db_status = "disabled"
-    healthy = True
+    # Degraded (HTTP 503) whenever a dependency is down, in every environment, so the Docker
+    # HEALTHCHECK and orchestrators see the real state.
+    redis_status = "disconnected"
+    db_status = "disconnected"
 
     try:
         r = await get_redis_client()
         if r and await r.ping():
             redis_status = "connected"
-        else:
-            redis_status = "disconnected"
-            if current_settings.AppEnv == "production":
-                healthy = False
     except Exception as exc:
         redis_status = "error"
         logger.debug("Health check Redis ping failed: %s", exc)
-        if current_settings.AppEnv == "production":
-            healthy = False
 
     try:
         pool = await get_database_pool()
-        if pool:
-            async with pool.acquire() as conn:
-                val = await conn.fetchval("SELECT 1")
-                if val == 1:
-                    db_status = "connected"
-                else:
-                    db_status = "disconnected"
-                    if current_settings.AppEnv == "production":
-                        healthy = False
-        else:
-            db_status = "disconnected"
-            if current_settings.AppEnv == "production":
-                healthy = False
+        async with pool.acquire() as conn:
+            if await conn.fetchval("SELECT 1") == 1:
+                db_status = "connected"
     except Exception as exc:
         db_status = "error"
         logger.debug("Health check DB query failed: %s", exc)
-        if current_settings.AppEnv == "production":
-            healthy = False
 
+    healthy = redis_status == "connected" and db_status == "connected"
     if not healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
@@ -171,17 +163,11 @@ async def health(response: Response):
 
 
 @app.get("/config")
-def get_config(request: Request):
-    from urllib.parse import urlparse
+def get_config():
+    """Public browser config. supabaseKey MUST be the Supabase *anon* key: it is meant to be
+    public (Row Level Security protects the data). Never configure a service-role key here.
+    An Origin/Referer check would add nothing, since both headers are client-controlled."""
     settings = get_settings()
-    origin = request.headers.get("origin") or request.headers.get("referer") or ""
-    if origin and settings.AppEnv == "production":
-        parsed = urlparse(origin)
-        origin_clean = f"{parsed.scheme}://{parsed.netloc}"
-        allowed = settings.get_allowed_origins_list()
-        if origin_clean not in allowed and "localhost" not in origin_clean and "127.0.0.1" not in origin_clean:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-origin access forbidden")
-
     return {
         "supabaseUrl": settings.SupabaseUrl,
         "supabaseKey": settings.SupabaseKey

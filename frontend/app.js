@@ -185,6 +185,30 @@ function cndist(x) {
 /**
  * Black-Scholes-Merton analytic pricer and greeks calculation
  */
+/**
+ * Fractional days until NSE settlement (15:30 IST = 10:00 UTC) on an expiry date "YYYY-MM-DD".
+ * Single date parser for the whole UI: returns null for a missing or malformed date.
+ */
+function daysUntilExpiry(expiryStr) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(expiryStr || "");
+    if (!m) return null;
+    const settlement = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 10, 0, 0);
+    const days = (settlement - Date.now()) / 86400000;
+    return Math.max(Math.round(days * 100) / 100, 0.01);
+}
+
+/**
+ * Volatility (%) used to price one strike. Live: the strike's own market IV (falling back to the
+ * headline IV). Simulation: the volatility slider shifts every strike's IV by the same amount, so
+ * the smile is kept and the slider visibly moves the whole chain.
+ */
+function strikeVolatility(rowIv) {
+    const marketVol = appState.marketVol || 25.0;
+    const base = rowIv > 0 ? rowIv : marketVol;
+    if (!appState.applySimulation) return base;
+    return Math.max(base + (appState.volatility - marketVol), 0.01);
+}
+
 function calculateBSM(S, K, T_days, r_pct, sigma_pct, q_pct) {
     // Conversions
     const T = Math.max(T_days, 0.001) / 365.0; // Avoid division by zero
@@ -500,17 +524,24 @@ function updateUnderlyingTime(timestampStr) {
 /**
  * Query live Redis or dynamic analytics parameters for selected instrument
  */
+// Each symbol load gets a sequence number; a slower response for an earlier symbol is discarded.
+let tickerRequestSeq = 0;
+
 async function fetchTickerData(symbol) {
+    const requestId = ++tickerRequestSeq;
     try {
         // Show loading state in the table
-        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">Loading option chain for ${symbol}...</td></tr>`;
-        
-        const res = await fetch(`/v1/pricer/ticker/${symbol}`);
+        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #1a237e; background-color: rgba(26, 35, 126, 0.04);">Loading option chain for ${escapeHtml(symbol)}...</td></tr>`;
+
+        const res = await fetch(`/v1/pricer/ticker/${encodeURIComponent(symbol)}`);
+        if (requestId !== tickerRequestSeq) return;
         if (!res.ok) throw new Error(`Ticker query failed for ${symbol}`);
-        
+
         const data = await res.json();
-        
-        // Load data properties into state
+        if (requestId !== tickerRequestSeq) return;
+
+        // Load data properties into state (a new symbol starts a fresh price timeline)
+        if (data.symbol !== appState.symbol) appState.lastPriceUpdated = null;
         appState.symbol = data.symbol;
         appState.marketSpot = data.stock_price;
         appState.optionChains = data.option_chains || {};
@@ -552,18 +583,7 @@ async function fetchTickerData(symbol) {
         }
         
         // Compute initial days to expiry from selectedExpiry
-        let initialDays = data.expiry_days > 0 ? data.expiry_days : 30;
-        if (appState.selectedExpiry) {
-            try {
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                const exp = new Date(appState.selectedExpiry + 'T00:00:00');
-                exp.setHours(0,0,0,0);
-                initialDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
-            } catch (e) {
-                initialDays = data.expiry_days > 0 ? data.expiry_days : 30;
-            }
-        }
+        const initialDays = daysUntilExpiry(appState.selectedExpiry) ?? (data.expiry_days > 0 ? data.expiry_days : 30);
         appState.daysToExpiry = initialDays;
         
         // Sync custom expiry UI and badge
@@ -611,36 +631,64 @@ async function fetchTickerData(symbol) {
             setupWebSocket(appState.symbol);
         }
     } catch (e) {
-
+        if (requestId !== tickerRequestSeq) return;
         console.error("Error fetching options parameters: ", e);
-        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${symbol}". Instrument may not exist or has no derivatives data.</td></tr>`;
+        elements.tableBody.innerHTML = `<tr><td colspan="19" style="text-align: center; padding: 40px; font-size: 14px; font-weight: 700; color: #dc2626; background-color: rgba(220, 38, 38, 0.04);">Error: Failed to fetch option chain for "${escapeHtml(symbol)}". Instrument may not exist or has no derivatives data.</td></tr>`;
     }
 }
 
 /**
  * Setup WebSocket connection for real-time updates
  */
+// Reconnect backoff (1s, 2s, 4s ... capped at 30s) and an application-level heartbeat so the
+// server's idle sweep never disconnects a quiet but open tab.
+let wsReconnectAttempts = 0;
+let wsHeartbeatTimer = null;
+const WS_HEARTBEAT_MS = 30000;
+
+function stopWebSocketHeartbeat() {
+    if (wsHeartbeatTimer) {
+        clearInterval(wsHeartbeatTimer);
+        wsHeartbeatTimer = null;
+    }
+}
+
 function setupWebSocket(symbol) {
+    stopWebSocketHeartbeat();
     if (currentSocket) {
+        const previous = currentSocket;
+        currentSocket = null;  // cleared first so the old socket's onclose does not reconnect
         try {
-            currentSocket.close(1000, "Switching symbol");
+            previous.close(1000, "Switching symbol");
         } catch (e) {
             console.error("Error closing existing socket:", e);
         }
-        currentSocket = null;
     }
-    
+
     const loc = window.location;
     const wsProtocol = loc.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${loc.host}/v1/ws/${symbol}`;
-    
+    const wsUrl = `${wsProtocol}//${loc.host}/v1/ws/${encodeURIComponent(symbol)}`;
+
     console.log(`Connecting WebSocket for ${symbol} to: ${wsUrl}`);
     const socket = new WebSocket(wsUrl);
     currentSocket = socket;
     activeSocketSymbol = symbol;
-    
-    socket.onopen = () => {
+
+    socket.onopen = async () => {
         console.log(`WebSocket connected for symbol: ${symbol}`);
+        wsReconnectAttempts = 0;
+        // Identify the user so their own alerts are delivered on this socket. The token goes in
+        // a message, not the URL, so it never lands in access logs.
+        const auth = await authHeaders();
+        if (auth.Authorization && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ action: "auth", token: auth.Authorization.slice("Bearer ".length) }));
+        }
+        stopWebSocketHeartbeat();
+        wsHeartbeatTimer = setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ action: "ping" }));
+            }
+        }, WS_HEARTBEAT_MS);
     };
     
     socket.onmessage = (event) => {
@@ -683,9 +731,11 @@ function setupWebSocket(symbol) {
             } else if (msg.type === "options") {
                 console.log(`Real-time options update received for ${symbol}`);
                 fetchTickerDataBackground(symbol);
-            } else if (msg.type === "ALERT_NOTIFICATION" || msg.type === "alert") {
-                console.log(`Real-time alert notification received for ${symbol}:`, msg);
-                showAlertToast(msg.message || `${msg.symbol} alert triggered: ${msg.triggered_value}`);
+            } else if (msg.type === "alert") {
+                // The WS gateway wraps every Pub/Sub message as {type, data}.
+                const alertData = msg.data || {};
+                console.log(`Real-time alert notification received for ${symbol}:`, alertData);
+                showAlertToast(alertData.message || `${alertData.symbol} alert triggered: ${alertData.triggered_value}`);
             }
         } catch (err) {
             console.error("Error parsing WebSocket message:", err);
@@ -694,17 +744,21 @@ function setupWebSocket(symbol) {
     
     socket.onclose = (event) => {
         console.log(`WebSocket closed for symbol: ${symbol}. Code: ${event.code}`);
+        // Only the current socket reconnects; a socket closed by a symbol switch is no longer current.
         if (currentSocket === socket) {
+            stopWebSocketHeartbeat();
             currentSocket = null;
             activeSocketSymbol = null;
-            
-            if (event.code !== 1000 && appState.symbol === symbol) {
-                console.log(`Attempting reconnection in 5s...`);
+
+            if (appState.symbol === symbol) {
+                const delay = Math.min(30000, 1000 * 2 ** wsReconnectAttempts);
+                wsReconnectAttempts += 1;
+                console.log(`Attempting reconnection in ${delay / 1000}s...`);
                 setTimeout(() => {
-                    if (appState.symbol === symbol) {
+                    if (appState.symbol === symbol && !currentSocket) {
                         setupWebSocket(symbol);
                     }
-                }, 5000);
+                }, delay);
             }
         }
     };
@@ -719,26 +773,37 @@ function setupWebSocket(symbol) {
  */
 async function fetchTickerDataBackground(symbol) {
     try {
-        const res = await fetch(`/v1/pricer/ticker/${symbol}`);
+        const res = await fetch(`/v1/pricer/ticker/${encodeURIComponent(symbol)}`);
         if (!res.ok) throw new Error(`Background ticker query failed for ${symbol}`);
-        
+
         const data = await res.json();
-        
+
         if (data.symbol !== appState.symbol) return;
-        
-        const updateTimeStr = data.generated_at || new Date().toISOString();
-        if (!updateUnderlyingTime(updateTimeStr)) {
-            return;
+
+        // The chain snapshot may be older than the last WebSocket price: only take its spot if it
+        // is newer (data_as_of is when the snapshot was fetched, not when it was served).
+        const spotIsNewer = updateUnderlyingTime(data.data_as_of || data.generated_at);
+        if (spotIsNewer) {
+            appState.marketSpot = data.stock_price;
         }
-        
-        appState.marketSpot = data.stock_price;
         appState.marketVol = data.implied_volatility > 0 ? data.implied_volatility : (data.historical_volatility > 0 ? data.historical_volatility : 25.0);
-        appState.marketDays = data.expiry_days > 0 ? data.expiry_days : 30;
         appState.marketRate = data.risk_free_rate || (appState.symbol === "AAPL" || appState.symbol === "TSLA" ? 5.25 : 6.50);
         appState.marketYield = data.dividend_yield || 0.0;
-        
+
         appState.optionChains = data.option_chains || {};
-        
+
+        // Expiries roll off: refresh the list, keep the user's choice if it still exists
+        const newExpiries = data.expiry_dates || [];
+        if (newExpiries.join(",") !== (appState.expiryDates || []).join(",")) {
+            appState.expiryDates = newExpiries;
+            if (!newExpiries.includes(appState.selectedExpiry)) {
+                appState.selectedExpiry = newExpiries[0] || "";
+            }
+            populateDropdowns();
+        }
+        // Days to expiry always follow the selected expiry, not the server's nearest one
+        appState.marketDays = daysUntilExpiry(appState.selectedExpiry) ?? (data.expiry_days > 0 ? data.expiry_days : 30);
+
         elements.underlyingPrice.textContent = formatNumber(appState.marketSpot, 2);
         
         const spotMin = Math.round(appState.marketSpot * 0.7 * 100) / 100;
@@ -751,7 +816,7 @@ async function fetchTickerDataBackground(symbol) {
         elements.spotMaxLbl.textContent = formatNumber(spotMax, 2);
         
         if (!appState.applySimulation) {
-            appState.spot = data.stock_price;
+            appState.spot = appState.marketSpot;
             appState.volatility = appState.marketVol;
             appState.daysToExpiry = appState.marketDays;
             appState.riskFreeRate = appState.marketRate;
@@ -956,21 +1021,9 @@ function recalculateAndRender() {
     }
 
     // 1. Resolve active calculation parameters (live vs. simulated)
-    let liveDays = appState.marketDays || 30;
-    if (appState.selectedExpiry) {
-        try {
-            const today = new Date();
-            today.setHours(0,0,0,0);
-            const exp = new Date(appState.selectedExpiry);
-            exp.setHours(0,0,0,0);
-            liveDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
-        } catch (e) {
-            liveDays = appState.marketDays || 30;
-        }
-    }
+    const liveDays = daysUntilExpiry(appState.selectedExpiry) ?? (appState.marketDays || 30);
 
     const activeSpot = appState.applySimulation ? appState.spot : appState.marketSpot;
-    const activeVol = appState.applySimulation ? appState.volatility : (appState.marketVol || 25.0);
     const activeDays = appState.applySimulation ? appState.daysToExpiry : liveDays;
     const activeRate = appState.applySimulation ? appState.riskFreeRate : (appState.marketRate || 6.50);
     const activeYield = appState.applySimulation ? appState.dividendYield : (appState.marketYield || 0.0);
@@ -1040,8 +1093,8 @@ function recalculateAndRender() {
         const isATM = strike === atmStrike;
         
         // Calculate BSM values for specific strike using the active parameters
-        const callIv = row.call?.iv || activeVol;
-        const putIv = row.put?.iv || activeVol;
+        const callIv = strikeVolatility(row.call?.iv);
+        const putIv = strikeVolatility(row.put?.iv);
         
         const callBS = calculateBSM(activeSpot, strike, activeDays, activeRate, callIv, activeYield);
         const putBS = calculateBSM(activeSpot, strike, activeDays, activeRate, putIv, activeYield);
@@ -1248,27 +1301,15 @@ window.openStrikeModal = function(strikePrice) {
     const row = chainRows.find(r => Math.abs(r.strike_price - strikePrice) < 0.01);
     if (!row) return;
 
-    let liveDays = appState.marketDays || 30;
-    if (appState.selectedExpiry) {
-        try {
-            const today = new Date();
-            today.setHours(0,0,0,0);
-            const exp = new Date(appState.selectedExpiry);
-            exp.setHours(0,0,0,0);
-            liveDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
-        } catch (e) {
-            liveDays = appState.marketDays || 30;
-        }
-    }
+    const liveDays = daysUntilExpiry(appState.selectedExpiry) ?? (appState.marketDays || 30);
 
     const activeSpot = appState.applySimulation ? appState.spot : appState.marketSpot;
-    const activeVol = appState.applySimulation ? appState.volatility : (appState.marketVol || 25.0);
     const activeDays = appState.applySimulation ? appState.daysToExpiry : liveDays;
     const activeRate = appState.applySimulation ? appState.riskFreeRate : (appState.marketRate || 6.50);
     const activeYield = appState.applySimulation ? appState.dividendYield : (appState.marketYield || 0.0);
 
-    const callIv = row.call?.iv || activeVol;
-    const putIv = row.put?.iv || activeVol;
+    const callIv = strikeVolatility(row.call?.iv);
+    const putIv = strikeVolatility(row.put?.iv);
 
     const callBS = calculateBSM(activeSpot, strikePrice, activeDays, activeRate, callIv, activeYield);
     const putBS = calculateBSM(activeSpot, strikePrice, activeDays, activeRate, putIv, activeYield);
@@ -1377,6 +1418,9 @@ function ensureXlsxLoaded() {
     _xlsxLoadingPromise = new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = "https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js";
+        // Subresource Integrity: the browser refuses the script if the CDN serves different bytes.
+        script.integrity = "sha256-HHq/KZP/LNYeUI+SaOms2gCYyXlvOSXSug0leQcmU+I=";
+        script.crossOrigin = "anonymous";
         script.onload = () => resolve();
         script.onerror = (e) => {
             _xlsxLoadingPromise = null;
@@ -1413,26 +1457,14 @@ async function downloadCSV() {
 
     chainRows.forEach(row => {
         const strike = row.strike_price;
-        let liveDays = appState.marketDays || 30;
-        if (appState.selectedExpiry) {
-            try {
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                const exp = new Date(appState.selectedExpiry);
-                exp.setHours(0,0,0,0);
-                liveDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
-            } catch (e) {
-                liveDays = appState.marketDays || 30;
-            }
-        }
+        const liveDays = daysUntilExpiry(appState.selectedExpiry) ?? (appState.marketDays || 30);
         const activeSpot = appState.applySimulation ? appState.spot : appState.marketSpot;
-        const activeVol = appState.applySimulation ? appState.volatility : (appState.marketVol || 25.0);
-        const activeDays = appState.applySimulation ? appState.daysToExpiry : liveDays;
+            const activeDays = appState.applySimulation ? appState.daysToExpiry : liveDays;
         const activeRate = appState.applySimulation ? appState.riskFreeRate : (appState.marketRate || 6.50);
         const activeYield = appState.applySimulation ? appState.dividendYield : (appState.marketYield || 0.0);
 
-        const callIv = row.call?.iv || activeVol;
-        const putIv = row.put?.iv || activeVol;
+        const callIv = strikeVolatility(row.call?.iv);
+        const putIv = strikeVolatility(row.put?.iv);
         const callBS = calculateBSM(activeSpot, strike, activeDays, activeRate, callIv, activeYield);
         const putBS = calculateBSM(activeSpot, strike, activeDays, activeRate, putIv, activeYield);
 
@@ -1522,14 +1554,7 @@ async function downloadCSV() {
     const exportTime = exportNow.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
 
     // Resolve active BSM parameters (same logic as chain rendering)
-    let summaryLiveDays = appState.marketDays || 30;
-    if (appState.selectedExpiry) {
-        try {
-            const td = new Date(); td.setHours(0,0,0,0);
-            const ex = new Date(appState.selectedExpiry); ex.setHours(0,0,0,0);
-            summaryLiveDays = Math.max(Math.round((ex - td) / (1000 * 60 * 60 * 24)), 1);
-        } catch (e) { summaryLiveDays = appState.marketDays || 30; }
-    }
+    const summaryLiveDays = daysUntilExpiry(appState.selectedExpiry) ?? (appState.marketDays || 30);
     const simActive = !!appState.applySimulation;
     const sourceLabel = simActive ? "BSM Custom Simulation" : "Market Data (Live)";
 
@@ -1797,15 +1822,16 @@ bindSlider(elements.bsmDiv, elements.bsmDivSlider, "dividendYield", recalculateA
 
 // Custom Expiry Date & DTE UI Synchronization
 function syncCustomExpiryUI(days, dateStr) {
-    if (days < 1) days = 1;
+    // Expiry-week options have under a day left: keep fractional days instead of rounding up to 1.
+    if (!(days > 0)) days = 0.01;
     appState.daysToExpiry = days;
-    
+
     if (elements.bsmDays) elements.bsmDays.value = days;
     if (elements.bsmDaysSlider) elements.bsmDaysSlider.value = days;
-    
+
     const dteBadge = document.getElementById("terminal-dte-badge");
     if (dteBadge) {
-        dteBadge.textContent = `${days} DTE`;
+        dteBadge.textContent = `${Number.isInteger(days) ? days : days.toFixed(2)} DTE`;
     }
     
     const customDateInput = document.getElementById("custom-expiry-date");
@@ -1863,19 +1889,8 @@ elements.expirySelect.addEventListener("change", (e) => {
     appState.selectedExpiry = e.target.value;
     appState.selectedStrike = "ALL"; // Reset strike filter on expiry change
     
-    // Estimate expiry days automatically based on select date
-    let diffDays = 30;
-    try {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const exp = new Date(appState.selectedExpiry + 'T00:00:00');
-        exp.setHours(0,0,0,0);
-        diffDays = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
-    } catch (err) {
-        console.error(err);
-        diffDays = 30;
-    }
-    
+    // Days to expiry follow the selected expiry
+    const diffDays = daysUntilExpiry(appState.selectedExpiry) ?? 30;
     syncCustomExpiryUI(diffDays, appState.selectedExpiry);
     recalculateAndRender();
 });
@@ -1885,14 +1900,8 @@ const customDateInput = document.getElementById("custom-expiry-date");
 if (customDateInput) {
     customDateInput.addEventListener("change", (e) => {
         const val = e.target.value;
-        if (!val) return;
-        const selected = new Date(val + 'T00:00:00');
-        if (isNaN(selected.getTime())) return;
-        
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        selected.setHours(0,0,0,0);
-        const diff = Math.max(Math.round((selected - today) / (1000 * 60 * 60 * 24)), 1);
+        const diff = daysUntilExpiry(val);
+        if (diff === null) return;
         
         if (elements.expirySelect) {
             for (let i = 0; i < elements.expirySelect.options.length; i++) {
@@ -1953,15 +1962,7 @@ elements.resetMarketBtn.addEventListener("click", () => {
     }
     appState.volatility = avgIV;
     
-    try {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const exp = new Date(appState.selectedExpiry + 'T00:00:00');
-        exp.setHours(0,0,0,0);
-        appState.daysToExpiry = Math.max(Math.round((exp - today) / (1000 * 60 * 60 * 24)), 1);
-    } catch (e) {
-        appState.daysToExpiry = 30;
-    }
+    appState.daysToExpiry = daysUntilExpiry(appState.selectedExpiry) ?? 30;
     
     appState.riskFreeRate = appState.marketRate || ((appState.symbol === "AAPL" || appState.symbol === "TSLA") ? 5.25 : 6.50);
     appState.dividendYield = appState.marketYield || 0.0;
@@ -2544,6 +2545,25 @@ function setupBsmModal() {
 }
 
 // --- Alerts & Notifications Modal & Toast Handlers ---
+const ALERT_OPERATORS = { ABOVE_PRICE: "price >", BELOW_PRICE: "price <", IV_SPIKE: "ATM IV % ≥" };
+
+// Supabase access token for authenticated API calls (alerts are per user).
+async function authHeaders(extra = {}) {
+    const headers = { ...extra };
+    try {
+        const client = window.supabaseClient;
+        if (client) {
+            const { data: { session } } = await client.auth.getSession();
+            if (session && session.access_token) {
+                headers["Authorization"] = `Bearer ${session.access_token}`;
+            }
+        }
+    } catch (err) {
+        console.warn("No auth session available for API call:", err);
+    }
+    return headers;
+}
+
 function setupAlertsModal() {
     const bellBtn = document.getElementById("notification-bell-btn");
     const alertsModal = document.getElementById("alerts-modal");
@@ -2577,7 +2597,7 @@ function setupAlertsModal() {
             try {
                 const res = await fetch("/v1/notifications/alerts", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: await authHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
                         symbol: symbol,
                         condition_type: condition,
@@ -2603,7 +2623,7 @@ async function loadActiveAlertRules() {
     const listEl = document.getElementById("active-alerts-list");
     if (!listEl) return;
     try {
-        const res = await fetch("/v1/notifications/alerts");
+        const res = await fetch("/v1/notifications/alerts", { headers: await authHeaders() });
         if (res.ok) {
             const rules = await res.json();
             if (rules.length === 0) {
@@ -2613,27 +2633,33 @@ async function loadActiveAlertRules() {
             listEl.innerHTML = rules.map(r => `
                 <div class="active-alert-item">
                     <div>
-                        <strong style="color: var(--accent-indigo);">${escapeHtml(r.symbol)}</strong>: ${escapeHtml(r.condition_type)} &gt; ${escapeHtml(String(r.threshold))} (Cooldown: ${r.cooldown_seconds}s)
+                        <strong style="color: var(--accent-indigo);">${escapeHtml(r.symbol)}</strong>: ${escapeHtml(ALERT_OPERATORS[r.condition_type] || r.condition_type)} ${escapeHtml(String(r.threshold))} (Cooldown: ${escapeHtml(String(r.cooldown_seconds))}s)
                     </div>
-                    <button onclick="deleteAlertRule('${escapeHtml(String(r.id))}')" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;">Delete</button>
+                    <button class="alert-delete-btn" data-rule-id="${escapeHtml(String(r.id))}" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;">Delete</button>
                 </div>
             `).join("");
+            listEl.querySelectorAll(".alert-delete-btn").forEach(btn => {
+                btn.addEventListener("click", () => deleteAlertRule(btn.dataset.ruleId));
+            });
         }
     } catch (err) {
         console.error("Failed to load active alert rules:", err);
     }
 }
 
-window.deleteAlertRule = async function(ruleId) {
+async function deleteAlertRule(ruleId) {
     try {
-        const res = await fetch(`/v1/notifications/alerts/${ruleId}`, { method: "DELETE" });
+        const res = await fetch(`/v1/notifications/alerts/${encodeURIComponent(ruleId)}`, {
+            method: "DELETE",
+            headers: await authHeaders(),
+        });
         if (res.ok) {
             loadActiveAlertRules();
         }
     } catch (err) {
         console.error("Failed to delete alert rule:", err);
     }
-};
+}
 
 function showAlertToast(message) {
     const badge = document.getElementById("alert-badge-count");

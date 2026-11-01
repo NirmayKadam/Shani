@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
     """PostgreSQL / TimescaleDB implementation of IAlertRuleRepositoryPort using asyncpg."""
 
+    _COLUMNS = (
+        "id, symbol, condition_type, threshold, channels, cooldown_seconds, "
+        "last_triggered_at, is_active, webhook_url, email_destination, created_at, "
+        "last_condition_met, user_id, webhook_secret"
+    )
+
     def __init__(self, pool: Optional[asyncpg.Pool] = None):
         self._pool = pool
 
@@ -35,8 +41,9 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
         query = """
             INSERT INTO AlertRules (
                 id, symbol, condition_type, threshold, channels, cooldown_seconds,
-                last_triggered_at, is_active, webhook_url, email_destination, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                last_triggered_at, is_active, webhook_url, email_destination, created_at,
+                user_id, webhook_secret
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (id) DO UPDATE SET
                 symbol = EXCLUDED.symbol,
                 condition_type = EXCLUDED.condition_type,
@@ -62,14 +69,15 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
                 rule.webhook_url,
                 rule.email_destination,
                 rule.created_at,
+                rule.user_id,
+                rule.webhook_secret,
             )
         return rule
 
     async def get_rule_by_id(self, rule_id: uuid.UUID) -> Optional[AlertRule]:
         pool = await self._get_pool()
-        query = """
-            SELECT id, symbol, condition_type, threshold, channels, cooldown_seconds,
-                   last_triggered_at, is_active, webhook_url, email_destination, created_at
+        query = f"""
+            SELECT {self._COLUMNS}
             FROM AlertRules
             WHERE id = $1;
         """
@@ -81,14 +89,27 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
 
     async def get_active_rules_by_symbol(self, symbol: str) -> List[AlertRule]:
         pool = await self._get_pool()
-        query = """
-            SELECT id, symbol, condition_type, threshold, channels, cooldown_seconds,
-                   last_triggered_at, is_active, webhook_url, email_destination, created_at
+        # Symbols are stored uppercase, so a plain equality uses idx_alert_rules_symbol.
+        query = f"""
+            SELECT {self._COLUMNS}
             FROM AlertRules
-            WHERE UPPER(symbol) = UPPER($1) AND is_active = TRUE;
+            WHERE symbol = $1 AND is_active = TRUE;
         """
         async with pool.acquire() as conn:
-            rows = await conn.fetch(query, symbol)
+            rows = await conn.fetch(query, symbol.upper())
+            return [self._map_row_to_alert_rule(r) for r in rows]
+
+    async def list_active_rules(self, user_id: Optional[uuid.UUID] = None) -> List[AlertRule]:
+        pool = await self._get_pool()
+        # With a user, only that user's rules; without one (anonymous local development), all.
+        query = f"""
+            SELECT {self._COLUMNS}
+            FROM AlertRules
+            WHERE is_active = TRUE AND ($1::uuid IS NULL OR user_id = $1::uuid)
+            ORDER BY created_at DESC;
+        """
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, user_id)
             return [self._map_row_to_alert_rule(r) for r in rows]
 
     async def delete_rule(self, rule_id: uuid.UUID) -> bool:
@@ -99,17 +120,30 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
             # Result format: "DELETE 1" or "DELETE 0"
             return result.endswith("1")
 
-    async def update_last_triggered(
-        self, rule_id: uuid.UUID, triggered_at: datetime
-    ) -> None:
-        pool = await self._get_pool()
+    async def try_transition(
+        self, rule_id: uuid.UUID, condition_met: bool, now: datetime
+    ) -> bool:
+        # One conditional UPDATE: only the first evaluator to see a state change wins, and a
+        # change to TRUE (a firing) is refused inside the cooldown window. Parameters are cast
+        # explicitly: in `$3 - make_interval(...)` Postgres would otherwise infer $3 as an interval.
         query = """
             UPDATE AlertRules
-            SET last_triggered_at = $2
-            WHERE id = $1;
+            SET last_condition_met = $2::boolean,
+                last_triggered_at = CASE WHEN $2::boolean THEN $3::timestamptz ELSE last_triggered_at END
+            WHERE id = $1::uuid
+              AND is_active = TRUE
+              AND last_condition_met IS DISTINCT FROM $2::boolean
+              AND (
+                  NOT $2::boolean
+                  OR last_triggered_at IS NULL
+                  OR last_triggered_at <= $3::timestamptz - make_interval(secs => cooldown_seconds)
+              )
+            RETURNING id;
         """
+        pool = await self._get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(query, rule_id, triggered_at)
+            row = await conn.fetchrow(query, rule_id, condition_met, now)
+        return row is not None
 
     async def log_notification_event(self, event: NotificationEvent) -> NotificationEvent:
         pool = await self._get_pool()
@@ -151,4 +185,7 @@ class PostgresAlertRuleRepository(IAlertRuleRepositoryPort):
             webhook_url=row["webhook_url"],
             email_destination=row["email_destination"],
             created_at=row["created_at"],
+            last_condition_met=row["last_condition_met"],
+            user_id=row["user_id"],
+            webhook_secret=row["webhook_secret"],
         )

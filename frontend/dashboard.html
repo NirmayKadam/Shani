@@ -729,7 +729,7 @@
     </div>
 
     <!-- Supabase Auth Guard -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha256-7jvo3hkrl8sdc9HpXWuCux9rZYwPl8TvdX/DMZlu09M=" crossorigin="anonymous"></script>
     <script src="/supabaseClient.js"></script>
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
@@ -1082,10 +1082,9 @@
                         <div class="alert-field-group">
                             <label for="alert-condition-select">Condition</label>
                             <select id="alert-condition-select">
-                                <option value="ABOVE_PRICE">Price Above Threshold</option>
-                                <option value="BELOW_PRICE">Price Below Threshold</option>
-                                <option value="IV_SPIKE">Implied Volatility Spike (%)</option>
-                                <option value="DELTA_BREACH">Delta Breach</option>
+                                <option value="ABOVE_PRICE">Spot Price Crosses Above</option>
+                                <option value="BELOW_PRICE">Spot Price Crosses Below</option>
+                                <option value="IV_SPIKE">ATM Implied Volatility Rises To (%)</option>
                             </select>
                         </div>
                     </div>
@@ -1096,7 +1095,7 @@
                         </div>
                         <div class="alert-field-group">
                             <label for="alert-cooldown-input">Cooldown (Seconds)</label>
-                            <input type="number" id="alert-cooldown-input" value="300">
+                            <input type="number" id="alert-cooldown-input" value="300" min="10" max="86400">
                         </div>
                     </div>
                     <button type="submit" class="alert-submit-btn">Save Alert Rule</button>
@@ -1159,9 +1158,9 @@
                     <div class="input-card">
                         <div class="input-header">
                             <label for="bsm-days">Days to Expiry</label>
-                            <input type="number" id="bsm-days" step="1" value="30">
+                            <input type="number" id="bsm-days" step="any" min="0.01" value="30">
                         </div>
-                        <input type="range" id="bsm-days-slider" min="1" max="365" step="1" value="30" aria-label="Days to Expiry Slider" title="Days to Expiry Slider">
+                        <input type="range" id="bsm-days-slider" min="0.01" max="365" step="0.01" value="30" aria-label="Days to Expiry Slider" title="Days to Expiry Slider">
                         <div class="range-labels">
                             <span>1 Day</span>
                             <span>365 Days</span>

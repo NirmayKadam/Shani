@@ -86,7 +86,7 @@ frontend/            # Glassmorphic dark-theme NSE dashboard (Vanilla HTML5, CSS
 Always reference [constants.py](file:///d:/Nirmay%20pc/ENGINEERING/projects/MarketSentimentAnalysis2/shared/constants.py):
 
 - **Pub/Sub Channels**: `Channels.PRICE_UPDATED`, `Channels.OPTIONS_UPDATED`, `Channels.ALERT_DISPATCHED`
-- **Redis Streams**: `Streams.PRICE_TRIGGER`, `Streams.OPTIONS_RAW_FETCHED`, `Streams.OPTIONS_PRICED`, `Streams.ANALYSIS_REFRESH_REQUESTED`
+- **Redis Streams**: `Streams.PRICE_TRIGGER`, `Streams.OPTIONS_RAW_FETCHED`, `Streams.OPTIONS_PRICED` (plus their `*_DLQ` dead-letter streams; consumer groups in `StreamGroups`)
 - **Keys & TTL**: `RedisKeys.MARKET_PRICE`, `RedisKeys.MARKET_OPTIONS`, `RedisKeys.MARKET_OPTIONS_PRICED` using `TTL.MARKET_PRICE` (60s), `TTL.MARKET_OPTIONS` (120s)
 
 ### Market Data Adapter Architecture

@@ -73,6 +73,9 @@ async def test_get_rule_by_id_found(mock_db_pool):
         "webhook_url": "https://example.com/webhook",
         "email_destination": None,
         "created_at": now,
+        "last_condition_met": None,
+        "user_id": None,
+        "webhook_secret": None,
     }
     
     result = await repo.get_rule_by_id(rule_id)
@@ -112,6 +115,9 @@ async def test_get_active_rules_by_symbol(mock_db_pool):
             "webhook_url": None,
             "email_destination": None,
             "created_at": now,
+            "last_condition_met": None,
+            "user_id": None,
+            "webhook_secret": None,
         }
     ]
     

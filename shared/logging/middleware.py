@@ -1,5 +1,4 @@
 import time
-import uuid
 import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -11,8 +10,11 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         start_time = time.perf_counter()
         
-        # Extract correlation ID from headers or generate new one
-        correlation_id = request.headers.get("X-Correlation-ID") or request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        # Reuse the validated id from RequestIDMiddleware (runs first), or validate the header here
+        correlation_id = getattr(request.state, "request_id", None)
+        if not correlation_id:
+            from shared.middleware.request_id import correlation_id_for
+            correlation_id = correlation_id_for(request)
         set_correlation_id(correlation_id)
         
         response = None

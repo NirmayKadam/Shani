@@ -46,6 +46,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
+# Unprivileged user for the application processes (Postgres and Redis keep their own users).
+# A home directory is needed for library caches such as yfinance's.
+RUN useradd --system --uid 10001 --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser
+
 # Copy application source & configs
 COPY . .
 COPY docker/supervisord.conf /supervisord.conf
