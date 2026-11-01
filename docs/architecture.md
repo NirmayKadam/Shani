@@ -43,8 +43,8 @@ AlphaStreams V2 is engineered as a **Modular Monolith** adhering to the principl
 
 1. **Ingestion Context (`domains/ingestion`)**: Establishes connections to external financial market APIs, maintains stateful sessions, rotates HTTP cookies, parses market payloads, and publishes raw tick data structures to the messaging layer.
 2. **Analytics Context (`domains/analytics`)**: The mathematical engine. Consumes ingestion event streams, executes analytical (BSM) and numerical (Crank-Nicolson PDE) option solvers, computes technical indicator formulas (RSI, MACD, Bollinger Bands, ATR, Pivots), and updates read-optimized caches.
-3. **Notifications Context (`domains/notifications`)**: Real-time alert engine. Manages user-defined alert rules, evaluates price/IV/delta conditions against live market ticks, dispatches notifications via configurable channels (webhook, email), and enforces cooldown policies.
-4. **Historical OHLC Context (`domains/historical`)**: Historical candle persistence & data query engine. Stores immutable 1m/5m/1d bars in TimescaleDB hypertables with 90-day retention policies and provides clean OHLC data series to analytical solvers.
+3. **Notifications Context (`domains/notifications`)**: Real-time alert engine. Manages per-user alert rules (each rule is owned by the Supabase user who created it), evaluates symbol-level conditions (spot price above/below, ATM IV % spike) once per priced chain, fires only when a condition **crosses** from false to true, enforces the cooldown atomically in Postgres, and dispatches only through the channels chosen on the rule (WebSocket to the owner's sockets, HMAC-signed webhook, email).
+4. **Historical OHLC Context (`domains/historical`)**: Historical candle persistence & data query engine. The `OhlcCandles` hypertable and repository exist, but no live candle writer feeds them yet (see Known limitations); technicals read daily history from yfinance instead.
 5. **Application & Serving Context (`app/` / `frontend/`)**: Exposes REST and WebSocket gateways using FastAPI to interface with the web client. Serves static assets, provides caching mechanisms for endpoints, and manages low-latency pub/sub streaming to active web connections.
 6. **Shared Kernel (`shared/`)**: Provides cross-cutting facilities including database adapters, caching client configurations, global constants, symbol validation rules, structured logging, middleware, and Celery task scheduler application context.
 
@@ -126,7 +126,7 @@ graph TD
         subgraph NotificationsPipeline [Notifications Bounded Context]
             NotificationSub[NotificationSubscriber - Consumer Daemon]
             RuleEngine[RuleMatcherDomainService - Condition Engine]
-            ChannelDispatch[Channel Adapters - WS, Webhook, Email Celery]
+            ChannelDispatch[Channel Adapters - WS, Webhook, Email]
         end
 
         subgraph HistoricalContext [Historical OHLC Bounded Context - Data Layer]
@@ -169,7 +169,7 @@ graph TD
     IngestionService ==|Cache price & options snapshots|==> RedisCache
 
     RawTicks ==|Consume raw ticks|==> OptionsSub
-    RawTicks ==|Build 1m/5m candles|==> OhlcIngestion
+    RawTicks -.->|Planned: build 1m/5m candles| OhlcIngestion
 
     OptionsSub -->|Solve BSM & Greeks| BSMPricer
     OptionsSub -->|Evaluate PDE| CNPricer
@@ -182,7 +182,7 @@ graph TD
     NotificationSub -->|Match active rules| RuleEngine
     RuleEngine -->|Trigger alerts| ChannelDispatch
     ChannelDispatch -->|Publish alert toast| RedisPubSub
-    ChannelDispatch -->|Async POST / SMTP| CeleryTasks
+    ChannelDispatch -.->|Signed HTTPS POST / SMTP| External
     ChannelDispatch -->|Log alert| TimescaleDB
 
     OhlcIngestion -->|Bulk insert OHLC candles| TimescaleDB
@@ -240,10 +240,11 @@ graph TD
                                                                                                    [ WebSocket Gateway ]
 ```
 
-1. **Trigger (Driving Input):** Celery task `ingestion.poll_options` fires, invoking Application Service `IngestionService.ingest_options(symbol)`.
-2. **Fetch (Outbound Port -> Outbound Adapter):** `IngestionService` invokes `IOptionChainSourcePort.fetch_option_chain(symbol)`. Dependency Injection resolves concrete adapter (`GrowwApiAdapter` / `NseApiAdapter`), returning `RawTickDTO`.
-3. **Publish Stream (Outbound Port -> Outbound Adapter):** `IngestionService` invokes `IEventBusPort.publish("stream:options.raw_fetched", data)`. `RedisEventBusAdapter` pushes payload to Redis Stream.
-4. **Broadcast (Driven Consumer -> Driving Gateway):** `OptionsPricingSubscriber` consumes stream, computes math domain, pushes to Redis Pub/Sub. FastAPI WebSocket gateway (`/v1/ws/{symbol}`) relays payload to UI.
+1. **Trigger (Driving Input):** while a symbol has WebSocket viewers, the API's polling loop dispatches Celery task `ingestion.fetch_and_publish_options` every 15 s (prices every 5 s). Every uvicorn worker runs the loop, so each dispatch first claims a Redis slot (`SET poll:slot:{kind}:{symbol} NX PX`); exactly one worker polls a symbol per interval.
+2. **Fetch (Outbound Port -> Outbound Adapter):** the task calls `IOptionChainSourcePort.fetch_option_chain(symbol)` on the adapter from `get_market_data_adapter`, which is shared per event loop so HTTP sessions, NSE cookies and the Groww token are reused.
+3. **Skip unchanged chains:** the task hashes the chain's market fields. If the hash matches the last one (outside market hours, or between exchange updates), it refreshes the raw-chain cache and stops: no TickData insert, no re-pricing. The hash key expires at half the priced-chain TTL, so the read model never goes stale.
+4. **Persist and publish:** every expiry goes to TimescaleDB (`COPY`), the raw chain to `market:options:{symbol}`, and the nearest expiry's near-the-money strikes to `stream:options.raw_fetched` (length-bounded `XADD`).
+5. **Price (Driven Consumer):** `OptionsPricingSubscriber` reads the stream through a consumer group, prices the chain (batched Crank-Nicolson plus vectorised BSM in a process pool), caches it in `market:options:priced:{symbol}`, publishes `stream:options.priced`, and sends a small `{symbol, last_updated}` message on Pub/Sub. The WebSocket gateway relays it and the browser refetches the chain.
 
 ### Real-Time Live Data WebSocket & Pub/Sub Fan-Out Flow
 
@@ -290,8 +291,10 @@ sequenceDiagram
 Data ingestion operates via an interface-driven architecture, decoupling pipeline execution from concrete API providers through `IMarketPriceSourcePort` and `IOptionChainSourcePort`.
 
 ### Adapter Factory & Session Management
-* **`GrowwApiAdapter`**: Primary live option chain and quote retrieval. Handles dynamic access tokens and caches auxiliary data (e.g. dividend yield) in Redis.
-* **`NseApiAdapter`**: Connects to NSE India API. Serves as primary driver under `MARKET_DATA_PROVIDER="nse"` or fallback when Groww credentials expire.
+* **`GrowwApiAdapter`**: Primary live option chain and quote retrieval. The daily access token is shared across processes in Redis (`groww:access_token`) until one minute before it expires; the expiry list is cached per IST trading day; dividend yield is cached in Redis.
+* **`NseApiAdapter`**: Connects to NSE India API. Serves as primary driver under `MARKET_DATA_PROVIDER="nse"` or fallback when Groww credentials expire. IV is normalised to a decimal (both adapters emit 0.142, not 14.2). yfinance `ticker.info` (dividend yield, currency) is cached per process for 24 h; yfinance reports `dividendYield` in percent, so the yield is derived from `dividendRate / price`.
+* **Per-loop singletons**: `get_market_data_adapter()` returns one adapter per event loop. Callers must not close it.
+* **Single-flight cache misses**: when `/v1/pricer/ticker/{symbol}` misses the cache, the first request takes a Redis lock (`pricer:fetching:{symbol}`) and fetches; concurrent requests wait for its cached result instead of all hitting the market sources. A live fetch has an overall 25 s deadline.
 * **Session Cookie Rotation**: Performs initial warm-up sequence (`https://www.nseindia.com`) and programmatically refreshes session cookies every 10 minutes (600s).
 * **Tiered Market Fallback**:
   1. Redis Cache check.
@@ -330,27 +333,31 @@ $$d_2 = d_1 - \sigma\sqrt{T}$$
 
 Solves the Black-Scholes partial differential equation:
 
-$$\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0$$
+$$\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + (r - q) S \frac{\partial V}{\partial S} - r V = 0$$
 
-#### Grid Discretization & CFL Stability
-1. **Stock Price Domain**: $S \in [0, S_{max}]$ with $S_{max} = \max(3K, 2.5S_0)$, grid size $M$ steps ($dS = S_{max}/M$).
-2. **Temporal Domain**: $t \in [0, T]$ with $N$ steps ($dt = T/N$).
-3. **CFL Stability Check**: Validates $dt \le \frac{0.9}{\sigma^2 M^2} S_{max}^2$, automatically increasing $N$ if stability criterion is violated.
+#### Grid Discretization
+1. **Stock Price Domain**: $S \in [\min(S_0, K)\,e^{-w},\ \max(S_0, K)\,e^{w}]$ with $w = 4\sigma\sqrt{T}$: four standard deviations of the log-price at expiry beyond both spot and strike, with $M$ uniform steps.
+2. **Temporal Domain**: $\tau \in [0, T]$ with $N$ steps ($dt = T/N$).
+3. **Stability**: Crank-Nicolson is unconditionally stable for this equation, so no CFL check is needed. The first 2 steps are replaced by 4 fully implicit half-steps (Rannacher start-up) to damp oscillations from the payoff's kink at the strike.
+4. **Boundaries**: call top edge $S_{max} e^{-q\tau} - K e^{-r\tau}$, put bottom edge $K e^{-r\tau} - S_{min} e^{-q\tau}$, zero on the other edge.
 
 #### Linear System Construction
-Discretized implicit/explicit formulation:
+Discretized implicit/explicit formulation (unknown new level on the left):
 
-$$- \alpha_i V_{i-1}^{j} + (1 + \beta_i) V_i^{j} - \gamma_i V_{i+1}^{j} = \alpha_i V_{i-1}^{j+1} + (1 - \beta_i) V_i^{j+1} + \gamma_i V_{i+1}^{j+1}$$
+$$- \alpha_i V_{i-1}^{new} + (1 + \beta_i) V_i^{new} - \gamma_i V_{i+1}^{new} = \alpha_i V_{i-1}^{old} + (1 - \beta_i) V_i^{old} + \gamma_i V_{i+1}^{old}$$
 
-Where:
-$$\alpha_i = -\frac{1}{4} dt \left( \sigma^2 i^2 - r i \right)$$
-$$\beta_i = \frac{1}{2} dt \left( \sigma^2 i^2 + r \right)$$
-$$\gamma_i = -\frac{1}{4} dt \left( \sigma^2 i^2 + r i \right)$$
+Where, with $D_i = \frac{\sigma^2 S_i^2}{2\,dS^2}$ and $R_i = \frac{(r - q) S_i}{2\,dS}$:
+$$\alpha_i = \frac{dt}{2} \left( D_i - R_i \right), \qquad \beta_i = \frac{dt}{2} \left( 2D_i + r \right), \qquad \gamma_i = \frac{dt}{2} \left( D_i + R_i \right)$$
 
-Formulated as tridiagonal system: $\mathbf{A} \mathbf{V}^j = \mathbf{B} \mathbf{V}^{j+1}$.
+Formulated as tridiagonal system: $\mathbf{A} \mathbf{V}^{new} = \mathbf{B} \mathbf{V}^{old} + \text{boundary}$.
+
+Accuracy against closed-form BSM over strikes ±10%, 1-60 days, 10-40% IV: worst error ₹0.19, mean ₹0.022 (was ₹21.20 and ₹0.94 on the old $[0, 3K]$ grid without dividends or Rannacher).
 
 #### SciPy Sparse Matrix LU Optimization
 Matrix $\mathbf{A}$ is static and pre-factorized using SuperLU direct solver (`scipy.sparse.linalg.splu`) outside the temporal loop. Resolves backward steps in linear $O(M)$ time via `A_solver.solve(rhs)`.
+
+#### Batched Chain Pricing
+`price_chain_cn` stacks a chunk of contracts (each with its own grid and σ) as blocks of one block-diagonal tridiagonal system, so each time step is one `B.dot` and one SuperLU solve for all of them. The subscriber splits a chain into one chunk per worker of a spawn-based `ProcessPoolExecutor` (`PRICING_WORKERS`). Measured end to end on a 100-contract chain: 527 contracts/s with 1 worker, 975 with 2, 1,291 with 4. See [SuperLU_PDE_Explanation.md](SuperLU_PDE_Explanation.md) for the full walkthrough.
 
 ---
 
@@ -359,23 +366,34 @@ Matrix $\mathbf{A}$ is static and pre-factorized using SuperLU direct solver (`s
 ### TimescaleDB Hypertables & Relational Persistence
 * **`OhlcCandles` Hypertable**: Partitioned on `timestamp` column. Auto-retention policy drops 1m/5m/1d candles older than 90 days.
 * **`NotificationLogs` Hypertable**: Partitioned on `timestamp` column. Auto-retention policy purges triggered alert log entries older than 14 days.
-* **`TickData` Hypertable**: Partitioned on `timestamp` column. Automatic data retention drops raw tick chunks older than 7 days.
+* **`TickData` Hypertable**: Partitioned on `timestamp` column. Automatic data retention drops raw tick chunks older than 90 days.
 
 | Table Name | Partitioning | Primary Columns | Purpose & Retention |
 |---|---|---|---|
 | `OhlcCandles` | Hypertable | `symbol`, `timestamp`, `timeframe`, `open`, `high`, `low`, `close`, `volume` | Historical 1m/5m/1d candles (90-day retention). |
 | `NotificationLogs` | Hypertable | `id`, `rule_id`, `symbol`, `condition_type`, `triggered_value`, `threshold`, `message`, `status`, `timestamp` | Triggered alert audit log (14-day retention). |
-| `AlertRules` | Relational | `id`, `symbol`, `condition_type`, `threshold`, `channels`, `cooldown_seconds`, `is_active` | User-defined alert rules & destinations. |
-| `TickData` | Hypertable | `Timestamp`, `Symbol`, `StrikePrice`, `LastPrice`, `Volume`, `ImpliedVolatility` | Raw tick database (7-day retention). |
+| `AlertRules` | Relational | `id`, `user_id`, `symbol`, `condition_type`, `threshold`, `channels`, `cooldown_seconds`, `last_condition_met`, `last_triggered_at`, `webhook_secret`, `is_active` | Per-user alert rules, crossing state & destinations. |
+| `TickData` | Hypertable | `Timestamp`, `Symbol`, `StrikePrice`, `LastPrice`, `Volume`, `ImpliedVolatility` | Raw tick database (90-day retention). |
 | `DomainEvents` | Relational | `EventId` (UUID), `EventType`, `Payload` (JSONB), `OccurredAt` | Cross-domain event audit log. |
 
 ### Redis Streams Messaging Architecture
-1. `stream:options.raw_fetched`: Ingestion worker pushes raw tick blocks.
-2. `stream:options.priced`: `OptionsPricingSubscriber` daemon consumes ticks, solves BSM/PDE, and writes processed results.
-3. `stream:analysis.refresh_requested`: Analytics domain requests ingestion refresh for a symbol.
-4. `stream:dlq:refresh_request`: Dead-Letter Queue isolates processing failures after 3 retries.
-5. `market.options_updated.{symbol}` / `market.price_updated.{symbol}`: Ephemeral Pub/Sub channels mirror tick & chain updates to WebSocket hub (`/v1/ws/{symbol}`).
-6. `alerts.dispatched.{symbol}`: Ephemeral Pub/Sub channel for alert notifications pushed to WebSocket clients.
+1. `stream:options.raw_fetched`: Ingestion worker pushes the nearest expiry's chain. Read by consumer group `cg:options_pricing`.
+2. `stream:options.priced`: `OptionsPricingSubscriber` writes the priced chain plus `spot_price`, `atm_iv_pct`, `expiry`. Read by consumer group `cg:alert_evaluation`.
+3. Each stream has a dead-letter stream (`stream:dlq:options.raw_fetched`, `stream:dlq:options.priced`). Consumers (`run_durable_consumer`) acknowledge a message only after handling it, retry failures (2 retries for pricing, 5 for alerts), then move the message to the DLQ, and periodically reclaim messages left pending by a crashed consumer (`XAUTOCLAIM`). A new group starts at `$`, so history is not replayed. Every `XADD` is length-bounded (`MAXLEN ~ 10000`). `scripts/read_dlq.py <stream>` inspects a DLQ.
+4. `market.options_updated.{symbol}` / `market.price_updated.{symbol}`: Ephemeral Pub/Sub channels mirror updates to the WebSocket hub (`/v1/ws/{symbol}`). The options message carries only `{symbol, last_updated}`; the browser refetches the chain.
+5. `alerts.dispatched.{symbol}`: Ephemeral Pub/Sub channel for alerts. The payload carries `user_id`, and the hub forwards it only to sockets authenticated as that user.
+
+### Security
+* **Authentication**: Supabase JWTs are verified with PyJWT (ES256/RS256 through the project's JWKS, or HS256 with `SUPABASE_JWT_SECRET`), audience `authenticated`. Alert endpoints require a valid token; other users' rules return 404.
+* **WebSockets**: market data is public. A client sends `{"action": "auth", "token": ...}` to receive its own alerts. Connection and symbol caps apply.
+* **Webhooks**: HTTPS only, destination resolved and rejected if private, loopback or link-local (SSRF guard). Each rule has its own secret, returned once on creation, and payloads are signed with HMAC-SHA256.
+* **Container**: application processes run as a non-root user; the database role is not a superuser.
+
+### Known Limitations
+* `VolatilitySurface` exists in the analytics domain but is not wired into the live pipeline.
+* No live OHLC candle writer feeds `OhlcCandles`; technicals use yfinance daily history (cached for 1 h).
+* No Prometheus metrics endpoint.
+* Some modules still import across bounded contexts (e.g. the analytics API uses ingestion adapters), and the middleware layers are not merged.
 
 ---
 
