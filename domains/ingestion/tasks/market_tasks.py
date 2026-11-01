@@ -14,6 +14,7 @@ Endpoints/APIs: GET /v1/ingestion/options/{symbol} (Internal proxy, consumed by 
 Database Tables: TimescaleDB (tickdata), Redis (Streams: stream:options.raw_fetched)
 """
 import json
+import hashlib
 import logging
 import asyncio
 from celery import shared_task
@@ -27,6 +28,15 @@ from domains.ingestion.tasks.ingestion_tasks import _get_or_create_loop
 logger = logging.getLogger(__name__)
 
 
+def _chain_digest(dtos) -> str:
+    """Stable hash of the market fields of a chain (order-independent)."""
+    rows = sorted(
+        (str(d.expiry), float(d.strike or 0), d.option_type, d.ltp, d.iv, d.oi, d.volume, d.underlying_price)
+        for d in dtos
+    )
+    return hashlib.blake2b(json.dumps(rows, default=str).encode(), digest_size=16).hexdigest()
+
+
 async def _fetch_and_publish_options_async(symbol: str):
     from shared.infrastructure.database import get_database_pool
     from datetime import datetime, timezone
@@ -37,7 +47,7 @@ async def _fetch_and_publish_options_async(symbol: str):
 
     redis = await get_redis_client()
     db_pool = await get_database_pool()
-    adapter = get_market_data_adapter(redis_client=redis)
+    adapter = get_market_data_adapter(redis_client=redis)  # shared per event loop; not closed here
 
     try:
         dtos = await adapter.fetch_option_chain(symbol)
@@ -53,6 +63,19 @@ async def _fetch_and_publish_options_async(symbol: str):
             json.dumps(snapshot, default=str),
             ex=TTL.MARKET_OPTIONS,
         )
+
+        # Outside market hours (and between exchange updates) the chain is identical poll after
+        # poll. Skip the TickData COPY and re-pricing then. The hash key expires at half the
+        # priced-chain TTL, so an unchanged chain is still re-priced before its read model goes stale.
+        digest = _chain_digest(dtos)
+        hash_key = RedisKeys.MARKET_OPTIONS_HASH.format(symbol=symbol.upper())
+        previous = await redis.get(hash_key)
+        if isinstance(previous, bytes):
+            previous = previous.decode()
+        if previous == digest:
+            logger.debug("[%s] Option chain unchanged; skipping persist and pricing", symbol)
+            return
+        await redis.set(hash_key, digest, ex=TTL.MARKET_OPTIONS_PRICED // 2)
 
         # Fetch dividend yield dynamically from the yfinance adapter
         price_info = await adapter.fetch_price(symbol)
@@ -118,8 +141,6 @@ async def _fetch_and_publish_options_async(symbol: str):
 
     except Exception as e:
         logger.error("Error fetching/publishing options for %s: %s", symbol, e, exc_info=True)
-    finally:
-        await adapter.close()
 
 
 @shared_task(queue='ingestion', name='ingestion.fetch_and_publish_options')

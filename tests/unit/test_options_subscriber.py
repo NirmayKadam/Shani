@@ -104,3 +104,24 @@ def test_default_executor_is_a_spawn_process_pool_and_is_closed(monkeypatch):
     finally:
         subscriber.close()
     assert subscriber._executor is None
+
+
+@pytest.mark.unit
+async def test_chain_is_split_into_one_batched_solve_per_worker():
+    from unittest.mock import patch
+    calls = []
+
+    def fake_chunk(S0, T, r, q, strikes, sigmas, is_call):
+        calls.append(len(strikes))
+        return [1.0] * len(strikes)
+
+    strikes_data = [{"strike": 24000.0 + 50 * k, "type": t, "iv": 0.15, "ltp": 100.0}
+                    for k in range(-25, 25) for t in ("CE", "PE")]
+    with ThreadPoolExecutor(max_workers=4) as executor, \
+         patch("domains.analytics.infrastructure.options_subscriber._price_chunk_sync", side_effect=fake_chunk):
+        subscriber = OptionsPricingSubscriber(AsyncMock(), executor=executor)
+        await subscriber.process_event({"symbol": "NIFTY", "data": {
+            "spot_price": 24000.0, "risk_free_rate": 0.065, "dividend_yield": 0.0,
+            "time_to_maturity": 0.05, "strikes_data": strikes_data}})
+
+    assert sorted(calls) == [25, 25, 25, 25]  # 100 contracts -> 4 chunks of one batched solve each

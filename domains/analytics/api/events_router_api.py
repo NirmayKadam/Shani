@@ -60,6 +60,22 @@ class _ClientConnection:
     user_id: Optional[str] = None
 
 
+async def _claim_poll_slot(kind: str, symbol: str, interval_seconds: float) -> bool:
+    """True for exactly one API worker per (kind, symbol, interval).
+
+    Every uvicorn worker runs its own polling loop; without this, a symbol watched from N
+    workers was polled N times per interval. If Redis is unavailable, poll anyway.
+    """
+    try:
+        from shared.infrastructure.redis_client import get_redis_client
+        redis = await get_redis_client()
+        ttl_ms = max(int(interval_seconds * 1000) - 250, 500)  # slightly under the interval
+        return bool(await redis.set(f"poll:slot:{kind}:{symbol}", "1", nx=True, px=ttl_ms))
+    except Exception as exc:
+        logger.debug("Poll slot check failed for %s %s: %s", kind, symbol, exc)
+        return True
+
+
 def _alert_owner(message: dict) -> Optional[str]:
     """Owner of an alert message (None for market data and for ownerless dev-mode alerts)."""
     if message.get("type") != "alert":
@@ -311,21 +327,23 @@ class ConnectionManager:
                     # 1. Price Polling
                     last_price = last_price_poll.get(symbol, 0.0)
                     if now - last_price >= price_interval:
-                        try:
-                            poll_prices.delay(symbol)
-                            logger.info("Dispatched live price poll task for %s", symbol)
-                        except Exception as exc:
-                            logger.error("Failed to dispatch price poll for %s: %s", symbol, exc)
+                        if await _claim_poll_slot("price", symbol, price_interval):
+                            try:
+                                poll_prices.delay(symbol)
+                                logger.info("Dispatched live price poll task for %s", symbol)
+                            except Exception as exc:
+                                logger.error("Failed to dispatch price poll for %s: %s", symbol, exc)
                         last_price_poll[symbol] = now
 
                     # 2. Options Polling (single consolidated task)
                     last_opts = last_options_poll.get(symbol, 0.0)
                     if now - last_opts >= options_interval:
-                        try:
-                            fetch_and_publish_options.delay(symbol)
-                            logger.info("Dispatched live options poll task for %s", symbol)
-                        except Exception as exc:
-                            logger.error("Failed to dispatch options poll for %s: %s", symbol, exc)
+                        if await _claim_poll_slot("options", symbol, options_interval):
+                            try:
+                                fetch_and_publish_options.delay(symbol)
+                                logger.info("Dispatched live options poll task for %s", symbol)
+                            except Exception as exc:
+                                logger.error("Failed to dispatch options poll for %s: %s", symbol, exc)
                         last_options_poll[symbol] = now
 
                 await asyncio.sleep(1.0)

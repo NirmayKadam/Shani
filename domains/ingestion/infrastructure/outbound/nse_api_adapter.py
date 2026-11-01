@@ -13,6 +13,7 @@ Database Tables: None
 
 import os
 import math
+import time
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -33,6 +34,10 @@ from shared.constants import MarketStatus, INDEX_SYMBOLS
 from shared.utils.symbol_validator import SymbolValidator
 
 logger = logging.getLogger(__name__)
+
+# yfinance ticker.info (dividend yield, currency) per process: {yf_symbol: (monotonic_ts, q, currency)}
+_INFO_CACHE: dict[str, tuple[float, float, str]] = {}
+_INFO_CACHE_TTL_SECONDS = 24 * 3600
 
 # ── NSE India API Configuration ────────────────────────────────
 
@@ -186,8 +191,16 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             prev_close = float(prev["close"])
             change_pct = round(((last_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
 
-            info = ticker.info or {}
-            div_yield = NseApiAdapter._dividend_yield_decimal(info, last_price)
+            # ticker.info is a heavy quote-summary request; dividend yield and currency change
+            # rarely, so cache them for a day instead of fetching them on every 5 s price poll.
+            cached = _INFO_CACHE.get(yf_symbol)
+            if cached and time.monotonic() - cached[0] < _INFO_CACHE_TTL_SECONDS:
+                div_yield, currency = cached[1], cached[2]
+            else:
+                info = ticker.info or {}
+                div_yield = NseApiAdapter._dividend_yield_decimal(info, last_price)
+                currency = info.get("currency", "INR")
+                _INFO_CACHE[yf_symbol] = (time.monotonic(), div_yield, currency)
 
             return {
                 "last_price": round(last_price, 2),
@@ -197,7 +210,7 @@ class NseApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
                 "volume": int(latest.get("volume", 0)),
                 "previous_close": round(prev_close, 2),
                 "change_percent": change_pct,
-                "currency": info.get("currency", "INR"),
+                "currency": currency,
                 "dividend_yield": div_yield,
                 "last_updated": datetime.now(timezone.utc).isoformat(),
             }

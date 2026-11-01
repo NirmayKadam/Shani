@@ -150,3 +150,94 @@ class CrankNicolsonPDE:
         # 4. Interpolate option value at exact S0
         fair_price = float(np.interp(self.S0, S_nodes, grid))
         return float(max(fair_price, 0.0))
+
+
+def _block_tridiagonal(lower: np.ndarray, main: np.ndarray, upper: np.ndarray):
+    """Sparse CSC matrix made of independent tridiagonal blocks, one per row of the inputs.
+
+    lower/main/upper have shape (C, n): block c has lower[c, 1:] below its diagonal, main[c] on
+    it and upper[c, :-1] above it. Entries that would couple neighbouring blocks are zero.
+    """
+    C, n = main.shape
+    sub = np.zeros((C, n))
+    sub[:, :-1] = lower[:, 1:]
+    sup = np.zeros((C, n))
+    sup[:, :-1] = upper[:, :-1]
+    size = C * n
+    return diags([sub.ravel()[:-1], main.ravel(), sup.ravel()[:-1]], [-1, 0, 1], shape=(size, size), format="csc")
+
+
+def price_chain_cn(
+    S0: float,
+    T: float,
+    r: float,
+    strikes,
+    sigmas,
+    is_call,
+    q: float = 0.0,
+    M: int = 300,
+    N: int = 300,
+) -> np.ndarray:
+    """Crank-Nicolson prices for a whole option chain in one batched solve.
+
+    Contract c has its own grid and coefficients (the same scheme as CrankNicolsonPDE), stacked
+    as block c of a block-diagonal tridiagonal system. Each time step is then one sparse
+    matrix-vector product and one pre-factorised SuperLU solve for every contract at once,
+    instead of a Python-level loop per contract.
+    """
+    strikes = np.asarray(strikes, dtype=float)
+    sigmas = np.maximum(np.asarray(sigmas, dtype=float), 1e-6)
+    calls = np.asarray(is_call, dtype=bool)
+    T = max(float(T), 1e-6)
+    N = max(int(N), _RANNACHER_STEPS + 1)
+    C, n = len(strikes), M - 1
+    if C == 0:
+        return np.empty(0)
+
+    nodes = np.stack([price_grid(S0, K, T, s, M) for K, s in zip(strikes, sigmas)])   # (C, M+1)
+    coeffs = [operator_coefficients(row, s, r, q) for row, s in zip(nodes, sigmas)]
+    a = np.stack([cf[0] for cf in coeffs])
+    b = np.stack([cf[1] for cf in coeffs])
+    c = np.stack([cf[2] for cf in coeffs])
+    s_lo, s_hi = nodes[:, 0], nodes[:, -1]
+
+    def edges(tau: float):
+        disc_r, disc_q = np.exp(-r * tau), np.exp(-q * tau)
+        lo = np.where(calls, 0.0, np.maximum(strikes * disc_r - s_lo * disc_q, 0.0))
+        hi = np.where(calls, np.maximum(s_hi * disc_q - strikes * disc_r, 0.0), 0.0)
+        return lo, hi
+
+    interior = np.where(calls[:, None], np.maximum(nodes[:, 1:-1] - strikes[:, None], 0.0),
+                        np.maximum(strikes[:, None] - nodes[:, 1:-1], 0.0))
+    dt = T / N
+
+    # Rannacher start-up: implicit Euler half-steps
+    h = 0.5 * dt
+    implicit = splu(_block_tridiagonal(-h * a, 1.0 - h * b, -h * c))
+    tau = 0.0
+    for _ in range(2 * _RANNACHER_STEPS):
+        tau += h
+        lo, hi = edges(tau)
+        rhs = interior.copy()
+        rhs[:, 0] += h * a[:, 0] * lo
+        rhs[:, -1] += h * c[:, -1] * hi
+        interior = implicit.solve(rhs.ravel()).reshape(C, n)
+
+    # Crank-Nicolson steps
+    alpha, beta, gamma = 0.5 * dt * a, -0.5 * dt * b, 0.5 * dt * c
+    A_solver = splu(_block_tridiagonal(-alpha, 1.0 + beta, -gamma))
+    B = _block_tridiagonal(alpha, 1.0 - beta, gamma)
+    lo_old, hi_old = edges(tau)
+    for _ in range(N - _RANNACHER_STEPS):
+        tau += dt
+        lo_new, hi_new = edges(tau)
+        rhs = B.dot(interior.ravel()).reshape(C, n)
+        rhs[:, 0] += alpha[:, 0] * (lo_old + lo_new)
+        rhs[:, -1] += gamma[:, -1] * (hi_old + hi_new)
+        interior = A_solver.solve(rhs.ravel()).reshape(C, n)
+        lo_old, hi_old = lo_new, hi_new
+
+    # Linear interpolation at S0 on each contract's own grid
+    full = np.concatenate([lo_old[:, None], interior, hi_old[:, None]], axis=1)
+    prices = np.array([np.interp(S0, nodes[i], full[i]) for i in range(C)])
+    return np.maximum(prices, 0.0)

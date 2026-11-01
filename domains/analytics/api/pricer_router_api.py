@@ -88,7 +88,7 @@ async def _live_fetch(symbol_clean: str, redis) -> Optional[tuple[dict, Optional
     from domains.ingestion.infrastructure.outbound.adapter_factory import get_market_data_adapter
     from domains.ingestion.application.services.ingestion_service import build_option_chain_snapshot
 
-    adapter = get_market_data_adapter()
+    adapter = get_market_data_adapter(redis_client=redis)  # shared per event loop; not closed here
     dtos, price_data = [], None
 
     async def fetch_both():
@@ -102,8 +102,6 @@ async def _live_fetch(symbol_clean: str, redis) -> Optional[tuple[dict, Optional
         logger.error("[%s] Live fetch exceeded %ss deadline", symbol_clean, _LIVE_FETCH_DEADLINE_SECONDS)
     except Exception as fetch_exc:
         logger.error("[%s] Dynamic live fetch failed: %s", symbol_clean, fetch_exc)
-    finally:
-        await adapter.close()
 
     if dtos:
         chain = build_option_chain_snapshot(symbol_clean, dtos)
@@ -128,6 +126,49 @@ async def _live_fetch(symbol_clean: str, redis) -> Optional[tuple[dict, Optional
         except Exception as cache_exc:
             logger.warning("[%s] Failed caching live-fetched market data: %s", symbol_clean, cache_exc)
     return chain, price_data
+
+
+def _fetch_lock_key(symbol_clean: str) -> str:
+    return f"pricer:fetching:{symbol_clean}"
+
+
+async def _wait_for_concurrent_fetch(redis, symbol_clean: str) -> Optional[dict]:
+    """If another request is already live-fetching this symbol, wait for its cached result.
+
+    Single-flight: when the cache expires, every open dashboard asks at once; only one of them
+    goes to the market adapters. Returns None if nobody is fetching or the wait times out.
+    """
+    try:
+        deadline = time.monotonic() + _LIVE_FETCH_DEADLINE_SECONDS
+        while await redis.exists(_fetch_lock_key(symbol_clean)) == 1:
+            if time.monotonic() > deadline:
+                return None
+            await asyncio.sleep(0.25)
+            cached = await redis.get(RedisKeys.MARKET_OPTIONS.format(symbol=symbol_clean))
+            if cached:
+                return json.loads(cached)
+    except Exception as exc:
+        logger.debug("[%s] Single-flight wait failed: %s", symbol_clean, exc)
+    return None
+
+
+async def _single_flight_live_fetch(symbol_clean: str, redis) -> Optional[tuple[dict, Optional[dict]]]:
+    """Live fetch guarded by a short Redis lock so concurrent cache misses share one fetch."""
+    lock_key = _fetch_lock_key(symbol_clean)
+    acquired = False
+    if redis is not None:
+        try:
+            acquired = bool(await redis.set(lock_key, "1", nx=True, ex=_LIVE_FETCH_DEADLINE_SECONDS + 5))
+        except Exception:
+            acquired = False
+    try:
+        return await _live_fetch(symbol_clean, redis)
+    finally:
+        if acquired:
+            try:
+                await redis.delete(lock_key)
+            except Exception:
+                pass
 
 
 def _atm_call(strikes_data: list, spot: float) -> Optional[dict]:
@@ -218,8 +259,10 @@ async def get_ticker_parameters(symbol: str):
     source = "redis_cache"
     chain_data = json.loads(raw_cached) if raw_cached else None
     price_data = json.loads(price_cached) if price_cached else None
+    if chain_data is None and redis is not None:
+        chain_data = await _wait_for_concurrent_fetch(redis, symbol_clean)
     if chain_data is None:
-        fetched = await _live_fetch(symbol_clean, redis)
+        fetched = await _single_flight_live_fetch(symbol_clean, redis)
         if fetched is None:
             # Real market data unavailable across all sources (Groww, NSE, yfinance)
             raise HTTPException(

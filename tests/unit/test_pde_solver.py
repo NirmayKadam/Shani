@@ -65,3 +65,32 @@ def test_grid_covers_spot_and_strike_with_room_to_spare():
     # Tiny sigma*sqrt(T) still gets a usable grid
     tiny = price_grid(S0, S0, 1e-6, 1e-6, 300)
     assert tiny[-1] > tiny[0]
+
+
+@pytest.mark.unit
+def test_batched_chain_matches_single_contract_solver_exactly():
+    from domains.analytics.domain.services.pde_solver import price_chain_cn
+    strikes = [23500.0, 24000.0, 24000.0, 24600.0, 25000.0]
+    sigmas = [0.18, 0.14, 0.15, 0.13, 0.16]
+    is_call = [True, True, False, False, True]
+    T, q = 9 / 365, 0.012
+    batched = price_chain_cn(S0, T, R, strikes, sigmas, is_call, q=q)
+    single = [CrankNicolsonPDE(S0, K, T, R, s, "call" if c else "put", q=q).solve()
+              for K, s, c in zip(strikes, sigmas, is_call)]
+    assert batched.tolist() == pytest.approx(single, abs=1e-9)
+
+
+@pytest.mark.unit
+def test_batched_chain_handles_empty_input():
+    from domains.analytics.domain.services.pde_solver import price_chain_cn
+    assert price_chain_cn(S0, 0.1, R, [], [], []).size == 0
+
+
+@pytest.mark.unit
+def test_vectorised_bsm_matches_scalar():
+    from domains.analytics.application.services.derivatives.black_scholes import bsm_prices
+    strikes, sigmas, calls = [23000.0, 24000.0, 25000.0], [0.2, 0.14, 0.12], [True, False, True]
+    vec = bsm_prices(S0, strikes, 20 / 365, R, sigmas, calls, q=0.01)
+    scalar = [BlackScholesMerton(S0, K, 20 / 365, R, s, "call" if c else "put", q=0.01).solve()
+              for K, s, c in zip(strikes, sigmas, calls)]
+    assert vec.tolist() == pytest.approx(scalar, abs=1e-9)

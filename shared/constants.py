@@ -79,6 +79,10 @@ class RedisKeys:
     MARKET_PRICE       = "market:price:{symbol}"            # Today's OHLCV snapshot
     MARKET_OPTIONS     = "market:options:{symbol}"           # Latest option chain
     MARKET_OPTIONS_PRICED = "market:options:priced:{symbol}" # Fair priced option chain
+    MARKET_OPTIONS_HASH = "market:options:hash:{symbol}"     # Hash of the last chain sent for pricing
+
+    # Analytics domain owns:
+    HISTORY_DAILY_3MO  = "analytics:history:3mo:{symbol}"   # Daily close/high/low for technicals
 
 
 # ── TTLs (seconds) ────────────────────────────────────────────

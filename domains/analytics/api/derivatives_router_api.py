@@ -154,6 +154,53 @@ async def get_derivatives(symbol: str):
     )
 
 
+async def _daily_history(symbol_clean: str):
+    """3 months of daily (closes, highs, lows) from yfinance, cached in Redis for an hour.
+
+    Daily bars change once a day, so refetching them on every dashboard refresh only adds latency
+    and yfinance rate-limit risk. Failures and empty results are not cached.
+    """
+    cache_key = RedisKeys.HISTORY_DAILY_3MO.format(symbol=symbol_clean)
+    redis = None
+    try:
+        redis = await get_redis_client()
+        cached = await redis.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            return data["closes"], data.get("highs"), data.get("lows")
+    except Exception as exc:
+        logger.warning("History cache read failed for %s: %s", symbol_clean, exc)
+
+    try:
+        from domains.ingestion.infrastructure.outbound.nse_api_adapter import _to_yfinance_symbol
+        import yfinance as yf
+
+        yf_symbol = _to_yfinance_symbol(symbol_clean)
+
+        def _fetch_hist():
+            hist = yf.Ticker(yf_symbol).history(period="3mo")
+            if hist.empty or "Close" not in hist:
+                return [], None, None
+            hist = hist.dropna(subset=["Close"])
+            if {"High", "Low"} <= set(hist.columns):
+                hist = hist.dropna(subset=["High", "Low"])
+                return hist["Close"].tolist(), hist["High"].tolist(), hist["Low"].tolist()
+            return hist["Close"].tolist(), None, None
+
+        closes, highs, lows = await asyncio.to_thread(_fetch_hist)
+    except Exception as hist_exc:
+        logger.warning("Failed fetching historical prices for %s technicals: %s", symbol_clean, hist_exc)
+        return [], None, None
+
+    if closes and redis is not None:
+        try:
+            await redis.set(cache_key, json.dumps({"closes": closes, "highs": highs, "lows": lows}),
+                            ex=TTL.HISTORICAL_OHLC)
+        except Exception as exc:
+            logger.warning("History cache write failed for %s: %s", symbol_clean, exc)
+    return closes, highs, lows
+
+
 @router.get("/{symbol}/technicals", response_model=TechnicalsResponse)
 async def get_technicals(symbol: str, spot: Optional[float] = None):
     """
@@ -182,27 +229,7 @@ async def get_technicals(symbol: str, spot: Optional[float] = None):
             detail=f"Spot price is required for technicals calculation of '{symbol_upper}'. Pass ?spot=<price> or ensure Redis has cached data."
         )
 
-    # Fetch real market daily OHLC history via yfinance
-    closes, highs, lows = [], None, None
-    try:
-        from domains.ingestion.infrastructure.outbound.nse_api_adapter import _to_yfinance_symbol
-        import yfinance as yf
-
-        yf_symbol = _to_yfinance_symbol(symbol_clean)
-
-        def _fetch_hist():
-            hist = yf.Ticker(yf_symbol).history(period="3mo")
-            if hist.empty or "Close" not in hist:
-                return [], None, None
-            hist = hist.dropna(subset=["Close"])
-            if {"High", "Low"} <= set(hist.columns):
-                hist = hist.dropna(subset=["High", "Low"])
-                return hist["Close"].tolist(), hist["High"].tolist(), hist["Low"].tolist()
-            return hist["Close"].tolist(), None, None
-
-        closes, highs, lows = await asyncio.to_thread(_fetch_hist)
-    except Exception as hist_exc:
-        logger.warning("Failed fetching historical prices for %s technicals: %s", symbol_clean, hist_exc)
+    closes, highs, lows = await _daily_history(symbol_clean)
 
     technicals_data = compute_all_technicals(spot_price, price_history=closes, highs=highs, lows=lows)
     technicals_data["symbol"] = symbol_clean

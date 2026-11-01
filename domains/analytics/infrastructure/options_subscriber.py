@@ -1,8 +1,10 @@
 """
 File Overview: PDE Solver worker consuming options data from Redis Streams.
 Calculates fair prices using Crank-Nicolson finite difference method.
-Strikes are priced in a process pool: the solver loop holds the GIL, so threads
-give no speed-up, while separate processes price strikes in parallel.
+The chain is priced with batched Crank-Nicolson solves (price_chain_cn: every contract in one
+block-diagonal system per time step), split into chunks across a process pool: the solver loop
+holds the GIL, so threads give no speed-up, while separate processes run in parallel.
+Black-Scholes prices are computed vectorised in-process.
 
 All Functions/Classes:
 - OptionsPricingSubscriber: Real-time derivatives pricing engine. Data: raw ticks -> priced chains.
@@ -28,8 +30,10 @@ from concurrent.futures import Executor, ProcessPoolExecutor
 from datetime import datetime, timezone
 
 from redis.asyncio import Redis
-from domains.analytics.application.services.derivatives.pde_solver import CrankNicolsonPDE
-from domains.analytics.application.services.derivatives.black_scholes import BlackScholesMerton
+import numpy as np
+
+from domains.analytics.domain.services.pde_solver import price_chain_cn
+from domains.analytics.application.services.derivatives.black_scholes import bsm_prices
 from shared.constants import RedisKeys, TTL, Streams, StreamGroups, Channels
 from shared.infrastructure.event_bus.consumer import run_durable_consumer
 from shared.infrastructure.event_bus.streams import DurableEventStream
@@ -45,39 +49,18 @@ def _default_worker_count() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
+# A chain is split into at most PRICING_WORKERS chunks of at least this many contracts; each
+# chunk is one batched Crank-Nicolson solve (smaller chunks lose more to process overhead).
+_MIN_CONTRACTS_PER_CHUNK = 16
+
+
 def _valid_iv(iv) -> bool:
     return iv is not None and iv > 0
 
 
-def _price_leg(S0: float, strike: float, T: float, r: float, iv, dividend_yield: float, option_type: str):
-    """(PDE price, BSM price) for one leg, or (None, None) when the feed has no usable IV."""
-    if not _valid_iv(iv):
-        return None, None
-    pde_price = CrankNicolsonPDE(S0, strike, T, r, iv, option_type, q=dividend_yield).solve()
-    bsm_price = BlackScholesMerton(S0, strike, T, r, iv, option_type, q=dividend_yield).solve()
-    return round(pde_price, 2), round(bsm_price, 2)
-
-
-def _solve_strike_sync(S0: float, strike: float, T: float, r: float, call_iv, put_iv, dividend_yield: float, live_call: float, live_put: float) -> dict:
-    """Helper to solve single strike CE/PE pricing synchronously in a pool worker process.
-
-    A leg without a positive implied volatility is left unpriced (None) rather than priced
-    with an invented volatility.
-    """
-    fair_call, bs_fair_call = _price_leg(S0, strike, T, r, call_iv, dividend_yield, 'call')
-    fair_put, bs_fair_put = _price_leg(S0, strike, T, r, put_iv, dividend_yield, 'put')
-
-    return {
-        "strike": strike,
-        "fair_call": fair_call,
-        "fair_put": fair_put,
-        "call_iv": call_iv if _valid_iv(call_iv) else None,
-        "put_iv": put_iv if _valid_iv(put_iv) else None,
-        "bs_fair_call": bs_fair_call,
-        "bs_fair_put": bs_fair_put,
-        "live_call": round(live_call, 2) if live_call is not None else 0.0,
-        "live_put": round(live_put, 2) if live_put is not None else 0.0
-    }
+def _price_chunk_sync(S0: float, T: float, r: float, q: float, strikes: list, sigmas: list, is_call: list) -> list:
+    """Crank-Nicolson prices for a chunk of contracts, run in a pool worker process."""
+    return price_chain_cn(S0, T, r, strikes, sigmas, is_call, q=q).tolist()
 
 
 def _atm_iv_pct(S0: float, priced_chain: list):
@@ -130,6 +113,21 @@ class OptionsPricingSubscriber:
             stop_event=stop_event,
         )
 
+    async def _price_chain_pde(self, S0, T, r, q, strikes, sigmas, is_call) -> list:
+        """Batched Crank-Nicolson prices, split into one chunk per pool worker."""
+        executor = self._get_executor()
+        workers = getattr(executor, "_max_workers", 1) or 1
+        chunks = max(1, min(workers, len(strikes) // _MIN_CONTRACTS_PER_CHUNK))
+        loop = asyncio.get_running_loop()
+        tasks = [
+            loop.run_in_executor(
+                executor, _price_chunk_sync, S0, T, r, q,
+                [strikes[i] for i in idx], [sigmas[i] for i in idx], [is_call[i] for i in idx],
+            )
+            for idx in np.array_split(np.arange(len(strikes)), chunks)
+        ]
+        return [price for chunk in await asyncio.gather(*tasks) for price in chunk]
+
     async def process_event(self, message: dict):
         """Price one raw chain. message = {"symbol": str, "data": {spot_price, ..., strikes_data}}."""
         symbol = str(message["symbol"]).upper()
@@ -151,24 +149,38 @@ class OptionsPricingSubscriber:
                 "ltp": s.get("ltp", 0.0)
             }
 
-        loop = asyncio.get_running_loop()
-        executor = self._get_executor()
-        tasks = []
-        for strike, type_data in strikes_map.items():
-            call_iv = type_data.get("CE", {}).get("iv")
-            put_iv = type_data.get("PE", {}).get("iv")
-            live_call = type_data.get("CE", {}).get("ltp", 0.0)
-            live_put = type_data.get("PE", {}).get("ltp", 0.0)
+        # Legs with a usable implied volatility; the others stay unpriced (None)
+        legs = [
+            (strike, opt_type, leg["iv"])
+            for strike, types in strikes_map.items()
+            for opt_type, leg in types.items()
+            if opt_type in ("CE", "PE") and _valid_iv(leg["iv"])
+        ]
+        prices: dict[tuple, tuple] = {}
+        if legs:
+            strikes = [leg[0] for leg in legs]
+            sigmas = [leg[2] for leg in legs]
+            is_call = [leg[1] == "CE" for leg in legs]
+            pde = await self._price_chain_pde(S0, T, r, dividend_yield, strikes, sigmas, is_call)
+            bsm = bsm_prices(S0, strikes, T, r, sigmas, is_call, q=dividend_yield)
+            prices = {(leg[0], leg[1]): (round(p, 2), round(float(b), 2)) for leg, p, b in zip(legs, pde, bsm)}
 
-            tasks.append(
-                loop.run_in_executor(
-                    executor,
-                    _solve_strike_sync,
-                    S0, strike, T, r, call_iv, put_iv, dividend_yield, live_call, live_put
-                )
-            )
-
-        priced_chain = await asyncio.gather(*tasks)
+        priced_chain = []
+        for strike, types in strikes_map.items():
+            call, put = types.get("CE", {}), types.get("PE", {})
+            fair_call, bs_fair_call = prices.get((strike, "CE"), (None, None))
+            fair_put, bs_fair_put = prices.get((strike, "PE"), (None, None))
+            priced_chain.append({
+                "strike": strike,
+                "fair_call": fair_call,
+                "fair_put": fair_put,
+                "call_iv": call.get("iv") if _valid_iv(call.get("iv")) else None,
+                "put_iv": put.get("iv") if _valid_iv(put.get("iv")) else None,
+                "bs_fair_call": bs_fair_call,
+                "bs_fair_put": bs_fair_put,
+                "live_call": round(call.get("ltp") or 0.0, 2),
+                "live_put": round(put.get("ltp") or 0.0, 2),
+            })
         last_updated = datetime.now(timezone.utc).isoformat()
 
         # Cache in Redis for high performance read-model API querying
@@ -191,8 +203,12 @@ class OptionsPricingSubscriber:
         }
         await DurableEventStream(self.redis).publish(self.publish_stream, event)
 
-        # Publish Ephemeral Event (Live UX update)
-        await self.redis.publish(self.pubsub_channel.format(symbol=symbol), json.dumps(event))
+        # Publish Ephemeral Event (Live UX update). Browsers only use it as a "refetch" signal, so
+        # a small notification replaces the full chain that used to be fanned out to every socket.
+        await self.redis.publish(
+            self.pubsub_channel.format(symbol=symbol),
+            json.dumps({"symbol": symbol, "last_updated": last_updated}),
+        )
         logger.debug("Priced %d strikes for %s. Surface published.", len(priced_chain), symbol)
 
 
