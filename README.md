@@ -1,4 +1,4 @@
-# AlphaStreams V2 — Event-Driven Options Analytics (Indian Market Focus)
+# Shani — Event-Driven Options Analytics (Indian Market Focus)
 
 A Python-based **Event-Driven Modular Monolith** combining **Real-Time NSE/BSE Options Chain Analytics** and an **Interactive Options Dashboard** to generate actionable market overviews.
 
