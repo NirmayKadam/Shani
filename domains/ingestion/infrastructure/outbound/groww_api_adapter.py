@@ -254,13 +254,48 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
             logger.error("Error in GrowwAPI token retrieval: %s", e)
         return None
 
+    async def fetch_expiry_dates(self, symbol: str) -> List[str]:
+        """Fetch option expiry dates. Uses fallback adapter directly if Groww token has no live data."""
+        token = await self._get_token()
+        if not token or not self._token_has_live_data(token):
+            return await self._fallback_adapter.fetch_expiry_dates(symbol)
+        try:
+            expiries = await self._expiry_dates(symbol)
+            if expiries:
+                return expiries
+        except Exception as exc:
+            logger.debug("[%s] Groww expiry fetch error: %s", symbol, exc)
+        return await self._fallback_adapter.fetch_expiry_dates(symbol)
+
+    def _token_has_live_data(self, token: str) -> bool:
+        """True if the JWT has live_data-basic or market-data permissions."""
+        if not token:
+            return False
+        try:
+            import base64
+            import json
+            parts = token.split('.')
+            if len(parts) != 3:
+                # Mock token or generic API token in tests; treat as authorized
+                return True
+            payload_b64 = parts[1]
+            payload_b64 += '=' * (4 - len(payload_b64) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode('utf-8'))
+            sub_str = payload.get('sub', '{}')
+            sub_payload = json.loads(sub_str) if isinstance(sub_str, str) else sub_str
+            roles = sub_payload.get('role', '') if isinstance(sub_payload, dict) else ''
+            return 'live_data-basic' in roles or 'market-data' in roles
+        except Exception:
+            pass
+        return False
+
     # ── Market Price (Groww API) ─────────────────────────────────
 
     async def fetch_price(self, symbol: str) -> Optional[dict]:
-        """Fetches latest price info from Groww. Falls back to yfinance on failure."""
+        """Fetches latest price info from Groww. Falls back to NSE/yfinance on failure."""
         token = await self._get_token()
-        if not token:
-            logger.debug("[%s] No Groww access token. Falling back to yfinance.", symbol)
+        if not token or not self._token_has_live_data(token):
+            logger.debug("[%s] Groww token lacks live data permissions. Using NSE/yfinance adapter.", symbol)
             return await self._fallback_adapter.fetch_price(symbol)
 
         clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
@@ -334,10 +369,10 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
     # ── Option Chain (Groww API) ───────────────────────────────
 
     async def fetch_option_chain(self, symbol: str) -> List[RawTickDTO]:
-        """Fetches full option chain from Groww. Falls back to NSE proxy/synthetic on failure."""
+        """Fetches full option chain from Groww. Falls back to NSE adapter on failure or missing role."""
         token = await self._get_token()
-        if not token:
-            logger.debug("[%s] No Groww access token. Falling back to NSE option chain.", symbol)
+        if not token or not self._token_has_live_data(token):
+            logger.debug("[%s] Groww token lacks live data permissions. Using NSE adapter.", symbol)
             return await self._fallback_adapter.fetch_option_chain(symbol)
 
         clean_sym = symbol.upper().replace(".NS", "").replace(".BO", "")
