@@ -212,46 +212,38 @@ class GrowwApiAdapter(IMarketPriceSourcePort, IOptionChainSourcePort):
         return True
 
     def _fetch_token_sync(self) -> Optional[str]:
-        try:
-            totp_code = None
-            if self.totp_secret:
-                try:
-                    import pyotp
-                    totp = pyotp.TOTP(self.totp_secret.replace(" ", "").upper())
-                    totp_code = totp.now()
-                except Exception as e:
-                    logger.warning("TOTP generation failed: %s", e)
+        if not GROWW_SDK_AVAILABLE or not self.api_key:
+            return None
 
-            # Try SDK methods with available parameters. The TOTP secret is never sent as an
-            # identifier; without an API key the TOTP flow cannot be used.
-            if totp_code and not self.api_key:
-                logger.warning("GROWW_TOTP_SECRET is set but GROWW_API_KEY is empty; skipping TOTP login.")
-            elif totp_code:
-                # Attempt 1: GrowwAPI SDK get_access_token with totp
-                try:
-                    return GrowwAPI.get_access_token(
-                        api_key=self.api_key,
-                        totp=totp_code,
-                        pin=self.pin
-                    )
-                except (TypeError, AttributeError):
-                    pass
-                
-                # Attempt 2: Standard GrowwAPI SDK (key + totp as secret)
-                try:
-                    return GrowwAPI.get_access_token(
-                        api_key=self.api_key,
-                        secret=totp_code
-                    )
-                except Exception:
-                    pass
+        secret_to_use = self.secret_key
+        totp_code = None
 
-            # Fallback to key + secret_key if present
-            if self.api_key and self.secret_key:
-                return GrowwAPI.get_access_token(api_key=self.api_key, secret=self.secret_key)
+        # 1. Check if totp_secret is a valid Base32 TOTP secret or an approval secret
+        if self.totp_secret:
+            clean_secret = self.totp_secret.replace(" ", "")
+            try:
+                import pyotp
+                totp = pyotp.TOTP(clean_secret.upper())
+                totp_code = totp.now()
+            except Exception:
+                # If pyotp fails (e.g. non-base32 characters like @, #, $), treat as approval secret
+                if not secret_to_use:
+                    secret_to_use = clean_secret
 
-        except Exception as e:
-            logger.error("Error in GrowwAPI token retrieval: %s", e)
+        # 2. Attempt auth via TOTP
+        if totp_code:
+            try:
+                return GrowwAPI.get_access_token(api_key=self.api_key, totp=totp_code)
+            except Exception as e:
+                logger.warning("Groww token retrieval via TOTP failed: %s", e)
+
+        # 3. Attempt auth via Approval Secret
+        if secret_to_use:
+            try:
+                return GrowwAPI.get_access_token(api_key=self.api_key, secret=secret_to_use)
+            except Exception as e:
+                logger.warning("Groww token retrieval via Approval Secret failed: %s", e)
+
         return None
 
     async def fetch_expiry_dates(self, symbol: str) -> List[str]:
